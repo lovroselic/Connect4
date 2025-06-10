@@ -28,11 +28,11 @@ const DEBUG = {
 
 const INI = {
     SCREEN_BORDER: 256,
-    
+
 };
 
 const PRG = {
-    VERSION: "0.1.0",
+    VERSION: "0.1.1",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -89,11 +89,11 @@ const PRG = {
 
         $("#bottom").css("margin-top", ENGINE.gameHEIGHT + ENGINE.titleHEIGHT + ENGINE.bottomHEIGHT);
         $(ENGINE.gameWindowId).width(ENGINE.gameWIDTH + 2 * ENGINE.sideWIDTH + 4);
-        ENGINE.addBOX("TITLE", ENGINE.titleWIDTH, ENGINE.titleHEIGHT, ["title", "compassRose", "compassNeedle", "lives", "minimap", "gold"], null);
-        ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback", "health"], "side");
-        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "3d_webgl", "info", "text", "FPS", "button", "click"], "side");
-        ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback", "keys", "time", "scrolls", "orbs", "skills"], "fside");
-        ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText", "save", "subtitle"], null);
+        ENGINE.addBOX("TITLE", ENGINE.titleWIDTH, ENGINE.titleHEIGHT, ["title"], null);
+        ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback"], "side");
+        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "board", "front", "text", "FPS", "button", "click"], "side");
+        ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback",], "fside");
+        ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText"], null);
 
 
         /** dev settings */
@@ -148,18 +148,12 @@ const GAME = {
 
         GAME.fps = new FPS_short_term_measurement(300);
         GAME.prepareForRestart();
-        GAME.levelStart();
-    },
-    levelStart() {
-        console.log("starting level", GAME.level);
-        GAME.continueLevel(GAME.level);
-    },
-    continueLevel(level) {
         GAME.levelExecute();
     },
     levelExecute() {
         console.error("GAME starts, but it is not programmed");
         //GAME.drawFirstFrame(GAME.level);
+        ENGINE.GAME.ANIMATION.next(GAME.run);
     },
     prepareForRestart() {
         let clear = ["background", "text", "FPS", "button", "bottomText"];
@@ -206,11 +200,10 @@ const GAME = {
         if (ENGINE.GAME.stopAnimation) return;
         //const date = Date.now();
         GAME.respond(lapsedTime);
-        ENGINE.TIMERS.update();
+        //ENGINE.TIMERS.update();
 
         GAME.frameDraw(lapsedTime);
-        if (HERO.dead) IAM.checkIfProcessesComplete([EXPLOSION3D], HERO.death);
-        if (GAME.completed) GAME.won();
+        //if (GAME.completed) GAME.won();
     },
     frameDraw(lapsedTime) {
         if (DEBUG.FPS) {
@@ -221,8 +214,8 @@ const GAME = {
     respond(lapsedTime) {
         //if (HERO.dead) return;
 
-        HERO.player.respond(lapsedTime);
-        WebGL.GAME.respond(lapsedTime);
+        //HERO.player.respond(lapsedTime);
+        //WebGL.GAME.respond(lapsedTime);
         ENGINE.GAME.respond(lapsedTime);
 
         const map = ENGINE.GAME.keymap;
@@ -244,7 +237,7 @@ const GAME = {
         }
 
         //controls
-        
+
 
         return;
     },
@@ -316,9 +309,7 @@ const TITLE = {
         ENGINE.GAME.ANIMATION.next(GAME.runTitle);
     },
     clearAllLayers() {
-        ENGINE.layersToClear = new Set(["text",
-            "sideback", "button", "title", "FPS", "keys", "info", "subtitle", "compassRose", "compassNeedle", "health", "lives", "skills", "gold", "time", "orbs", "scrolls", "save",
-            "bottomText", "minimap"]);
+        ENGINE.layersToClear = new Set(["text", "sideback", "button", "title", "FPS", "bottomText"]);
         ENGINE.clearLayerStack();
     },
     blackBackgrounds() {
@@ -345,7 +336,7 @@ const TITLE = {
         // Create a linear gradient from (x, y) to (w, h)
         let grad = CTX.createLinearGradient(x, y, w, h);
 
-        grad.addColorStop(0.00, "#0000AA"); 
+        grad.addColorStop(0.00, "#0000AA");
         grad.addColorStop(0.05, "#0000BB");
         grad.addColorStop(0.10, "#0000CC");
         grad.addColorStop(0.15, "#0000DD");
@@ -399,11 +390,6 @@ const TITLE = {
 
         const buttonColors = new ColorInfo("#F00", "#A00", "#222", "#666", 13);
         const musicColors = new ColorInfo("#0E0", "#090", "#222", "#666", 13);
-        //const checkpointColors = new ColorInfo("#FFF", "#AAA", "#222", "#888", 13);
-        //const prevColors = new ColorInfo("#00F", "#00D", "#222", "#666", 13);
-
-        //let prevBA = new Area(x, y, w, h);
-        //FORM.BUTTON.POOL.push(new Button("Previously", prevBA, prevColors, TITLE.previously));
 
         y += F * h;
         let startBA = new Area(x, y, w, h);
@@ -419,7 +405,7 @@ const TITLE = {
     },
     firstFrame() {
         TITLE.titlePlot();
-   
+        ENGINE.clearLayer("bottomText");
     },
     music() {
         AUDIO.Title.play();
