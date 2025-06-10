@@ -39,7 +39,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.1.4",
+    VERSION: "0.1.5",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -144,6 +144,7 @@ const BOARD = {
     drawFront() {
         let CTX = LAYER.front;
         const GS = ENGINE.INI.GRIDPIX;
+        const GS2 = Math.floor(GS / 2);
         console.log("drawing front grid", CTX);
         for (let x = 0; x < INI.COLS; x++) {
             for (let y = 0; y < INI.ROWS; y++) {
@@ -152,13 +153,13 @@ const BOARD = {
             }
         }
         // draw col labels
-        const fs = 48;
+        const fs = 42;
         CTX.font = `${fs}px CompSmooth`;
         CTX.textAlign = "center";
         CTX.fillStyle = "rgba(100, 100, 100, 0.3)";
         for (let x = 0; x < INI.COLS; x++) {
             const y = GS * 0.75;
-            CTX.fillText(x + 1, x * GS + INI.LEFT_X + GS / 2, y);
+            CTX.fillText(x + 1, x * GS + INI.LEFT_X + GS2, y);
         }
 
     },
