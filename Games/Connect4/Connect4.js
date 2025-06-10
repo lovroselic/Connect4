@@ -24,18 +24,22 @@ const DEBUG = {
     FPS: true,
     VERBOSE: true,
     max17: false,
+    keys: true,
 };
 
 const INI = {
-    SCREEN_BORDER: 256,
+    SCREEN_BORDER: 16,
     ROWS: 6,
     COLS: 7,
     INROW: 4,
-
+    GRIDSIZE: 100,
+    LEFT_X: -1,
+    RADIUS_FACTOR: 0.4,
+    RADIUS: null,
 };
 
 const PRG = {
-    VERSION: "0.1.3",
+    VERSION: "0.1.4",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -83,7 +87,7 @@ const PRG = {
 
         //boxes
         ENGINE.gameWIDTH = 1024;
-        ENGINE.titleWIDTH = 1280 + INI.SCREEN_BORDER;
+        ENGINE.titleWIDTH = ENGINE.gameWIDTH + 2 * INI.SCREEN_BORDER;
         ENGINE.sideWIDTH = ENGINE.titleWIDTH - ENGINE.gameWIDTH - INI.SCREEN_BORDER;
         ENGINE.gameHEIGHT = 768;
         ENGINE.titleHEIGHT = 96;
@@ -94,7 +98,7 @@ const PRG = {
         $(ENGINE.gameWindowId).width(ENGINE.gameWIDTH + 2 * ENGINE.sideWIDTH + 4);
         ENGINE.addBOX("TITLE", ENGINE.titleWIDTH, ENGINE.titleHEIGHT, ["title"], null);
         ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback"], "side");
-        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "board", "front", "text", "FPS", "button", "click"], "side");
+        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "board", "front", "grid", "col_labels", "text", "FPS", "button", "click"], "side");
         ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback",], "fside");
         ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText"], null);
 
@@ -106,7 +110,15 @@ const PRG = {
         }
         //WebGL.PRUNE = false;
 
-        
+        /* Connect-4 overrides */
+        ENGINE.setGridSize(INI.GRIDSIZE);
+        console.warn();
+        MAPDICT.RED = 1;
+        MAPDICT.BLUE = 2;
+
+        INI.LEFT_X = (ENGINE.gameWIDTH - INI.COLS * ENGINE.INI.GRIDPIX) / 2;
+        INI.RADIUS = Math.round(INI.RADIUS_FACTOR * ENGINE.INI.GRIDPIX);
+
     },
     start() {
         console.log("%c**************************************************************************************************************************************", PRG.CSS);
@@ -128,9 +140,55 @@ const PRG = {
     }
 };
 
+const BOARD = {
+    drawFront() {
+        let CTX = LAYER.front;
+        const GS = ENGINE.INI.GRIDPIX;
+        console.log("drawing front grid", CTX);
+        for (let x = 0; x < INI.COLS; x++) {
+            for (let y = 0; y < INI.ROWS; y++) {
+                let grid = new Grid(x, y);
+                this.drawCoverItem(CTX, grid);
+            }
+        }
+        // draw col labels
+        const fs = 48;
+        CTX.font = `${fs}px CompSmooth`;
+        CTX.textAlign = "center";
+        CTX.fillStyle = "rgba(100, 100, 100, 0.3)";
+        for (let x = 0; x < INI.COLS; x++) {
+            const y = GS * 0.75;
+            CTX.fillText(x + 1, x * GS + INI.LEFT_X + GS / 2, y);
+        }
 
+    },
+    drawCoverItem(CTX, grid) {
+        //console.log(".drawing Cover item", grid);
+        const GS = ENGINE.INI.GRIDPIX;
+        let OFF = GS / 2;
+        let x = grid.x * GS + INI.LEFT_X;
+        let y = ENGINE.gameHEIGHT - (grid.y + 1) * GS;
+        console.log("x,y", x, y);
+        CTX.save();
+        CTX.translate(OFF, OFF);
+
+        // Clipping path
+        CTX.beginPath();
+        CTX.rect(x - OFF, y - OFF, GS, GS);                             // Outer rectangle
+        CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, true);                // Hole anticlockwise¸
+        CTX.clip();
+
+        //background
+        CTX.fillStyle = "#228B22";
+        CTX.fillRect(x - OFF, y - OFF, GS, GS);
+        CTX.restore();
+    },
+    drawContent() { },
+    drawCircle() { },
+};
 
 const GAME = {
+    map: null,
     start() {
         console.log("GAME started");
         if (AUDIO.Title) {
@@ -150,14 +208,15 @@ const GAME = {
         ENGINE.GAME.setGameLoop(GAME.run);
         ENGINE.GAME.start(16);
         GAME.completed = false;
+        GAME.map = new GridArray(INI.COLS, INI.ROWS);
 
         GAME.fps = new FPS_short_term_measurement(300);
         GAME.prepareForRestart();
         GAME.levelExecute();
     },
     levelExecute() {
-        console.error("GAME starts, but it is not programmed");
-        //GAME.drawFirstFrame(GAME.level);
+        console.error("GAME starts");
+        GAME.drawFirstFrame();
         ENGINE.GAME.ANIMATION.next(GAME.run);
     },
     prepareForRestart() {
@@ -197,9 +256,10 @@ const GAME = {
     titleFrameDraw() {
         GAME.movingText.draw();
     },
-    drawFirstFrame(level) {
+    drawFirstFrame() {
         if (DEBUG.VERBOSE) console.log("drawing first frame");
         TITLE.firstFrame();
+        BOARD.drawFront();
     },
     run(lapsedTime) {
         if (ENGINE.GAME.stopAnimation) return;
@@ -215,7 +275,6 @@ const GAME = {
             GAME.FPS(lapsedTime);
         }
     },
-
     respond(lapsedTime) {
         //if (HERO.dead) return;
 
@@ -231,6 +290,9 @@ const GAME = {
         }
         if (map[ENGINE.KEY.map.F8]) {
             if (!DEBUG.keys) return;
+            console.log("#####################################");
+            console.info("BOARD", GAME.map);
+            console.log("#####################################");
             ENGINE.GAME.keymap[ENGINE.KEY.map.F8] = false;
         }
         if (map[ENGINE.KEY.map.F9]) {
