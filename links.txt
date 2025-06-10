@@ -1,6 +1,0 @@
-https://github.com/SoundNandu/Connect-4-Reinforcement-learning
-https://github.com/codebox/connect4
-https://github.com/RLeike/connect-four
-https://medium.com/@louisdhulst/training-a-deep-q-learning-network-for-connect-4-9694e56cb806
-
-https://www.kaggle.com/code/alexisbcook/deep-reinforcement-learning
