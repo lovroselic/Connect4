@@ -35,7 +35,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.1.2",
+    VERSION: "0.1.3",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -59,7 +59,7 @@ const PRG = {
     setup() {
         if (DEBUG.SETTING) {
             $("#engine_version").html(ENGINE.VERSION);
-            //$("#grid_version").html(GRID.VERSION);
+            $("#grid_version").html(GRID.VERSION);
             //$("#maze_version").html(DUNGEON.VERSION);
             //$("#iam_version").html(IndexArrayManagers.VERSION);
             $("#lib_version").html(LIB.VERSION);
