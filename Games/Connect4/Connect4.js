@@ -39,7 +39,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.1.5",
+    VERSION: "0.1.6",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -102,23 +102,19 @@ const PRG = {
         ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback",], "fside");
         ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText"], null);
 
-
-        /** dev settings */
-        if (DEBUG.VERBOSE) {
-            ENGINE.verbose = true;
-
-        }
-        //WebGL.PRUNE = false;
-
         /* Connect-4 overrides */
         ENGINE.setGridSize(INI.GRIDSIZE);
-        console.warn();
         MAPDICT.RED = 1;
         MAPDICT.BLUE = 2;
 
         INI.LEFT_X = (ENGINE.gameWIDTH - INI.COLS * ENGINE.INI.GRIDPIX) / 2;
         INI.RADIUS = Math.round(INI.RADIUS_FACTOR * ENGINE.INI.GRIDPIX);
 
+        /** dev settings */
+        if (DEBUG.VERBOSE) {
+            ENGINE.verbose = true;
+
+        }
     },
     start() {
         console.log("%c**************************************************************************************************************************************", PRG.CSS);
@@ -164,28 +160,31 @@ const BOARD = {
 
     },
     drawCoverItem(CTX, grid) {
-        //console.log(".drawing Cover item", grid);
         const GS = ENGINE.INI.GRIDPIX;
         let OFF = GS / 2;
         let x = grid.x * GS + INI.LEFT_X;
         let y = ENGINE.gameHEIGHT - (grid.y + 1) * GS;
-        console.log("x,y", x, y);
         CTX.save();
         CTX.translate(OFF, OFF);
-
-        // Clipping path
-        CTX.beginPath();
+        CTX.beginPath();                                                // Clipping path - only clip will be visible
         CTX.rect(x - OFF, y - OFF, GS, GS);                             // Outer rectangle
         CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, true);                // Hole anticlockwise¸
         CTX.clip();
-
-        //background
-        CTX.fillStyle = "#228B22";
+        CTX.fillStyle = "#228B22";                                      //background
         CTX.fillRect(x - OFF, y - OFF, GS, GS);
         CTX.restore();
     },
     drawContent() { },
     drawCircle() { },
+    debugBoard() {
+        console.info("debugBoard", GAME.map);
+        //reds
+        GAME.map.toRed(new Grid(0, 0));
+        GAME.map.toRed(new Grid(0, INI.ROWS - 1));
+        //blues
+        GAME.map.toBlue(new Grid(INI.COLS - 1, 0));
+        GAME.map.toBlue(new Grid(INI.COLS - 1, INI.ROWS - 1));
+    },
 };
 
 const GAME = {
@@ -209,10 +208,11 @@ const GAME = {
         ENGINE.GAME.setGameLoop(GAME.run);
         ENGINE.GAME.start(16);
         GAME.completed = false;
-        GAME.map = new GridArray(INI.COLS, INI.ROWS);
-
+        //GAME.map = new GridArray(INI.COLS, INI.ROWS);
+        GAME.map = new C4Grid(INI.COLS, INI.ROWS);
         GAME.fps = new FPS_short_term_measurement(300);
         GAME.prepareForRestart();
+        BOARD.debugBoard();
         GAME.levelExecute();
     },
     levelExecute() {
@@ -228,8 +228,6 @@ const GAME = {
     },
     setup() {
         console.log("GAME SETUP started");
-        $("#conv").remove();
-
     },
     setTitle() {
         const text = GAME.generateTitleText();
