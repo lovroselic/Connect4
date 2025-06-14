@@ -42,7 +42,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.2.0",
+    VERSION: "0.2.1",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -212,7 +212,6 @@ const BOARD = {
         if (GAME.map.isZero(grid)) return;
         let OFF = ENGINE.INI.GRIDPIX / 2;
         const value = GAME.map.getValue(grid);
-        console.info("draw circle", grid, value);
         let color = null;
 
         if (value === MAPDICT.RED) {
@@ -241,6 +240,14 @@ const BOARD = {
         console.info("debugBoard", GAME.map);
     },
 };
+
+const AGENT = {
+    human() { }
+};
+
+const AGENT_MANAGER = {};
+
+const TURN_MANAGER = {};
 
 const GAME = {
     map: null,
@@ -282,6 +289,12 @@ const GAME = {
     },
     setup() {
         console.log("GAME SETUP started");
+        for (let agent of Object.keys(AGENT)) {
+            for (let player of ["Red", "Blue"]) {
+                const id = `${player}_${agent}`;
+                console.log("id", id);
+            }
+        }
     },
     setTitle() {
         const text = GAME.generateTitleText();
