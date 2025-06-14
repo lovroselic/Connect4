@@ -39,7 +39,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.1.7",
+    VERSION: "0.1.8",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -140,7 +140,7 @@ const BOARD = {
     drawFront() {
         let CTX = LAYER.front;
         const GS = ENGINE.INI.GRIDPIX;
-        const GS2 = Math.floor(GS / 2);
+
         console.log("drawing front grid", CTX);
         for (let x = 0; x < INI.COLS; x++) {
             for (let y = 0; y < INI.ROWS; y++) {
@@ -148,7 +148,25 @@ const BOARD = {
                 this.drawCoverItem(CTX, grid);
             }
         }
-        // draw col labels
+        this.drawTopGrid(CTX, GS);
+        this.drawColLabels(CTX, GS);
+    },
+    drawTopGrid(CTX, GS) {
+        CTX.save();
+        CTX.strokeStyle = "#333";
+        CTX.setLineDash([1, 2]);
+        let x = INI.LEFT_X;
+        let y = ENGINE.gameHEIGHT - (INI.ROWS + 1) * GS;
+        for (let i = 0; i < INI.COLS; i++) {
+            CTX.beginPath();
+            CTX.rect(x, y, GS, GS);
+            CTX.stroke();
+            x += GS;
+        }
+        CTX.restore();
+    },
+    drawColLabels(CTX, GS) {
+        const GS2 = Math.floor(GS / 2);
         const fs = 42;
         CTX.font = `${fs}px CompSmooth`;
         CTX.textAlign = "center";
@@ -157,7 +175,6 @@ const BOARD = {
             const y = GS * 0.75;
             CTX.fillText(x + 1, x * GS + INI.LEFT_X + GS2, y);
         }
-
     },
     drawCoverItem(CTX, grid) {
         const GS = ENGINE.INI.GRIDPIX;
