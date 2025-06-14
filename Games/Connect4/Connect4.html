@@ -20,9 +20,33 @@
             <div id="load"></div>
             <div class="row win">
                 <h1 id="title" class="C4"></h1>
-                <p>text</p>
+                <p>Connect four is ...</p>
+                <hr class="crimson-hr">
                 <div id="setup" class="row">
-
+                    <div class="col-4">
+                        <label for="select_player_start">
+                            Which player starts first:
+                        </label>
+                        <select name="select_player_start" id="select_player_start">
+                            <option value="random" selected="selected">Random</option>
+                            <option value="red">Red</option>
+                            <option value="blue">Blue</option>
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <label for="red_player_agents">Red player agent:</label>
+                        <select name="red_player_agents" id="red_player_agents"></select>
+                        <br>
+                        <label for="red_player_name">Red player name:</label>
+                        <input type="text" id="red_player_name" value="Red"></input>
+                    </div>
+                    <div class="col-4">
+                        <label for="blue_player_agents">Blue player agent:</label>
+                        <select name="blue_player_agents" id="blue_player_agents"></select>
+                        <br>
+                        <label for="blue_player_name">Blue player name:</label>
+                        <input type="text" id="blue_player_name" value="Blue"></input>
+                    </div>
                 </div>
             </div>
         </div>
