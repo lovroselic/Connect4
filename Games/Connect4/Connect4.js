@@ -14,6 +14,9 @@ known bugs:
 
 retests:
 
+engine changes:
+    - GRID : REVERSE DICT ENGINE  VERBOSE bug corrected;;
+
 
  */
 ////////////////////////////////////////////////////
@@ -39,7 +42,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.1.8",
+    VERSION: "0.1.9",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -114,6 +117,8 @@ const PRG = {
         if (DEBUG.VERBOSE) {
             ENGINE.verbose = true;
 
+            console.warn(" *** verbose setting ***");
+            console.warn("ENGINE:", ENGINE.verbose);
         }
     },
     start() {
@@ -127,7 +132,6 @@ const PRG = {
         if (SPEECH.VERBOSE) {
             console.info("SPEECH available voices");
             console.table(SPEECH.voices);
-            console.info(SPEECH.voices);
         }
 
         $("#startGame").addClass("hidden");
@@ -141,7 +145,6 @@ const BOARD = {
         let CTX = LAYER.front;
         const GS = ENGINE.INI.GRIDPIX;
 
-        console.log("drawing front grid", CTX);
         for (let x = 0; x < INI.COLS; x++) {
             for (let y = 0; y < INI.ROWS; y++) {
                 let grid = new Grid(x, y);
@@ -179,8 +182,7 @@ const BOARD = {
     drawCoverItem(CTX, grid) {
         const GS = ENGINE.INI.GRIDPIX;
         let OFF = GS / 2;
-        let x = grid.x * GS + INI.LEFT_X;
-        let y = ENGINE.gameHEIGHT - (grid.y + 1) * GS;
+        const [x, y] = this.gridToCoord(grid);
         CTX.save();
         CTX.translate(OFF, OFF);
         CTX.beginPath();                                                // Clipping path - only clip will be visible
@@ -191,10 +193,42 @@ const BOARD = {
         CTX.fillRect(x - OFF, y - OFF, GS, GS);
         CTX.restore();
     },
-    drawContent() { },
-    drawCircle() { },
+    gridToCoord(grid) {
+        const GS = ENGINE.INI.GRIDPIX;
+        let x = grid.x * GS + INI.LEFT_X;
+        let y = ENGINE.gameHEIGHT - (grid.y + 1) * GS;
+        return [x, y];
+    },
+    drawContent() {
+        let CTX = LAYER.grid;
+        for (let x = 0; x < INI.COLS; x++) {
+            for (let y = 0; y < INI.ROWS; y++) {
+                let grid = new Grid(x, y);
+                this.drawCircle(CTX, grid);
+            }
+        }
+    },
+    drawCircle(CTX, grid) {
+        if (GAME.map.isZero(grid)) return;
+        let OFF = ENGINE.INI.GRIDPIX / 2;
+        const value = GAME.map.getValue(grid);
+        console.info("draw circle", grid, value);
+        let color = null;
+
+        if (value === MAPDICT.RED) {
+            color = "#FF0000";
+        } else color = "#0000FF";
+
+        const [x, y] = this.gridToCoord(grid);
+        CTX.fillStyle = color;
+        CTX.save();
+        CTX.translate(OFF, OFF);
+        CTX.beginPath();
+        CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, false);
+        CTX.fill();
+        CTX.restore();
+    },
     debugBoard() {
-        console.info("debugBoard", GAME.map);
         //reds
         GAME.map.toRed(new Grid(0, 0));
         GAME.map.toRed(new Grid(0, INI.ROWS - 1));
@@ -203,6 +237,8 @@ const BOARD = {
         GAME.map.toBlue(new Grid(INI.COLS - 1, INI.ROWS - 1));
         //red top row
         GAME.map.toRed(new Grid(0, INI.ROWS));
+        //
+        console.info("debugBoard", GAME.map);
     },
 };
 
@@ -230,7 +266,7 @@ const GAME = {
         GAME.map = new C4Grid(INI.COLS, INI.ROWS + 1);
         GAME.fps = new FPS_short_term_measurement(300);
         GAME.prepareForRestart();
-        BOARD.debugBoard();
+        //BOARD.debugBoard();
         GAME.levelExecute();
     },
     levelExecute() {
@@ -277,6 +313,7 @@ const GAME = {
         if (DEBUG.VERBOSE) console.log("drawing first frame");
         TITLE.firstFrame();
         BOARD.drawFront();
+        BOARD.drawContent();
     },
     run(lapsedTime) {
         if (ENGINE.GAME.stopAnimation) return;
