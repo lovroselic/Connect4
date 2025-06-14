@@ -39,7 +39,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.1.6",
+    VERSION: "0.1.7",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -184,6 +184,8 @@ const BOARD = {
         //blues
         GAME.map.toBlue(new Grid(INI.COLS - 1, 0));
         GAME.map.toBlue(new Grid(INI.COLS - 1, INI.ROWS - 1));
+        //red top row
+        GAME.map.toRed(new Grid(0, INI.ROWS));
     },
 };
 
@@ -208,8 +210,7 @@ const GAME = {
         ENGINE.GAME.setGameLoop(GAME.run);
         ENGINE.GAME.start(16);
         GAME.completed = false;
-        //GAME.map = new GridArray(INI.COLS, INI.ROWS);
-        GAME.map = new C4Grid(INI.COLS, INI.ROWS);
+        GAME.map = new C4Grid(INI.COLS, INI.ROWS + 1);
         GAME.fps = new FPS_short_term_measurement(300);
         GAME.prepareForRestart();
         BOARD.debugBoard();
