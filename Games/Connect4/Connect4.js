@@ -39,10 +39,12 @@ const INI = {
     LEFT_X: -1,
     RADIUS_FACTOR: 0.4,
     RADIUS: null,
+    OVER_TURN: 6 * 7 + 1,
+    MIN_END_TURN: 4 + 3,
 };
 
 const PRG = {
-    VERSION: "0.2.3",
+    VERSION: "0.2.4",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -103,7 +105,7 @@ const PRG = {
         ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback", "red"], "side");
         ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "board", "front", "grid", "col_labels", "text", "FPS", "button", "click"], "side");
         ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback", "blue",], "fside");
-        ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText"], null);
+        ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText", "subtitle"], null);
 
         /* Connect-4 overrides */
         ENGINE.setGridSize(INI.GRIDSIZE);
@@ -252,15 +254,95 @@ const BOARD = {
 };
 
 const AGENT = {
-    Human() { },
-    Random() { }
+    Human() {
+        console.info("*** Human ***");
+        console.time("human");
+
+        console.timeEnd("human");
+        console.info("*************\n");
+    },
+    Random() {
+        console.info("*** Random ***");
+        console.time("random");
+        let legal_moves = AGENT_MANAGER.getLegalMoves();
+        console.log(".legal_moves", legal_moves);
+
+        console.timeEnd("random");
+        console.info("*************\n");
+    }
 };
 
-const AGENT_MANAGER = {};
+const AGENT_MANAGER = {
+    //map --> GAME.map
+    getLegalMoves() {
+        const legalMoves = [];
+        for (let c = 0; c < INI.COLS; c++) {
+            let grid = new Grid(c, INI.ROWS - 1);
+            if (GAME.map.isZero(grid)) legalMoves.push(c);
+        }
+        return legalMoves;
+    }
+};
 
 const TURN_MANAGER = {
-    init() { },
-    next() { },
+    nextPlayerIndex: null,
+    players: ["red", "blue"],
+    turn_completed: null,
+    turn: null,
+    agent: {
+        red: null,
+        blue: null
+    },
+    mode: 1,                        //game (default)
+    init() {
+        const next = $("#select_player_start")[0].value;
+        switch (next) {
+            case "red":
+                this.nextPlayerIndex = 0;
+                break;
+            case "blue":
+                this.nextPlayerIndex = 1;
+                break;
+            case "random":
+                this.nextPlayerIndex = RND(0, 1);
+                break;
+        }
+        if ($('input[name="mode"]:checked').val() === "analyze") this.mode = 0;
+        this.turn = 0;
+        this.turn_completed = true;
+        this.agent.red = $("#red_player_agents")[0].value;
+        this.agent.blue = $("#blue_player_agents")[0].value;
+        /////////////
+        console.info("Agents:");
+        console.table(TURN_MANAGER.agent);
+        console.info("Mode:", this.mode);
+    },
+    getPlayer() {
+        let player = this.players[this.nextPlayerIndex];
+        this.nextPlayerIndex++;
+        this.nextPlayerIndex %= 2;
+        return player;
+    },
+    nextPlayer() {
+        this.turn++;
+        if (this.turn === INI.OVER_TURN) {
+            //game is tied
+            throw `Tied game from overturn on turn ${this.turn}!`;
+        }
+
+        let player = this.getPlayer();
+        console.log(`Turn ${this.turn}, player: ${player}, agent: ${this.agent[player]}`);
+        const move = AGENT[this.agent[player]]();
+        console.log(".move", move);
+        console.log("-------------------------------\n");
+    },
+    applyMove(move) {
+        console.log(".. applying move", move);
+    },
+    animateMove() { },
+    manage() {
+        if (this.turn_completed) this.nextPlayer();
+    }
 };
 
 const GAME = {
@@ -287,6 +369,7 @@ const GAME = {
         GAME.map = new C4Grid(INI.COLS, INI.ROWS + 1);
         GAME.fps = new FPS_short_term_measurement(300);
         GAME.prepareForRestart();
+        TURN_MANAGER.init();
         //BOARD.debugBoard();
         GAME.levelExecute();
     },
@@ -296,7 +379,7 @@ const GAME = {
         ENGINE.GAME.ANIMATION.next(GAME.run);
     },
     prepareForRestart() {
-        let clear = ["background", "text", "FPS", "button", "bottomText"];
+        let clear = ["background", "text", "FPS", "button", "bottomText", "subtitle"];
         ENGINE.clearManylayers(clear);
         TITLE.blackBackgrounds();
         ENGINE.TIMERS.clear();
@@ -349,6 +432,7 @@ const GAME = {
         if (ENGINE.GAME.stopAnimation) return;
         //const date = Date.now();
         GAME.respond(lapsedTime);
+        TURN_MANAGER.manage();
         //ENGINE.TIMERS.update();
 
         GAME.frameDraw(lapsedTime);
@@ -461,7 +545,7 @@ const TITLE = {
         ENGINE.GAME.ANIMATION.next(GAME.runTitle);
     },
     clearAllLayers() {
-        ENGINE.layersToClear = new Set(["text", "sideback", "button", "title", "FPS", "bottomText"]);
+        ENGINE.layersToClear = new Set(["text", "sideback", "button", "title", "FPS", "bottomText", "subtitle"]);
         ENGINE.clearLayerStack();
     },
     blackBackgrounds() {
