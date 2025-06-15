@@ -44,7 +44,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.2.4",
+    VERSION: "0.2.5",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -284,6 +284,13 @@ const AGENT_MANAGER = {
     }
 };
 
+class Token {
+    constructor(move) {
+        this.move = move;
+
+    }
+}
+
 const TURN_MANAGER = {
     nextPlayerIndex: null,
     players: ["red", "blue"],
@@ -294,6 +301,7 @@ const TURN_MANAGER = {
         blue: null
     },
     mode: 1,                        //game (default)
+    token: null,
     init() {
         const next = $("#select_player_start")[0].value;
         switch (next) {
@@ -334,12 +342,23 @@ const TURN_MANAGER = {
         console.log(`Turn ${this.turn}, player: ${player}, agent: ${this.agent[player]}`);
         const move = AGENT[this.agent[player]]();
         console.log(".move", move);
+        if (this.mode) {
+            this.setMove(move);
+        } else this.applyMove(move);
+
+        //calculate and draw score
+        //check if player has won
         console.log("-------------------------------\n");
+    },
+    setMove(move) {
+        console.log(".. setting move", move);
     },
     applyMove(move) {
         console.log(".. applying move", move);
     },
-    animateMove() { },
+    animateMove() {
+        console.log("... animating move", this.token);
+    },
     manage() {
         if (this.turn_completed) this.nextPlayer();
     }
@@ -433,6 +452,7 @@ const GAME = {
         //const date = Date.now();
         GAME.respond(lapsedTime);
         TURN_MANAGER.manage();
+        if (TURN_MANAGER.token) TURN_MANAGER.animateMove();
         //ENGINE.TIMERS.update();
 
         GAME.frameDraw(lapsedTime);
