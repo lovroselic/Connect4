@@ -42,7 +42,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.2.1",
+    VERSION: "0.2.2",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -242,12 +242,16 @@ const BOARD = {
 };
 
 const AGENT = {
-    human() { }
+    Human() { },
+    Random() { }
 };
 
 const AGENT_MANAGER = {};
 
-const TURN_MANAGER = {};
+const TURN_MANAGER = {
+    init() { },
+    next() { },
+};
 
 const GAME = {
     map: null,
@@ -290,10 +294,13 @@ const GAME = {
     setup() {
         console.log("GAME SETUP started");
         for (let agent of Object.keys(AGENT)) {
-            for (let player of ["Red", "Blue"]) {
-                const id = `${player}_${agent}`;
-                console.log("id", id);
+            for (let player of ["red", "blue"]) {
+                $(`#${player}_player_agents`).append(`<option value="${agent}">${agent}</option>`);
             }
+        }
+        //defaults to random
+        for (let player of ["red", "blue"]) {
+            $(`#${player}_player_agents`).val("Random");
         }
     },
     setTitle() {

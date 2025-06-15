@@ -22,6 +22,12 @@
                 <h1 id="title" class="C4"></h1>
                 <p>Connect four is ...</p>
                 <hr class="crimson-hr">
+                <p class="fw-bold"> Agents explained:</p>
+                <p><span class="fw-bold">Human:</span> That's you! Or your mate. Takes input from the keyboard (1..7 for
+                    column).</p>
+                <p><span class="fw-bold">Random:</span> Take completely random turn. No much fun to play against this
+                    one. But was very useful for testing.</p>
+                <hr class="crimson-hr">
                 <div id="setup" class="row">
                     <div class="col-4">
                         <label for="select_player_start">
@@ -32,20 +38,41 @@
                             <option value="red">Red</option>
                             <option value="blue">Blue</option>
                         </select>
+                        <div>
+                            <fieldset>
+                                <legend>Mode:</legend>
+                                <input type="radio" id="game_mode" value="game" checked>
+                                <label for="game_mode">Game</label>
+                                <br>
+                                <input type="radio" id="analyze_mode" value="analyze">
+                                <label for="analyze_mode">Analyze</label>
+                                <br>
+                                <label for="number_of_runs">Number of runs</label>
+                                <input type="number" min="5" max="100" value="20" id="number_of_runs" disabled>
+
+                            </fieldset>
+                        </div>
                     </div>
                     <div class="col-4">
-                        <label for="red_player_agents">Red player agent:</label>
-                        <select name="red_player_agents" id="red_player_agents"></select>
-                        <br>
-                        <label for="red_player_name">Red player name:</label>
-                        <input type="text" id="red_player_name" value="Red"></input>
+                        <fieldset>
+                            <legend>Red:</legend>
+                            <label for="red_player_agents">Red player agent:</label>
+                            <select name="red_player_agents" id="red_player_agents"></select>
+                            <br>
+                            <label for="red_player_name">Red player name:</label>
+                            <input type="text" id="red_player_name" value="Red"></input>
+                        </fieldset>
                     </div>
                     <div class="col-4">
-                        <label for="blue_player_agents">Blue player agent:</label>
-                        <select name="blue_player_agents" id="blue_player_agents"></select>
-                        <br>
-                        <label for="blue_player_name">Blue player name:</label>
-                        <input type="text" id="blue_player_name" value="Blue"></input>
+                        <fieldset>
+                            <legend>Blue:</legend>
+                            <label for="blue_player_agents">Blue player agent:</label>
+                            <select name="blue_player_agents" id="blue_player_agents"></select>
+                            <br>
+                            <label for="blue_player_name">Blue player name:</label>
+                            <input type="text" id="blue_player_name" value="Blue"></input>
+                        </fieldset>
+
                     </div>
                 </div>
             </div>
