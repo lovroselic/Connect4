@@ -31,7 +31,7 @@ const DEBUG = {
 };
 
 const INI = {
-    SCREEN_BORDER: 16,
+    SCREEN_BORDER: 196,
     ROWS: 6,
     COLS: 7,
     INROW: 4,
@@ -42,7 +42,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.2.2",
+    VERSION: "0.2.3",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -100,9 +100,9 @@ const PRG = {
         $("#bottom").css("margin-top", ENGINE.gameHEIGHT + ENGINE.titleHEIGHT + ENGINE.bottomHEIGHT);
         $(ENGINE.gameWindowId).width(ENGINE.gameWIDTH + 2 * ENGINE.sideWIDTH + 4);
         ENGINE.addBOX("TITLE", ENGINE.titleWIDTH, ENGINE.titleHEIGHT, ["title"], null);
-        ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback"], "side");
+        ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback", "red"], "side");
         ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "board", "front", "grid", "col_labels", "text", "FPS", "button", "click"], "side");
-        ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback",], "fside");
+        ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback", "blue",], "fside");
         ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText"], null);
 
         /* Connect-4 overrides */
@@ -112,6 +112,16 @@ const PRG = {
 
         INI.LEFT_X = (ENGINE.gameWIDTH - INI.COLS * ENGINE.INI.GRIDPIX) / 2;
         INI.RADIUS = Math.round(INI.RADIUS_FACTOR * ENGINE.INI.GRIDPIX);
+
+        /**¸DOM setup */
+
+        $("#game_mode").on("click", () => {
+            $("#number_of_runs").prop("disabled", true);
+        });
+
+        $("#analyze_mode").on("click", () => {
+            $("#number_of_runs").prop("disabled", false);
+        });
 
         /** dev settings */
         if (DEBUG.VERBOSE) {
@@ -432,6 +442,7 @@ const GAME = {
 };
 
 const TITLE = {
+    scoreY: null,
     stack: {
     },
     startTitle() {
@@ -547,9 +558,34 @@ const TITLE = {
     firstFrame() {
         TITLE.titlePlot();
         ENGINE.clearLayer("bottomText");
+        TITLE.side();
     },
     music() {
         AUDIO.Title.play();
+    },
+    side() {
+        const y = ENGINE.gameHEIGHT / 2;
+        const X = 16;
+        const fs = 15;
+
+        //red
+        let CTX = LAYER.red;
+        CTX.textAlign = "left";
+        CTX.fillStyle = "red";
+        CTX.font = `${fs}px CompSmooth`;
+        CTX.fillText(`Name: ${$("#red_player_name")[0].value}`, X, y);
+        CTX.fillText(`Agent: ${$("#red_player_agents")[0].value}`, X, y + 1.5 * fs);
+
+        //blue
+        CTX = LAYER.blue;
+        CTX.textAlign = "left";
+        CTX.fillStyle = "blue";
+        CTX.font = `${fs}px CompSmooth`;
+        CTX.fillText(`Name: ${$("#blue_player_name")[0].value}`, X, y);
+        CTX.fillText(`Agent: ${$("#blue_player_agents")[0].value}`, X, y + 1.5 * fs);
+
+        //stack coords
+        this.scoreY = y + 4 + fs;
     }
 };
 
