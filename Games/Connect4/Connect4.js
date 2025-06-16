@@ -44,7 +44,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.2.5",
+    VERSION: "0.2.6",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -103,7 +103,7 @@ const PRG = {
         $(ENGINE.gameWindowId).width(ENGINE.gameWIDTH + 2 * ENGINE.sideWIDTH + 4);
         ENGINE.addBOX("TITLE", ENGINE.titleWIDTH, ENGINE.titleHEIGHT, ["title"], null);
         ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback", "red"], "side");
-        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "board", "front", "grid", "col_labels", "text", "FPS", "button", "click"], "side");
+        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "token", "board", "front", "grid", "col_labels", "text", "FPS", "button", "click"], "side");
         ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback", "blue",], "fside");
         ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText", "subtitle"], null);
 
@@ -187,7 +187,7 @@ const BOARD = {
         CTX.textAlign = "center";
         CTX.fillStyle = "rgba(100, 100, 100, 0.3)";
         for (let x = 0; x < INI.COLS; x++) {
-            const y = GS * 0.75;
+            const y = GS * 0.5;
             CTX.fillText(x + 1, x * GS + INI.LEFT_X + GS2, y);
         }
     },
@@ -266,9 +266,9 @@ const AGENT = {
         console.time("random");
         let legal_moves = AGENT_MANAGER.getLegalMoves();
         console.log(".legal_moves", legal_moves);
-
         console.timeEnd("random");
         console.info("*************\n");
+        return legal_moves.chooseRandom();
     }
 };
 
@@ -281,13 +281,37 @@ const AGENT_MANAGER = {
             if (GAME.map.isZero(grid)) legalMoves.push(c);
         }
         return legalMoves;
+    },
+    getDestination(move) {
+        let grid = new Grid(move, INI.ROWS - 1);
+        while (GAME.map.isZero(grid.add(UP))) {
+            grid = grid.add(UP);
+        }
+        return grid;
     }
 };
 
 class Token {
-    constructor(move) {
+    constructor(move, startGrid, destination, player) {
         this.move = move;
-
+        this.moveState = new MoveState(startGrid, UP, GAME.map, Grid.toCenter(startGrid));
+        this.destination = destination;
+        this.player = player;
+        this.onDestination = false;
+    }
+    manage(lapsedTime) {
+        if (this.moveState.moving) {
+            GRID.translateMoveState(this, lapsedTime);
+        } else this.makeMove();
+    }
+    makeMove() {
+        if (GRID.same(this.moveState.startGrid, this.destination)) {
+            console.log(" .... destination reached ", this);
+            this.onDestination = true;
+            return;
+        }
+        this.moveState.next(UP);
+        console.log(" .... making move for ", this, "dir", UP);
     }
 }
 
@@ -339,28 +363,51 @@ const TURN_MANAGER = {
         }
 
         let player = this.getPlayer();
-        console.log(`Turn ${this.turn}, player: ${player}, agent: ${this.agent[player]}`);
+        console.log(`\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}`);
         const move = AGENT[this.agent[player]]();
-        console.log(".move", move);
+        this.turn_completed = false;
+        const destination = AGENT_MANAGER.getDestination(move);
+
+        console.log(".move", move, "destination", destination, "player", player);
+
         if (this.mode) {
-            this.setMove(move);
-        } else this.applyMove(move);
+            this.setMove(move, destination, player);
+        } else this.applyDestination(destination);
 
         //calculate and draw score
         //check if player has won
         console.log("-------------------------------\n");
     },
-    setMove(move) {
-        console.log(".. setting move", move);
+    setMove(move, destination, player) {
+        this.token = new Token(move, new Grid(move, INI.ROWS - 1), destination, player);
+        console.log(".. setting move", move, "token", this.token);
     },
-    applyMove(move) {
-        console.log(".. applying move", move);
+
+    applyDestination(destination, player) {
+        console.log(".. applying destination", destination, player);
+        this.turn_completed = true;
+        this.token = null;
+        throw "debug";
     },
-    animateMove() {
-        console.log("... animating move", this.token);
+    manage(lapsedTime) {
+        if (this.turn_completed) return this.nextPlayer();
+        if (this.token) this.token.manage(lapsedTime);
+        if (this.token.onDestination) {
+            this.applyDestination(this.token.destination);
+        }
+        console.log("... TurnManager managing", this.token);
     },
-    manage() {
-        if (this.turn_completed) this.nextPlayer();
+    drawToken() {
+        if (!this.token) return;
+        ENGINE.clearLayer("token");
+        const CTX = LAYER.token;
+        CTX.fillStyle = this.token.player;
+        const [x, y] = BOARD.gridToCoord(this.token.moveState.pos);
+        CTX.beginPath();
+        CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, false);
+        CTX.fill();
+
+        console.log("....... drawing token", this.token);
     }
 };
 
@@ -393,12 +440,12 @@ const GAME = {
         GAME.levelExecute();
     },
     levelExecute() {
-        console.error("GAME starts");
+        console.info("------------ GAME starts ------------ ");
         GAME.drawFirstFrame();
         ENGINE.GAME.ANIMATION.next(GAME.run);
     },
     prepareForRestart() {
-        let clear = ["background", "text", "FPS", "button", "bottomText", "subtitle"];
+        let clear = ["background", "text", "FPS", "button", "bottomText", "subtitle", "token"];
         ENGINE.clearManylayers(clear);
         TITLE.blackBackgrounds();
         ENGINE.TIMERS.clear();
@@ -451,8 +498,8 @@ const GAME = {
         if (ENGINE.GAME.stopAnimation) return;
         //const date = Date.now();
         GAME.respond(lapsedTime);
-        TURN_MANAGER.manage();
-        if (TURN_MANAGER.token) TURN_MANAGER.animateMove();
+        TURN_MANAGER.manage(lapsedTime);
+        //if (TURN_MANAGER.token) TURN_MANAGER.animateMove(lapsedTime);
         //ENGINE.TIMERS.update();
 
         GAME.frameDraw(lapsedTime);
@@ -462,6 +509,7 @@ const GAME = {
         if (DEBUG.FPS) {
             GAME.FPS(lapsedTime);
         }
+        TURN_MANAGER.drawToken();
     },
     respond(lapsedTime) {
         //if (HERO.dead) return;
@@ -474,6 +522,7 @@ const GAME = {
 
         //debug
         if (map[ENGINE.KEY.map.F7]) {
+            throw "Breaking execution!";
             if (!DEBUG.keys) return;
         }
         if (map[ENGINE.KEY.map.F8]) {
@@ -565,7 +614,7 @@ const TITLE = {
         ENGINE.GAME.ANIMATION.next(GAME.runTitle);
     },
     clearAllLayers() {
-        ENGINE.layersToClear = new Set(["text", "sideback", "button", "title", "FPS", "bottomText", "subtitle"]);
+        ENGINE.layersToClear = new Set(["text", "sideback", "button", "title", "FPS", "bottomText", "subtitle", "token"]);
         ENGINE.clearLayerStack();
     },
     blackBackgrounds() {

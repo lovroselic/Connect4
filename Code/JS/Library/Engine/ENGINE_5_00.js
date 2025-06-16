@@ -9,6 +9,7 @@
 /*  
 
 TODO:
+ - updated in Connect4, copy to HTH! use same version
       
 */
 
@@ -3656,12 +3657,12 @@ class _1D_MoveState {
     }
 }
 class MoveState {
-    constructor(startGrid, dir, GA) {
+    constructor(startGrid, dir, GA, pos = null) {
         this.startGrid = Grid.toClass(startGrid);
         this.dir = dir || null;
         this.homeGrid = Grid.toClass(startGrid);
         this.endGrid = Grid.toClass(startGrid);
-        this.pos = this.homeGrid;                             //compatibility with 3D MS
+        this.pos = pos || this.homeGrid;                             //compatibility with 3D MS
         this.moving = false;
         this.gridArray = null;
         if (GA) {

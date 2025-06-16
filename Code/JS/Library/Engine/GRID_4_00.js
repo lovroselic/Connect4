@@ -10,6 +10,7 @@
 
 /*
 TODO:
+    - updated in Connect4, copy to HTH! use same version
   
 known bugs:
 
@@ -246,6 +247,15 @@ const GRID = {
             if (onFinish) onFinish.call();
         }
         return;
+    },
+
+    /**
+     * does not use actor, only moveState.pos (FP_Grid)
+     * no animation, no viewport
+     */
+    translateMoveState(entity, lapsedTime, onFinish = null) {
+        console.log(".... translateMoveState", lapsedTime);
+
     },
     blockMove(entity, changeView = false) {
         let newGrid = entity.moveState.startGrid.add(entity.moveState.dir);
