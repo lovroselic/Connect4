@@ -258,11 +258,14 @@ const GRID = {
         let length = (lapsedTime / 1000) * entity.moveSpeed;
         entity.moveState.pos.x += entity.moveState.dir.x * length;
         entity.moveState.pos.y += entity.moveState.dir.y * length;
-        entity.moveState.homeGrid = new Grid(entity.moveState.pos.x + 0.5 * entity.moveState.dir.x * revertX, entity.moveState.pos.y + 0.5 * entity.moveState.dir.y * revertY);
-        console.log(".... translateMoveState", "entity.moveState.startGrid.y", entity.moveState.startGrid.y, "entity.moveState.pos.y", entity.moveState.pos.y, "entity.moveState.homeGrid.y", entity.moveState.homeGrid.y);
+        entity.moveState.homeGrid = new Grid(
+            entity.moveState.pos.x + 0.975 * entity.moveState.dir.x * revertX,
+            entity.moveState.pos.y + 0.975 * entity.moveState.dir.y * revertY
+        );
+        //console.log(".... translateMoveState", "entity.moveState.startGrid.y", entity.moveState.startGrid.y, "entity.moveState.pos.y", entity.moveState.pos.y, "entity.moveState.homeGrid.y", entity.moveState.homeGrid.y);
         if (GRID.same(entity.moveState.endGrid, entity.moveState.homeGrid)) {
-            console.warn("...... grid reached", entity.moveState.endGrid, entity.moveState.homeGrid);
-            console.warn("........... grid Y reached", "entity.moveState.pos.y", entity.moveState.pos.y, "entity.moveState.homeGrid.y", entity.moveState.homeGrid.y);
+            //console.warn("...... grid reached", entity.moveState.endGrid, entity.moveState.homeGrid);
+            //console.warn("........... grid Y reached", "entity.moveState.pos.y", entity.moveState.pos.y, "entity.moveState.homeGrid.y", entity.moveState.homeGrid.y);
             entity.moveState.moving = false;
             entity.moveState.startGrid = entity.moveState.endGrid;
             if (onFinish) onFinish.call();

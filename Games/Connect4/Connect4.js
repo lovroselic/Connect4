@@ -403,9 +403,13 @@ const TURN_MANAGER = {
         const CTX = LAYER.token;
         CTX.fillStyle = this.token.player;
         const [x, y] = BOARD.gridToCoord(this.token.moveState.pos);
+        const OFF = ENGINE.INI.GRIDPIX / 2;
+        CTX.save();
+        CTX.translate(OFF, OFF);
         CTX.beginPath();
         CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, false);
         CTX.fill();
+        CTX.restore();
 
         //console.log("....... drawing token", this.token);
     }
