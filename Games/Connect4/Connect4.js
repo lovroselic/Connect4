@@ -46,7 +46,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.0",
+    VERSION: "0.3.1",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -253,6 +253,18 @@ const BOARD = {
         //
         console.info("debugBoard", GAME.map);
     },
+    ///
+    boardToPatterns() {
+        const patterns = [];
+        patterns.push(...this.boardDiagonals());
+        patterns.push(...this.boardHorizontals());
+        patterns.push(...this.boardVerticals());
+
+        return patterns.filter(pattern => pattern.filter(cell => cell === 0).length <= 2);
+    },
+    boardDiagonals() { },
+    boardHorizontals() { },
+    boardVerticals() { },
 };
 
 const AGENT = {
