@@ -252,10 +252,22 @@ const GRID = {
     /**
      * does not use actor, only moveState.pos (FP_Grid)
      * no animation, no viewport
+     * revertX = 1, revertY = 1; change to -1 to revert axis
      */
-    translateMoveState(entity, lapsedTime, onFinish = null) {
-        console.log(".... translateMoveState", lapsedTime);
-
+    translateMoveState(entity, lapsedTime, revertX = 1, revertY = 1, onFinish = null) {
+        let length = (lapsedTime / 1000) * entity.moveSpeed;
+        entity.moveState.pos.x += entity.moveState.dir.x * length;
+        entity.moveState.pos.y += entity.moveState.dir.y * length;
+        entity.moveState.homeGrid = new Grid(entity.moveState.pos.x + 0.5 * entity.moveState.dir.x * revertX, entity.moveState.pos.y + 0.5 * entity.moveState.dir.y * revertY);
+        console.log(".... translateMoveState", "entity.moveState.startGrid.y", entity.moveState.startGrid.y, "entity.moveState.pos.y", entity.moveState.pos.y, "entity.moveState.homeGrid.y", entity.moveState.homeGrid.y);
+        if (GRID.same(entity.moveState.endGrid, entity.moveState.homeGrid)) {
+            console.warn("...... grid reached", entity.moveState.endGrid, entity.moveState.homeGrid);
+            console.warn("........... grid Y reached", "entity.moveState.pos.y", entity.moveState.pos.y, "entity.moveState.homeGrid.y", entity.moveState.homeGrid.y);
+            entity.moveState.moving = false;
+            entity.moveState.startGrid = entity.moveState.endGrid;
+            if (onFinish) onFinish.call();
+        }
+        return;
     },
     blockMove(entity, changeView = false) {
         let newGrid = entity.moveState.startGrid.add(entity.moveState.dir);

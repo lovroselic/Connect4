@@ -44,7 +44,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.2.6",
+    VERSION: "0.2.7",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -294,14 +294,15 @@ const AGENT_MANAGER = {
 class Token {
     constructor(move, startGrid, destination, player) {
         this.move = move;
-        this.moveState = new MoveState(startGrid, UP, GAME.map, Grid.toCenter(startGrid));
+        this.moveState = new MoveState(startGrid, UP, GAME.map, FP_Grid.toClass(startGrid));
         this.destination = destination;
         this.player = player;
         this.onDestination = false;
+        this.moveSpeed = 5;
     }
     manage(lapsedTime) {
         if (this.moveState.moving) {
-            GRID.translateMoveState(this, lapsedTime);
+            GRID.translateMoveState(this, lapsedTime, 1, -1);
         } else this.makeMove();
     }
     makeMove() {
@@ -311,7 +312,7 @@ class Token {
             return;
         }
         this.moveState.next(UP);
-        console.log(" .... making move for ", this, "dir", UP);
+        console.log(" .... making move for EG", this.moveState.endGrid.y, "dir", UP);
     }
 }
 
@@ -379,10 +380,9 @@ const TURN_MANAGER = {
         console.log("-------------------------------\n");
     },
     setMove(move, destination, player) {
-        this.token = new Token(move, new Grid(move, INI.ROWS - 1), destination, player);
-        console.log(".. setting move", move, "token", this.token);
+        this.token = new Token(move, new Grid(move, INI.ROWS), destination, player);
+        console.log(".. setting move", move, "token EG - Y", this.token.moveState.endGrid.y, "token SG - X", this.token.moveState.startGrid.x, "token SG - Y", this.token.moveState.startGrid.y);
     },
-
     applyDestination(destination, player) {
         console.log(".. applying destination", destination, player);
         this.turn_completed = true;
@@ -393,9 +393,9 @@ const TURN_MANAGER = {
         if (this.turn_completed) return this.nextPlayer();
         if (this.token) this.token.manage(lapsedTime);
         if (this.token.onDestination) {
-            this.applyDestination(this.token.destination);
+            this.applyDestination(this.token.destination, this.token.player);
         }
-        console.log("... TurnManager managing", this.token);
+        console.log("... TurnManager managing", "token EG - Y", this.token.moveState.endGrid.y, "POS-Y", this.token.moveState.pos.y);
     },
     drawToken() {
         if (!this.token) return;
@@ -407,7 +407,7 @@ const TURN_MANAGER = {
         CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, false);
         CTX.fill();
 
-        console.log("....... drawing token", this.token);
+        //console.log("....... drawing token", this.token);
     }
 };
 
