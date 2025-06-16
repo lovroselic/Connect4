@@ -15,7 +15,9 @@ known bugs:
 retests:
 
 engine changes:
-    - GRID : REVERSE DICT ENGINE  VERBOSE bug corrected;;
+    - GRID : 
+    - ENGINE:
+    - GenericTimers
 
 
  */
@@ -44,7 +46,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.2.7",
+    VERSION: "0.3.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -298,7 +300,7 @@ class Token {
         this.destination = destination;
         this.player = player;
         this.onDestination = false;
-        this.moveSpeed = 5;
+        this.moveSpeed = 6;
     }
     manage(lapsedTime) {
         if (this.moveState.moving) {
@@ -323,7 +325,15 @@ const TURN_MANAGER = {
     turn: null,
     agent: {
         red: null,
-        blue: null
+        blue: null,
+    },
+    name: {
+        red: null,
+        blue: null,
+    },
+    score: {
+        red: null,
+        blue: null,
     },
     mode: 1,                        //game (default)
     token: null,
@@ -345,6 +355,10 @@ const TURN_MANAGER = {
         this.turn_completed = true;
         this.agent.red = $("#red_player_agents")[0].value;
         this.agent.blue = $("#blue_player_agents")[0].value;
+        this.name.red = $("#red_player_name")[0].value;
+        this.name.blue = $("#blue_player_name")[0].value;
+        this.score.red = 0;
+        this.score.blue = 0;
         /////////////
         console.info("Agents:");
         console.table(TURN_MANAGER.agent);
@@ -375,19 +389,21 @@ const TURN_MANAGER = {
             this.setMove(move, destination, player);
         } else this.applyDestination(destination);
 
+        //setting subtitle
+        SUBTITLE.subtitle(`${this.name[player]}: column ${move + 1}`, player);
         //calculate and draw score
         //check if player has won
         console.log("-------------------------------\n");
     },
     setMove(move, destination, player) {
         this.token = new Token(move, new Grid(move, INI.ROWS), destination, player);
-        console.log(".. setting move", move, "token EG - Y", this.token.moveState.endGrid.y, "token SG - X", this.token.moveState.startGrid.x, "token SG - Y", this.token.moveState.startGrid.y);
     },
     applyDestination(destination, player) {
         console.log(".. applying destination", destination, player);
         this.turn_completed = true;
         this.token = null;
-        throw "debug";
+        GAME.map.setToken(destination, player);
+        BOARD.drawContent();
     },
     manage(lapsedTime) {
         if (this.turn_completed) return this.nextPlayer();
@@ -395,7 +411,6 @@ const TURN_MANAGER = {
         if (this.token.onDestination) {
             this.applyDestination(this.token.destination, this.token.player);
         }
-        console.log("... TurnManager managing", "token EG - Y", this.token.moveState.endGrid.y, "POS-Y", this.token.moveState.pos.y);
     },
     drawToken() {
         if (!this.token) return;
@@ -410,8 +425,6 @@ const TURN_MANAGER = {
         CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, false);
         CTX.fill();
         CTX.restore();
-
-        //console.log("....... drawing token", this.token);
     }
 };
 
@@ -440,6 +453,7 @@ const GAME = {
         GAME.fps = new FPS_short_term_measurement(300);
         GAME.prepareForRestart();
         TURN_MANAGER.init();
+        SUBTITLE.init("subtitle", 32, "CompSmooth");
         //BOARD.debugBoard();
         GAME.levelExecute();
     },
@@ -503,7 +517,6 @@ const GAME = {
         //const date = Date.now();
         GAME.respond(lapsedTime);
         TURN_MANAGER.manage(lapsedTime);
-        //if (TURN_MANAGER.token) TURN_MANAGER.animateMove(lapsedTime);
         //ENGINE.TIMERS.update();
 
         GAME.frameDraw(lapsedTime);

@@ -11,7 +11,7 @@
  */
 
 const GenericTimers = {
-    VERSION: "1.02",
+    VERSION: "1.03",
     CSS: "color: #b785FF",
     INI: {
         INFO_TIMER_ID: "info",
@@ -26,22 +26,22 @@ const GenericTimers = {
     clearSubtitle() {
         ENGINE.clearLayer("subtitle");
     },
-    infoTimer() {
+    infoTimer(info_time = this.INI.INFO_TIMER) {
         let T;
         if (ENGINE.TIMERS.exists(GenericTimers.INI.INFO_TIMER_ID)) {
             T = ENGINE.TIMERS.access(GenericTimers.INI.INFO_TIMER_ID);
-            T.set(GenericTimers.INI.INFO_TIMER);
+            T.set(info_time);
         } else {
-            T = new CountDown(GenericTimers.INI.INFO_TIMER_ID, GenericTimers.INI.INFO_TIMER, GenericTimers.clearInfo);
+            T = new CountDown(GenericTimers.INI.INFO_TIMER_ID, info_time, GenericTimers.clearInfo);
         }
     },
-    subTimer() {
+    subTimer(sub_time = this.INI.SUB_TIMER) {
         let T;
         if (ENGINE.TIMERS.exists(GenericTimers.INI.SUB_TIMER_ID)) {
             T = ENGINE.TIMERS.access(GenericTimers.INI.SUB_TIMER_ID);
-            T.extend(GenericTimers.INI.SUB_TIMER);
+            T.extend(sub_time);
         } else {
-            T = new CountDown(GenericTimers.INI.SUB_TIMER_ID, GenericTimers.INI.SUB_TIMER, GenericTimers.clearSubtitle);
+            T = new CountDown(GenericTimers.INI.SUB_TIMER_ID, sub_time, GenericTimers.clearSubtitle);
         }
     },
 };
