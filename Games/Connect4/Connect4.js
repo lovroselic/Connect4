@@ -32,12 +32,27 @@ const DEBUG = {
     keys: true,
     board: [
         0, 2, 1, 2, 2, 2, 0,
-        0, 1, 1, 1, 0, 0, 0,
+        0, 1, 1, 1, 2, 0, 0,
         0, 2, 1, 2, 0, 0, 0,
-        0, 0, 2, 2, 0, 0, 0,
+        0, 1, 2, 2, 0, 0, 0,
         0, 0, 1, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0,
     ],
+    test() {
+        console.warn("-------------------------------------------------");
+        let [patterns1, coordinates1] = BOARD.boardToPatterns([1]);
+        console.log(patterns1);
+        console.log(coordinates1);
+        console.warn("-------------------------------------------------");
+        let [patterns2, coordinates2] = BOARD.boardToPatterns([2]);
+        console.log(patterns2);
+        console.log(coordinates2);
+        console.warn("-------------------------------------------------");
+        let [patterns3, coordinates3] = BOARD.boardToPatterns([1, 2]);
+        console.log(patterns3);
+        console.log(coordinates3);
+        console.warn("-------------------------------------------------");
+    },
 };
 
 const INI = {
@@ -54,7 +69,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.3",
+    VERSION: "0.3.4",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -274,6 +289,7 @@ const BOARD = {
      * @param {*} players array of players to check, allows [1], [2], [1,2]
      */
     boardToPatterns(players) {
+        console.time("analyze");
         const patterns = [];
         const coordinates = [];
         let pat, coord;
@@ -284,11 +300,80 @@ const BOARD = {
             coordinates.push(...coord);
         }
 
+        console.timeEnd("analyze");
         return [patterns, coordinates];
     },
-    boardDiagonals(players) { },
-    boardHorizontals(players) { },
-    boardVerticals(players) { },
+    boardDiagonals(players) {
+        const GA = GAME.map;
+        const patterns = [];
+        const coordinates = [];
+
+        // / diagonals (bottom-left to top-right)
+        for (let x = 0; x <= INI.COLS - INI.INROW; x++) {
+            for (let y = 0; y <= INI.ROWS - INI.INROW; y++) {
+                const pattern = [];
+                const coord = [];
+
+                for (let i = 0; i < INI.INROW; i++) {
+                    const grid = new Grid(x + i, y + i);
+                    pattern.push(GA.map[GA.gridToIndex(grid)]);
+                    coord.push([grid.x, grid.y]);
+                }
+
+                if (this.isValidPattern(pattern, players)) {
+                    patterns.push(pattern);
+                    coordinates.push(coord);
+                }
+            }
+        }
+
+        // \ diagonals (bottom-right to top-left)
+        for (let x = INI.INROW - 1; x < INI.COLS; x++) {
+            for (let y = 0; y <= INI.ROWS - INI.INROW; y++) {
+                const pattern = [];
+                const coord = [];
+
+                for (let i = 0; i < INI.INROW; i++) {
+                    const grid = new Grid(x - i, y + i);
+                    pattern.push(GA.map[GA.gridToIndex(grid)]);
+                    coord.push([grid.x, grid.y]);
+                }
+
+                if (this.isValidPattern(pattern, players)) {
+                    patterns.push(pattern);
+                    coordinates.push(coord);
+                }
+            }
+        }
+
+        return [patterns, coordinates];
+    },
+    boardHorizontals(players) {
+        const patterns = [];
+        const coordinates = [];
+
+        return [patterns, coordinates];
+    },
+    boardVerticals(players) {
+        const patterns = [];
+        const coordinates = [];
+
+        return [patterns, coordinates];
+    },
+    isValidPattern(pattern, players) {
+        const zeros = pattern.filter(v => v === 0).length;
+        const matches = pattern.filter(v => players.includes(v)).length;
+        const uniquePlayers = new Set(pattern.filter(v => v !== 0)).size;
+        const playerWith2OrMore = players.some(p => pattern.filter(v => v === p).length >= 2);
+
+        return (
+            zeros < 3 &&
+            matches >= 2 &&
+            !(zeros === 0 && uniquePlayers > 1) &&
+            playerWith2OrMore
+        );
+    }
+
 };
 
 const AGENT = {
@@ -497,7 +582,14 @@ const GAME = {
     levelExecute() {
         console.info("------------ GAME starts ------------ ");
         GAME.drawFirstFrame();
-        ENGINE.GAME.ANIMATION.next(GAME.run);
+
+
+        DEBUG.test();
+
+
+
+
+        //ENGINE.GAME.ANIMATION.next(GAME.run);
     },
     prepareForRestart() {
         let clear = ["background", "text", "FPS", "button", "bottomText", "subtitle", "token"];
