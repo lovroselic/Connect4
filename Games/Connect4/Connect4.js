@@ -30,6 +30,14 @@ const DEBUG = {
     VERBOSE: true,
     max17: false,
     keys: true,
+    board: [
+        0, 2, 1, 2, 2, 2, 0,
+        0, 1, 1, 1, 0, 0, 0,
+        0, 2, 1, 2, 0, 0, 0,
+        0, 0, 2, 2, 0, 0, 0,
+        0, 0, 1, 1, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0,
+    ],
 };
 
 const INI = {
@@ -46,7 +54,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.2",
+    VERSION: "0.3.3",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -255,20 +263,32 @@ const BOARD = {
         //
         console.info("debugBoard", GAME.map);
     },
-    ///
-    boardToPatterns() {
-        const patterns = [];
-        patterns.push(...this.boardDiagonals());
-        patterns.push(...this.boardHorizontals());
-        patterns.push(...this.boardVerticals());
-
-        //patterns hould be filtered inside the functions
-        //return patterns.filter(pattern => pattern.filter(cell => cell === 0).length <= 2);
-        return patterns;
+    importBoard(list) {
+        for (let i = 0; i < list.length; i++) {
+            GAME.map.map[i] = list[i];
+        }
     },
-    boardDiagonals() { },
-    boardHorizontals() { },
-    boardVerticals() { },
+    ///
+
+    /**
+     * @param {*} players array of players to check, allows [1], [2], [1,2]
+     */
+    boardToPatterns(players) {
+        const patterns = [];
+        const coordinates = [];
+        let pat, coord;
+        let functs = ["boardDiagonals", "boardHorizontals", "boardVerticals"];
+        for (const F of functs) {
+            [pat, coord] = this[F](players);
+            patterns.push(...pat);
+            coordinates.push(...coord);
+        }
+
+        return [patterns, coordinates];
+    },
+    boardDiagonals(players) { },
+    boardHorizontals(players) { },
+    boardVerticals(players) { },
 };
 
 const AGENT = {
@@ -471,6 +491,7 @@ const GAME = {
         TURN_MANAGER.init();
         SUBTITLE.init("subtitle", 32, "CompSmooth");
         //BOARD.debugBoard();
+        BOARD.importBoard(DEBUG.board);
         GAME.levelExecute();
     },
     levelExecute() {
@@ -532,7 +553,9 @@ const GAME = {
         if (ENGINE.GAME.stopAnimation) return;
         //const date = Date.now();
         GAME.respond(lapsedTime);
-        TURN_MANAGER.manage(lapsedTime);
+
+        //TURN_MANAGER.manage(lapsedTime);
+
         //ENGINE.TIMERS.update();
 
         GAME.frameDraw(lapsedTime);
