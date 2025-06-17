@@ -46,7 +46,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.1",
+    VERSION: "0.3.2",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -113,6 +113,8 @@ const PRG = {
         ENGINE.setGridSize(INI.GRIDSIZE);
         MAPDICT.RED = 1;
         MAPDICT.BLUE = 2;
+        MAPDICT.red = 1;
+        MAPDICT.blue = 2;
 
         INI.LEFT_X = (ENGINE.gameWIDTH - INI.COLS * ENGINE.INI.GRIDPIX) / 2;
         INI.RADIUS = Math.round(INI.RADIUS_FACTOR * ENGINE.INI.GRIDPIX);
@@ -260,7 +262,9 @@ const BOARD = {
         patterns.push(...this.boardHorizontals());
         patterns.push(...this.boardVerticals());
 
-        return patterns.filter(pattern => pattern.filter(cell => cell === 0).length <= 2);
+        //patterns hould be filtered inside the functions
+        //return patterns.filter(pattern => pattern.filter(cell => cell === 0).length <= 2);
+        return patterns;
     },
     boardDiagonals() { },
     boardHorizontals() { },
