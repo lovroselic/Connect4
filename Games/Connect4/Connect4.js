@@ -40,9 +40,10 @@ const DEBUG = {
     ],
     test() {
         console.warn("-------------------------------------------------");
-        let [patterns1, coordinates1] = BOARD.boardToPatterns([1]);
-        console.log(patterns1);
-        console.log(coordinates1);
+        let [patterns, coordinates] = BOARD.boardToPatterns([2]);
+        console.log(patterns);
+        console.log(coordinates);
+        /*
         console.warn("-------------------------------------------------");
         let [patterns2, coordinates2] = BOARD.boardToPatterns([2]);
         console.log(patterns2);
@@ -51,7 +52,13 @@ const DEBUG = {
         let [patterns3, coordinates3] = BOARD.boardToPatterns([1, 2]);
         console.log(patterns3);
         console.log(coordinates3);
+        */
         console.warn("-------------------------------------------------");
+        //let check_2_1 = BOARD.countWindowsInPattern(patterns1, 2, 1);
+        //console.log("check_2_1", check_2_1);
+        let check_4_2 = BOARD.countWindowsInPattern(patterns, 4, 2);
+        console.log("check_4_2", check_4_2);
+
     },
 };
 
@@ -69,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.4",
+    VERSION: "0.3.5",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -349,14 +356,51 @@ const BOARD = {
         return [patterns, coordinates];
     },
     boardHorizontals(players) {
+        const GA = GAME.map;
         const patterns = [];
         const coordinates = [];
+
+        for (let x = 0; x <= INI.COLS - INI.INROW; x++) {
+            for (let y = 0; y < INI.ROWS; y++) {
+                const pattern = [];
+                const coord = [];
+
+                for (let i = 0; i < INI.INROW; i++) {
+                    const grid = new Grid(x + i, y);
+                    pattern.push(GA.map[GA.gridToIndex(grid)]);
+                    coord.push([grid.x, grid.y]);
+                }
+
+                if (this.isValidPattern(pattern, players)) {
+                    patterns.push(pattern);
+                    coordinates.push(coord);
+                }
+            }
+        }
 
         return [patterns, coordinates];
     },
     boardVerticals(players) {
+        const GA = GAME.map;
         const patterns = [];
         const coordinates = [];
+        for (let x = 0; x < INI.COLS; x++) {
+            for (let y = 0; y <= INI.ROWS - INI.INROW; y++) {
+                const pattern = [];
+                const coord = [];
+
+                for (let i = 0; i < INI.INROW; i++) {
+                    const grid = new Grid(x, y + i);
+                    pattern.push(GA.map[GA.gridToIndex(grid)]);
+                    coord.push([grid.x, grid.y]);
+                }
+
+                if (this.isValidPattern(pattern, players)) {
+                    patterns.push(pattern);
+                    coordinates.push(coord);
+                }
+            }
+        }
 
         return [patterns, coordinates];
     },
@@ -372,6 +416,24 @@ const BOARD = {
             !(zeros === 0 && uniquePlayers > 1) &&
             playerWith2OrMore
         );
+    },
+    countWindowsInPattern(patterns, num, player) {
+        console.warn(".countWindowsInPattern", patterns, num, player);
+        const indices = [];
+        patterns.forEach((window, index) => {
+            const playerCount = window.filter(v => v === player).length;
+            const zeroCount = window.filter(v => v === 0).length;
+            console.debug("..", window, index, "-->", playerCount, zeroCount);
+            if (playerCount === num && zeroCount === INI.INROW - num) {
+                console.log("...pushed", index);
+                indices.push(index);
+            }
+        });
+
+        return {
+            count: indices.length,
+            indices: indices
+        };
     }
 
 };
@@ -512,8 +574,9 @@ const TURN_MANAGER = {
 
         //setting subtitle
         SUBTITLE.subtitle(`${this.name[player]}: column ${move + 1}`, player);
-        //calculate and draw score
         //check if player has won
+        //calculate and draw score
+
         console.log("-------------------------------\n");
     },
     setMove(move, destination, player) {
@@ -576,7 +639,7 @@ const GAME = {
         TURN_MANAGER.init();
         SUBTITLE.init("subtitle", 32, "CompSmooth");
         //BOARD.debugBoard();
-        BOARD.importBoard(DEBUG.board);
+        //BOARD.importBoard(DEBUG.board);
         GAME.levelExecute();
     },
     levelExecute() {
@@ -584,12 +647,12 @@ const GAME = {
         GAME.drawFirstFrame();
 
 
-        DEBUG.test();
+        //DEBUG.test();
 
 
 
 
-        //ENGINE.GAME.ANIMATION.next(GAME.run);
+        ENGINE.GAME.ANIMATION.next(GAME.run);
     },
     prepareForRestart() {
         let clear = ["background", "text", "FPS", "button", "bottomText", "subtitle", "token"];
@@ -646,7 +709,7 @@ const GAME = {
         //const date = Date.now();
         GAME.respond(lapsedTime);
 
-        //TURN_MANAGER.manage(lapsedTime);
+        TURN_MANAGER.manage(lapsedTime);
 
         //ENGINE.TIMERS.update();
 
