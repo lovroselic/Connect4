@@ -76,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.6",
+    VERSION: "0.3.7",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -500,8 +500,14 @@ class Token {
 }
 
 const TURN_MANAGER = {
+    patterns: null,
+    indices: null,
     nextPlayerIndex: null,
     players: ["red", "blue"],
+    playerPieces: {
+        red: 1,
+        blue: 2,
+    },
     turn_completed: null,
     turn: null,
     agent: {
@@ -558,24 +564,19 @@ const TURN_MANAGER = {
             throw `Tied game from overturn on turn ${this.turn}!`;
         }
 
-        const playerPiece = this.nextPlayerIndex + 1;
+        //const playerPiece = this.nextPlayerIndex + 1;
         let player = this.getPlayer();
-        console.log(`\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, playerPiece: ${playerPiece}`);
+        console.log(`\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}`);
         const move = AGENT[this.agent[player]]();
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
-
         console.log(".move", move, "destination", destination, "player", player);
 
         if (this.mode) {
             this.setMove(move, destination, player);
         } else this.applyDestination(destination);
 
-        //setting subtitle
         SUBTITLE.subtitle(`${this.name[player]}: column ${move + 1}`, player);
-        //check if player has won
-        //calculate and draw score
-
         console.log("-------------------------------\n");
     },
     setMove(move, destination, player) {
@@ -587,6 +588,13 @@ const TURN_MANAGER = {
         this.token = null;
         GAME.map.setToken(destination, player);
         BOARD.drawContent();
+
+        //analyze
+        [BOARD.patters, BOARD.coordinates] = BOARD.boardToPatterns([this.playerPieces[player]]);
+        //console.log("analysis", BOARD.patters, BOARD.coordinates);
+        //check if player has won
+        //calculate and draw score
+
     },
     manage(lapsedTime) {
         if (this.turn_completed) return this.nextPlayer();
