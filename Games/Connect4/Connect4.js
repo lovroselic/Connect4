@@ -76,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.5",
+    VERSION: "0.3.6",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -418,14 +418,14 @@ const BOARD = {
         );
     },
     countWindowsInPattern(patterns, num, player) {
-        console.warn(".countWindowsInPattern", patterns, num, player);
+        //console.warn(".countWindowsInPattern", patterns, num, player);
         const indices = [];
         patterns.forEach((window, index) => {
             const playerCount = window.filter(v => v === player).length;
             const zeroCount = window.filter(v => v === 0).length;
-            console.debug("..", window, index, "-->", playerCount, zeroCount);
+            //console.debug("..", window, index, "-->", playerCount, zeroCount);
             if (playerCount === num && zeroCount === INI.INROW - num) {
-                console.log("...pushed", index);
+                //console.log("...pushed", index);
                 indices.push(index);
             }
         });
@@ -492,12 +492,10 @@ class Token {
     }
     makeMove() {
         if (GRID.same(this.moveState.startGrid, this.destination)) {
-            console.log(" .... destination reached ", this);
             this.onDestination = true;
             return;
         }
         this.moveState.next(UP);
-        console.log(" .... making move for EG", this.moveState.endGrid.y, "dir", UP);
     }
 }
 
@@ -560,8 +558,9 @@ const TURN_MANAGER = {
             throw `Tied game from overturn on turn ${this.turn}!`;
         }
 
+        const playerPiece = this.nextPlayerIndex + 1;
         let player = this.getPlayer();
-        console.log(`\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}`);
+        console.log(`\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, playerPiece: ${playerPiece}`);
         const move = AGENT[this.agent[player]]();
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
