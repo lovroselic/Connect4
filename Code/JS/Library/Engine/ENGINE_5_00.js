@@ -1214,7 +1214,7 @@ const ENGINE = {
             ENGINE.GAME.gameLoop = func;
         },
         lostFocus() {
-            if (ENGINE.GAME.paused || HERO.dead) return;
+            if (ENGINE.GAME.paused || (typeof HERO !== 'undefined' && HERO.dead)) return;
             ENGINE.GAME.clickPause();
         },
         clickPause() {

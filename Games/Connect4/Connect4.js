@@ -79,7 +79,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.8",
+    VERSION: "0.3.9",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -675,7 +675,9 @@ const GAME = {
 
 
 
-        ENGINE.GAME.ANIMATION.next(GAME.run);
+        //ENGINE.GAME.ANIMATION.next(GAME.run);
+
+        ENGINE.GAME.resume();
     },
     prepareForRestart() {
         let clear = ["background", "text", "FPS", "button", "bottomText", "subtitle", "token"];
