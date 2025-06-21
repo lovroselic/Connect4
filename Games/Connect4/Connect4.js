@@ -73,6 +73,9 @@ const INI = {
     RADIUS: null,
     OVER_TURN: 6 * 7 + 1,
     MIN_END_TURN: 4 + 3,
+    INROW2: 1,
+    INROW3: 64,
+    INROW4: 1000,
 };
 
 const PRG = {
@@ -434,8 +437,11 @@ const BOARD = {
             count: indices.length,
             indices: indices
         };
-    }
-
+    },
+    gameCompleted(indices, player) {
+        console.warn("---- game completed ----, indices, player");
+        throw "debug";
+    },
 };
 
 const AGENT = {
@@ -590,10 +596,20 @@ const TURN_MANAGER = {
         BOARD.drawContent();
 
         //analyze
-        [BOARD.patters, BOARD.coordinates] = BOARD.boardToPatterns([this.playerPieces[player]]);
-        //console.log("analysis", BOARD.patters, BOARD.coordinates);
+        [BOARD.patterns, BOARD.coordinates] = BOARD.boardToPatterns([this.playerPieces[player]]);
+        //console.log("analysis", BOARD.patterns, BOARD.coordinates);
         //check if player has won
+        const winCheck = BOARD.countWindowsInPattern(BOARD.patterns, 4, this.playerPieces[player]);
+        const win = winCheck.count > 0;
+        console.info("winCheck", winCheck, win);
+        if (win) return BOARD.gameCompleted(winCheck.indices, player);
+
         //calculate and draw score
+        const inrow2 = BOARD.countWindowsInPattern(BOARD.patterns, 2, this.playerPieces[player]).count;
+        const inrow3 = BOARD.countWindowsInPattern(BOARD.patterns, 3, this.playerPieces[player]).count;
+        TURN_MANAGER.score[player] = inrow2 * INI.INROW2 + inrow3 * INI.INROW3;
+
+        TITLE.score();
 
     },
     manage(lapsedTime) {
@@ -721,7 +737,7 @@ const GAME = {
         //ENGINE.TIMERS.update();
 
         GAME.frameDraw(lapsedTime);
-        //if (GAME.completed) GAME.won();
+        if (GAME.completed) GAME.complete();
     },
     frameDraw(lapsedTime) {
         if (DEBUG.FPS) {
@@ -784,6 +800,10 @@ const GAME = {
             GAME.FPS(lapsedTime);
         }
     },
+    complete() {
+        console.warn("completing game -------------------------------------------------");
+    },
+    /*
     won() {
         console.info("GAME WON");
         TITLE.setEndingCreditsScroll();
@@ -810,6 +830,7 @@ const GAME = {
     wonFrameDraw() {
         GAME.endingCreditText.draw();
     },
+    */
 };
 
 const TITLE = {
@@ -929,15 +950,17 @@ const TITLE = {
     firstFrame() {
         TITLE.titlePlot();
         ENGINE.clearLayer("bottomText");
-        TITLE.side();
+        TITLE.score();
     },
     music() {
         AUDIO.Title.play();
     },
-    side() {
+    score() {
         const y = ENGINE.gameHEIGHT / 2;
         const X = 16;
         const fs = 15;
+        ENGINE.clearLayer("red");
+        ENGINE.clearLayer("blue");
 
         //red
         let CTX = LAYER.red;
@@ -946,6 +969,7 @@ const TITLE = {
         CTX.font = `${fs}px CompSmooth`;
         CTX.fillText(`Name: ${$("#red_player_name")[0].value}`, X, y);
         CTX.fillText(`Agent: ${$("#red_player_agents")[0].value}`, X, y + 1.5 * fs);
+        CTX.fillText(`Score: ${TURN_MANAGER.score.red}`, X, y + 3 * fs);
 
         //blue
         CTX = LAYER.blue;
@@ -954,10 +978,8 @@ const TITLE = {
         CTX.font = `${fs}px CompSmooth`;
         CTX.fillText(`Name: ${$("#blue_player_name")[0].value}`, X, y);
         CTX.fillText(`Agent: ${$("#blue_player_agents")[0].value}`, X, y + 1.5 * fs);
-
-        //stack coords
-        this.scoreY = y + 4 + fs;
-    }
+        CTX.fillText(`Score: ${TURN_MANAGER.score.blue}`, X, y + 3 * fs);
+    },
 };
 
 // -- main --
