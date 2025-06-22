@@ -76,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.4.1",
+    VERSION: "0.4.2",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -446,10 +446,11 @@ const AGENT = {
         let legal_moves = AGENT_MANAGER.getLegalMoves();
         legal_moves = legal_moves.map(i => i + 1);
         console.log(".legal_moves, keyboard", legal_moves);
-        //wait for human input, only legal moves allowed
+        let move = TURN_MANAGER.getInput(legal_moves);
+        console.warn("AGENT MOVE", move);
         console.timeEnd("human");
         console.info("*************\n");
-        //return human input
+        return move;
     },
     Random() {
         console.info("*** Random ***");
@@ -531,6 +532,10 @@ const TURN_MANAGER = {
     },
     mode: 1,                        //game (default)
     token: null,
+    awaitingInput: false,
+    lastInput: null,
+    inputCallback: null,
+    allowed: null,
     init() {
         const next = $("#select_player_start")[0].value;
         switch (next) {
@@ -554,6 +559,9 @@ const TURN_MANAGER = {
         this.score.red = 0;
         this.score.blue = 0;
         this.winner = null;
+        this.awaitingInput = false;
+        this.lastInput = null;
+        this.allowed = null;
         /////////////
         console.info("Agents:");
         console.table(TURN_MANAGER.agent);
@@ -566,19 +574,38 @@ const TURN_MANAGER = {
         return player;
     },
     nextPlayer() {
+        /*if (TURN_MANAGER.awaitingInput) {
+            console.error("awaitingInput");
+            return;
+        }*/
+        if (TURN_MANAGER.awaitingInput) return;
+
+        
+
         this.turn++;
         if (this.turn === INI.OVER_TURN) {
-            //game is tied
             this.winner = "Tie";
             GAME.completed = true;
             console.error(`Tied game from overturn on turn ${this.turn}!`);
-            //throw `Tied game from overturn on turn ${this.turn}!`;
         }
 
-        //const playerPiece = this.nextPlayerIndex + 1;
         let player = this.getPlayer();
         console.log(`\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}`);
-        const move = AGENT[this.agent[player]]();
+
+        let move = null;
+        if (this.lastInput) {
+            console.warn("move from last input");
+            move = this.lastInput;
+            this.lastInput = null;
+
+        } else move = AGENT[this.agent[player]]();
+        //const move = AGENT[this.agent[player]]();
+        console.error("MOVE", move);
+
+        //if (TURN_MANAGER.awaitingInput) throw "awaitingInput";
+        if (TURN_MANAGER.awaitingInput) return;
+        if (move === undefined) throw "undefined move"; //debug
+
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
         console.log(".move", move, "destination", destination, "player", player);
@@ -656,6 +683,13 @@ const TURN_MANAGER = {
         GAME.completed = true;
         this.winner = player;
     },
+    getInput(allowed = null) {
+        console.warn("getting input from", allowed);
+        this.awaitingInput = true;
+        this.lastInput = null;
+        this.allowed = allowed;
+
+    },
 };
 
 const GAME = {
@@ -717,13 +751,17 @@ const GAME = {
             }
         }
         //defaults to random
-        /*for (let player of ["red", "blue"]) {
-            $(`#${player}_player_agents`).val("Random");
-        }*/
-        //defaults to random
         for (let player of ["red", "blue"]) {
-            $(`#${player}_player_agents`).val("Human");
+            $(`#${player}_player_agents`).val("Random");
         }
+
+        //defaults to Human
+        /*for (let player of ["red", "blue"]) {
+            $(`#${player}_player_agents`).val("Human");
+        }*/
+
+        $(`#red_player_agents`).val("Human");
+        //$(`#blue_player_agents`).val("Random");
     },
     setTitle() {
         const text = GAME.generateTitleText();
@@ -775,10 +813,6 @@ const GAME = {
         }
         TURN_MANAGER.drawToken();
     },
-    getInput(allowed) {
-        if (ENGINE.GAME.stopAnimation) return;
-        const map = ENGINE.GAME.keymap;
-    },
     respond(lapsedTime) {
         //if (HERO.dead) return;
 
@@ -786,6 +820,20 @@ const GAME = {
         //WebGL.GAME.respond(lapsedTime);
         ENGINE.GAME.respond(lapsedTime);
         const map = ENGINE.GAME.keymap;
+
+        let pressedKeys = ENGINE.GAME.getPressedKeys();
+        pressedKeys = pressedKeys.filter(key => TURN_MANAGER.allowed.includes(parseInt(key, 10)));
+
+        if (pressedKeys.length > 0) {
+            const key = parseInt(pressedKeys[0], 10);
+            TURN_MANAGER.awaitingInput = false;
+            TURN_MANAGER.lastInput = key - 1;
+
+            console.error("key", key, "TURN_MANAGER.lastInput", TURN_MANAGER.lastInput, "pressedKeys", pressedKeys, "allowed", TURN_MANAGER.allowed);
+            ENGINE.GAME.keymap[ENGINE.KEY.map[key]] = false;
+            return;
+        }
+
 
         //debug
         if (map[ENGINE.KEY.map.F7]) {

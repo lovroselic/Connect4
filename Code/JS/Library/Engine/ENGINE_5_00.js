@@ -174,6 +174,7 @@ const ENGINE = {
         LAYER.temp = $("#temp_canvas")[0].getContext("2d");
         LAYER.temp2 = $("#temp_canvas2")[0].getContext("2d");
         VIEW.init();
+        ENGINE.KEY.keycodes = reverseDictionary(ENGINE.KEY.map);
     },
     fill(CTX, pattern) {
         let pat = CTX.createPattern(pattern, "repeat");
@@ -1116,18 +1117,30 @@ const ENGINE = {
                 ENGINE.GAME.keymap[key] = false;
             }
         },
-        clearKey(e) {
-            e = e || window.event;
-            if (e.keyCode in ENGINE.GAME.keymap) {
-                ENGINE.GAME.keymap[e.keyCode] = false;
-            }
-        },
         checkKey(e) {
-            e = e || window.event;
-            if (e.keyCode in ENGINE.GAME.keymap) {
-                ENGINE.GAME.keymap[e.keyCode] = true;
+            const code = e.keyCode || e.which;
+            if (code in ENGINE.GAME.keymap) {
+                ENGINE.GAME.keymap[code] = true;
                 e.preventDefault();
             }
+        },
+        clearKey(e) {
+            const code = e.keyCode || e.which;
+            if (code in ENGINE.GAME.keymap) {
+                ENGINE.GAME.keymap[code] = false;
+            }
+        },
+        getPressedKeys() {
+            const pressed = [];
+
+            for (const code in this.keymap) {
+                const keyCode = Number(code);
+                if (this.keymap[keyCode]) {
+                    pressed.push(ENGINE.KEY.keycodes[keyCode]);
+                }
+            }
+
+            return pressed;
         },
         run(func, nextFunct) {
             ENGINE.GAME.running = true;
