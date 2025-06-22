@@ -79,7 +79,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.3.10",
+    VERSION: "0.4.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -138,7 +138,7 @@ const PRG = {
         $(ENGINE.gameWindowId).width(ENGINE.gameWIDTH + 2 * ENGINE.sideWIDTH + 4);
         ENGINE.addBOX("TITLE", ENGINE.titleWIDTH, ENGINE.titleHEIGHT, ["title"], null);
         ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback", "red"], "side");
-        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "token", "board", "front", "grid", "strike", "col_labels", "text", "FPS", "button", "click"], "side");
+        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "token", "grid", "front", "strike", "col_labels", "text", "FPS", "button", "click"], "side");
         ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback", "blue",], "fside");
         ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText", "subtitle"], null);
 
@@ -439,26 +439,7 @@ const BOARD = {
             indices: indices
         };
     },
-    gameCompleted(indices, player) {
-        console.warn("---- game completed ----", indices, player);
-        const off = ENGINE.INI.GRIDPIX / 2;
-        const CTX = LAYER.strike;
-        CTX.lineWidth = 5;
-        //CTX.lineCap = "round";
-        CTX.strokeStyle = player;
-        for (const i of indices) {
-            console.info("....", i, "coords", BOARD.coordinates[i]);
-            let [x1, y1] = this.gridToCoord(new Grid(BOARD.coordinates[i][0][0], BOARD.coordinates[i][0][1]), off);
-            let [x2, y2] = this.gridToCoord(new Grid(BOARD.coordinates[i][3][0], BOARD.coordinates[i][3][1]), off);
 
-            CTX.beginPath();
-            CTX.moveTo(x1, y1);
-            CTX.lineTo(x2, y2);
-            CTX.stroke();
-        }
-        GAME.completed = true;
-        TURN_MANAGER.winner = player;
-    },
 };
 
 const AGENT = {
@@ -621,19 +602,18 @@ const TURN_MANAGER = {
         //analyze
         [BOARD.patterns, BOARD.coordinates] = BOARD.boardToPatterns([this.playerPieces[player]]);
         //console.log("analysis", BOARD.patterns, BOARD.coordinates);
+
         //check if player has won
         const winCheck = BOARD.countWindowsInPattern(BOARD.patterns, 4, this.playerPieces[player]);
         const win = winCheck.count > 0;
-        console.info("winCheck", winCheck, win);
-        if (win) return BOARD.gameCompleted(winCheck.indices, player);
+        //console.info("winCheck", winCheck, win);
+        if (win) return this.gameCompleted(winCheck.indices, player);
 
         //calculate and draw score
         const inrow2 = BOARD.countWindowsInPattern(BOARD.patterns, 2, this.playerPieces[player]).count;
         const inrow3 = BOARD.countWindowsInPattern(BOARD.patterns, 3, this.playerPieces[player]).count;
         TURN_MANAGER.score[player] = inrow2 * INI.INROW2 + inrow3 * INI.INROW3;
-
         TITLE.score();
-
     },
     manage(lapsedTime) {
         if (this.turn_completed) return this.nextPlayer();
@@ -655,7 +635,26 @@ const TURN_MANAGER = {
         CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, false);
         CTX.fill();
         CTX.restore();
-    }
+    },
+    gameCompleted(indices, player) {
+        console.warn("---- game completed ----", indices, player);
+        const off = ENGINE.INI.GRIDPIX / 2;
+        const CTX = LAYER.strike;
+        CTX.lineWidth = 5;
+        CTX.strokeStyle = player;
+        for (const i of indices) {
+            console.info("....", i, "coords", BOARD.coordinates[i]);
+            let [x1, y1] = BOARD.gridToCoord(new Grid(BOARD.coordinates[i][0][0], BOARD.coordinates[i][0][1]), off);
+            let [x2, y2] = BOARD.gridToCoord(new Grid(BOARD.coordinates[i][3][0], BOARD.coordinates[i][3][1]), off);
+
+            CTX.beginPath();
+            CTX.moveTo(x1, y1);
+            CTX.lineTo(x2, y2);
+            CTX.stroke();
+        }
+        GAME.completed = true;
+        this.winner = player;
+    },
 };
 
 const GAME = {
@@ -673,7 +672,7 @@ const GAME = {
         ENGINE.GAME.pauseBlock();
         ENGINE.GAME.paused = true;
 
-        let GameRD = new RenderData("CompSmooth", 60, "#fF2010", "text", "#444444", 2, 2, 2);
+        let GameRD = new RenderData("CompSmooth", 60, "#fF20AA", "text", "#444444", 2, 2, 2);
         ENGINE.TEXT.setRD(GameRD);
         ENGINE.watchVisibility(ENGINE.GAME.lostFocus);
         ENGINE.GAME.setGameLoop(GAME.run);
@@ -683,7 +682,7 @@ const GAME = {
         GAME.fps = new FPS_short_term_measurement(300);
         GAME.prepareForRestart();
         TURN_MANAGER.init();
-        SUBTITLE.init("subtitle", 32, "CompSmooth");
+        SUBTITLE.init("subtitle", 24, "CompSmooth");
         //BOARD.debugBoard();
         //BOARD.importBoard(DEBUG.board);
         GAME.levelExecute();
@@ -703,7 +702,7 @@ const GAME = {
         ENGINE.GAME.resume();
     },
     prepareForRestart() {
-        let clear = ["background", "text", "FPS", "button", "bottomText", "subtitle", "token", "strike"];
+        let clear = ["background", "text", "FPS", "button", "bottomText", "subtitle", "token", "strike", "grid", "front"];
         ENGINE.clearManylayers(clear);
         TITLE.blackBackgrounds();
         ENGINE.TIMERS.clear();
@@ -828,47 +827,40 @@ const GAME = {
     complete() {
         console.warn("\n---------------------- completing game -------------------------------------------------");
 
-        console.info("WINNER:", TURN_MANAGER.winner);
+        const winner = TURN_MANAGER.winner;
+        console.info("WINNER:", winner);
         ENGINE.GAME.pauseBlock();
         ENGINE.GAME.ANIMATION.stop();
-
         const layersToClear = ["FPS"];
         layersToClear.forEach(item => ENGINE.layersToClear.add(item));
         ENGINE.clearLayerStack();
+
+        if (TURN_MANAGER.mode === 1) {
+            let subtitleText = `${TURN_MANAGER.name[winner]} wins.`;
+            let color = winner;
+            if (winner === "Tie") {
+                subtitleText = "The game is tied.";
+                color = "white";
+            }
+            subtitleText += " Press <ENTER> for next round using the same settings or <SPACE> to restart.";
+            SUBTITLE.subtitle(subtitleText, color);
+            ENGINE.GAME.ANIMATION.next(GAME.completeRun);
+        } else {
+            console.info("game completes in analyze mode");
+            //to be implemented
+        }
+
         console.warn("-------------------------------------------------\n");
     },
-    /*
-    won() {
-        console.info("GAME WON");
-        TITLE.setEndingCreditsScroll();
-        ENGINE.GAME.pauseBlock();
-        const layersToClear = ["FPS", "info"];
-        layersToClear.forEach(item => ENGINE.layersToClear.add(item));
-        ENGINE.clearLayerStack();
-        ENGINE.GAME.ANIMATION.stop();
-        const delay = 4000;
-        setTimeout(function () {
-            ENGINE.clearLayer("subtitle");
-            TITLE.music();
-            ENGINE.GAME.ANIMATION.next(GAME.wonRun);
-        }, delay);
-    },
-    wonRun(lapsedTime) {
+    completeRun(lapsedTime) {
         if (ENGINE.GAME.stopAnimation) return;
-        GAME.endingCreditText.process(lapsedTime);
-        GAME.wonFrameDraw();
-        if (ENGINE.GAME.keymap[ENGINE.KEY.map.enter]) {
-            ENGINE.GAME.ANIMATION.next(TITLE.startTitle);
-        }
+        if (ENGINE.GAME.keymap[ENGINE.KEY.map.enter]) ENGINE.GAME.ANIMATION.next(GAME.start);
+        if (ENGINE.GAME.keymap[ENGINE.KEY.map.space]) ENGINE.GAME.ANIMATION.next(TITLE.startTitle);
     },
-    wonFrameDraw() {
-        GAME.endingCreditText.draw();
-    },
-    */
 };
 
 const TITLE = {
-    scoreY: null,
+    //scoreY: null,
     stack: {
     },
     startTitle() {
@@ -887,7 +879,8 @@ const TITLE = {
         ENGINE.GAME.ANIMATION.next(GAME.runTitle);
     },
     clearAllLayers() {
-        ENGINE.layersToClear = new Set(["text", "sideback", "button", "title", "FPS", "bottomText", "subtitle", "token", "strike"]);
+        ENGINE.layersToClear = new Set(["text", "sideback", "button", "title", "FPS",
+            "bottomText", "subtitle", "token", "strike", "grid", "front", "red", "blue"]);
         ENGINE.clearLayerStack();
     },
     blackBackgrounds() {
@@ -1001,8 +994,9 @@ const TITLE = {
         CTX.textAlign = "left";
         CTX.fillStyle = "red";
         CTX.font = `${fs}px CompSmooth`;
-        CTX.fillText(`Name: ${$("#red_player_name")[0].value}`, X, y);
-        CTX.fillText(`Agent: ${$("#red_player_agents")[0].value}`, X, y + 1.5 * fs);
+        //CTX.fillText(`Name: ${$("#red_player_name")[0].value}`, X, y);
+        CTX.fillText(`Name: ${TURN_MANAGER.name.red}`, X, y);
+        CTX.fillText(`Agent: ${TURN_MANAGER.agent.red}`, X, y + 1.5 * fs);
         CTX.fillText(`Score: ${TURN_MANAGER.score.red}`, X, y + 3 * fs);
 
         //blue
@@ -1010,8 +1004,8 @@ const TITLE = {
         CTX.textAlign = "left";
         CTX.fillStyle = "blue";
         CTX.font = `${fs}px CompSmooth`;
-        CTX.fillText(`Name: ${$("#blue_player_name")[0].value}`, X, y);
-        CTX.fillText(`Agent: ${$("#blue_player_agents")[0].value}`, X, y + 1.5 * fs);
+        CTX.fillText(`Name: ${TURN_MANAGER.name.blue}`, X, y);
+        CTX.fillText(`Agent: ${TURN_MANAGER.agent.blue}`, X, y + 1.5 * fs);
         CTX.fillText(`Score: ${TURN_MANAGER.score.blue}`, X, y + 3 * fs);
     },
 };
