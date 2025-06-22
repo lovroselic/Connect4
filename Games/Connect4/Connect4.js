@@ -76,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.4.2",
+    VERSION: "0.4.3",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -569,53 +569,60 @@ const TURN_MANAGER = {
     },
     getPlayer() {
         let player = this.players[this.nextPlayerIndex];
-        this.nextPlayerIndex++;
-        this.nextPlayerIndex %= 2;
+        this.switchPlayer();
         return player;
     },
+    switchPlayer() {
+        this.nextPlayerIndex++;
+        this.nextPlayerIndex %= 2;
+    },
     nextPlayer() {
-        /*if (TURN_MANAGER.awaitingInput) {
-            console.error("awaitingInput");
-            return;
-        }*/
         if (TURN_MANAGER.awaitingInput) return;
-
-        
-
-        this.turn++;
-        if (this.turn === INI.OVER_TURN) {
-            this.winner = "Tie";
-            GAME.completed = true;
-            console.error(`Tied game from overturn on turn ${this.turn}!`);
-        }
-
-        let player = this.getPlayer();
-        console.log(`\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}`);
 
         let move = null;
+        let player = null;
+
         if (this.lastInput) {
-            console.warn("move from last input");
+            this.switchPlayer();                                                                    //need to switch to remain the same!
+
+            player = this.players[this.nextPlayerIndex];
             move = this.lastInput;
             this.lastInput = null;
+            console.warn("move from last input,move", move, "player", player);
+        } else {
+            this.turn++;
+            if (this.turn === INI.OVER_TURN) {
+                this.winner = "Tie";
+                GAME.completed = true;
+                console.error(`Tied game from overturn on turn ${this.turn}!`);
+                return;
+            }
 
-        } else move = AGENT[this.agent[player]]();
-        //const move = AGENT[this.agent[player]]();
-        console.error("MOVE", move);
+            player = this.getPlayer();
 
-        //if (TURN_MANAGER.awaitingInput) throw "awaitingInput";
-        if (TURN_MANAGER.awaitingInput) return;
-        if (move === undefined) throw "undefined move"; //debug
+            move = AGENT[this.agent[player]]();
+            console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
+        }
+
+        console.error("MOVE - nextplayer", move, "TURN_MANAGER.awaitingInput", TURN_MANAGER.awaitingInput, "player", player, "this.nextPlayerIndex", this.nextPlayerIndex);
+
+        if (TURN_MANAGER.awaitingInput) {
+            SUBTITLE.subtitle(`${this.name[player]}: waiting for input`, player);
+            return;
+        }
+
+        if (move === undefined) throw "undefined move - this should not happen!"; //debug
 
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
-        console.log(".move", move, "destination", destination, "player", player);
+        console.info(".....move", move, "destination", destination, "player", player);
 
         if (this.mode) {
             this.setMove(move, destination, player);
         } else this.applyDestination(destination);
 
         SUBTITLE.subtitle(`${this.name[player]}: column ${move + 1}`, player);
-        console.log("-------------------------------\n");
+        console.log("-------------------------------\n\n\n");
     },
     setMove(move, destination, player) {
         this.token = new Token(move, new Grid(move, INI.ROWS), destination, player);

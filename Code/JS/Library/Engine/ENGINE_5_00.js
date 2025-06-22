@@ -1136,10 +1136,10 @@ const ENGINE = {
             for (const code in this.keymap) {
                 const keyCode = Number(code);
                 if (this.keymap[keyCode]) {
-                    pressed.push(ENGINE.KEY.keycodes[keyCode]);
+                        pressed.push(ENGINE.KEY.keycodes[keyCode]);
+                    }
                 }
-            }
-
+            
             return pressed;
         },
         run(func, nextFunct) {
