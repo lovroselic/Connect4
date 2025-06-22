@@ -1045,7 +1045,7 @@ const ENGINE = {
             4: 52,
             5: 53,
             6: 54,
-            7: 55.
+            7: 55,
         },
         waitFor(func, key = "enter") {
             if (ENGINE.GAME.stopAnimation) return;

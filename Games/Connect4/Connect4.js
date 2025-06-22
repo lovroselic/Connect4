@@ -15,10 +15,7 @@ known bugs:
 retests:
 
 engine changes:
-    - GRID : 
     - ENGINE:
-    - GenericTimers
-
 
  */
 ////////////////////////////////////////////////////
@@ -79,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.4.0",
+    VERSION: "0.4.1",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -446,9 +443,13 @@ const AGENT = {
     Human() {
         console.info("*** Human ***");
         console.time("human");
-
+        let legal_moves = AGENT_MANAGER.getLegalMoves();
+        legal_moves = legal_moves.map(i => i + 1);
+        console.log(".legal_moves, keyboard", legal_moves);
+        //wait for human input, only legal moves allowed
         console.timeEnd("human");
         console.info("*************\n");
+        //return human input
     },
     Random() {
         console.info("*** Random ***");
@@ -659,6 +660,7 @@ const TURN_MANAGER = {
 
 const GAME = {
     map: null,
+    completed: null,
     start() {
         console.log("GAME started");
         if (AUDIO.Title) {
@@ -715,8 +717,12 @@ const GAME = {
             }
         }
         //defaults to random
-        for (let player of ["red", "blue"]) {
+        /*for (let player of ["red", "blue"]) {
             $(`#${player}_player_agents`).val("Random");
+        }*/
+        //defaults to random
+        for (let player of ["red", "blue"]) {
+            $(`#${player}_player_agents`).val("Human");
         }
     },
     setTitle() {
@@ -769,13 +775,16 @@ const GAME = {
         }
         TURN_MANAGER.drawToken();
     },
+    getInput(allowed) {
+        if (ENGINE.GAME.stopAnimation) return;
+        const map = ENGINE.GAME.keymap;
+    },
     respond(lapsedTime) {
         //if (HERO.dead) return;
 
         //HERO.player.respond(lapsedTime);
         //WebGL.GAME.respond(lapsedTime);
         ENGINE.GAME.respond(lapsedTime);
-
         const map = ENGINE.GAME.keymap;
 
         //debug
@@ -797,9 +806,6 @@ const GAME = {
             console.log("#######################################################");
             ENGINE.GAME.keymap[ENGINE.KEY.map.F9] = false;
         }
-
-        //controls
-
 
         return;
     },
