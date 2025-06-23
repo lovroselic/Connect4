@@ -76,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.4.3",
+    VERSION: "0.4.4",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -441,15 +441,9 @@ const BOARD = {
 
 const AGENT = {
     Human() {
-        console.info("*** Human ***");
-        console.time("human");
         let legal_moves = AGENT_MANAGER.getLegalMoves();
         legal_moves = legal_moves.map(i => i + 1);
-        console.log(".legal_moves, keyboard", legal_moves);
         let move = TURN_MANAGER.getInput(legal_moves);
-        console.warn("AGENT MOVE", move);
-        console.timeEnd("human");
-        console.info("*************\n");
         return move;
     },
     Random() {
@@ -582,13 +576,15 @@ const TURN_MANAGER = {
         let move = null;
         let player = null;
 
-        if (this.lastInput) {
+        if (this.lastInput != null) {
             this.switchPlayer();                                                                    //need to switch to remain the same!
 
             player = this.players[this.nextPlayerIndex];
             move = this.lastInput;
             this.lastInput = null;
-            console.warn("move from last input,move", move, "player", player);
+            //console.warn("move from last input,move", move, "player", player);
+            this.switchPlayer();
+            //console.warn("next player", this.players[this.nextPlayerIndex]);
         } else {
             this.turn++;
             if (this.turn === INI.OVER_TURN) {
@@ -604,7 +600,7 @@ const TURN_MANAGER = {
             console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
         }
 
-        console.error("MOVE - nextplayer", move, "TURN_MANAGER.awaitingInput", TURN_MANAGER.awaitingInput, "player", player, "this.nextPlayerIndex", this.nextPlayerIndex);
+        //console.error("MOVE - nextplayer", move, "TURN_MANAGER.awaitingInput", TURN_MANAGER.awaitingInput, "player", player, "this.nextPlayerIndex", this.nextPlayerIndex);
 
         if (TURN_MANAGER.awaitingInput) {
             SUBTITLE.subtitle(`${this.name[player]}: waiting for input`, player);
@@ -615,20 +611,20 @@ const TURN_MANAGER = {
 
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
-        console.info(".....move", move, "destination", destination, "player", player);
+        //console.info(".....completing move", move, "destination", destination, "player", player);
 
         if (this.mode) {
             this.setMove(move, destination, player);
         } else this.applyDestination(destination);
 
         SUBTITLE.subtitle(`${this.name[player]}: column ${move + 1}`, player);
-        console.log("-------------------------------\n\n\n");
+        //console.log("-------------------------------\n\n\n");
     },
     setMove(move, destination, player) {
         this.token = new Token(move, new Grid(move, INI.ROWS), destination, player);
     },
     applyDestination(destination, player) {
-        console.log(".. applying destination", destination, player);
+        //console.log(".. applying destination", destination, player);
         this.turn_completed = true;
         this.token = null;
         GAME.map.setToken(destination, player);
@@ -691,7 +687,7 @@ const TURN_MANAGER = {
         this.winner = player;
     },
     getInput(allowed = null) {
-        console.warn("getting input from", allowed);
+        //console.warn("getting input from", allowed);
         this.awaitingInput = true;
         this.lastInput = null;
         this.allowed = allowed;
@@ -757,18 +753,18 @@ const GAME = {
                 $(`#${player}_player_agents`).append(`<option value="${agent}">${agent}</option>`);
             }
         }
-        //defaults to random
-        for (let player of ["red", "blue"]) {
+        //defaults to both random
+        /*for (let player of ["red", "blue"]) {
             $(`#${player}_player_agents`).val("Random");
-        }
+        }*/
 
-        //defaults to Human
+        //defaults to both Human
         /*for (let player of ["red", "blue"]) {
             $(`#${player}_player_agents`).val("Human");
         }*/
 
         $(`#red_player_agents`).val("Human");
-        //$(`#blue_player_agents`).val("Random");
+        $(`#blue_player_agents`).val("Random");
     },
     setTitle() {
         const text = GAME.generateTitleText();
@@ -836,7 +832,7 @@ const GAME = {
             TURN_MANAGER.awaitingInput = false;
             TURN_MANAGER.lastInput = key - 1;
 
-            console.error("key", key, "TURN_MANAGER.lastInput", TURN_MANAGER.lastInput, "pressedKeys", pressedKeys, "allowed", TURN_MANAGER.allowed);
+            //console.error("key", key, "TURN_MANAGER.lastInput", TURN_MANAGER.lastInput, "pressedKeys", pressedKeys, "allowed", TURN_MANAGER.allowed);
             ENGINE.GAME.keymap[ENGINE.KEY.map[key]] = false;
             return;
         }
