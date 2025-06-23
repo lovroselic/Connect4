@@ -76,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.4.4",
+    VERSION: "0.5.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -450,7 +450,6 @@ const AGENT = {
         console.info("*** Random ***");
         console.time("random");
         let legal_moves = AGENT_MANAGER.getLegalMoves();
-        console.log(".legal_moves", legal_moves);
         console.timeEnd("random");
         console.info("*************\n");
         return legal_moves.chooseRandom();
@@ -578,13 +577,10 @@ const TURN_MANAGER = {
 
         if (this.lastInput != null) {
             this.switchPlayer();                                                                    //need to switch to remain the same!
-
             player = this.players[this.nextPlayerIndex];
             move = this.lastInput;
             this.lastInput = null;
-            //console.warn("move from last input,move", move, "player", player);
             this.switchPlayer();
-            //console.warn("next player", this.players[this.nextPlayerIndex]);
         } else {
             this.turn++;
             if (this.turn === INI.OVER_TURN) {
@@ -595,36 +591,30 @@ const TURN_MANAGER = {
             }
 
             player = this.getPlayer();
-
             move = AGENT[this.agent[player]]();
             console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
         }
-
-        //console.error("MOVE - nextplayer", move, "TURN_MANAGER.awaitingInput", TURN_MANAGER.awaitingInput, "player", player, "this.nextPlayerIndex", this.nextPlayerIndex);
 
         if (TURN_MANAGER.awaitingInput) {
             SUBTITLE.subtitle(`${this.name[player]}: waiting for input`, player);
             return;
         }
 
-        if (move === undefined) throw "undefined move - this should not happen!"; //debug
+        //if (move === undefined) throw "undefined move - this should not happen!"; //debug
 
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
-        //console.info(".....completing move", move, "destination", destination, "player", player);
 
         if (this.mode) {
             this.setMove(move, destination, player);
         } else this.applyDestination(destination);
 
         SUBTITLE.subtitle(`${this.name[player]}: column ${move + 1}`, player);
-        //console.log("-------------------------------\n\n\n");
     },
     setMove(move, destination, player) {
         this.token = new Token(move, new Grid(move, INI.ROWS), destination, player);
     },
     applyDestination(destination, player) {
-        //console.log(".. applying destination", destination, player);
         this.turn_completed = true;
         this.token = null;
         GAME.map.setToken(destination, player);
@@ -632,12 +622,10 @@ const TURN_MANAGER = {
 
         //analyze
         [BOARD.patterns, BOARD.coordinates] = BOARD.boardToPatterns([this.playerPieces[player]]);
-        //console.log("analysis", BOARD.patterns, BOARD.coordinates);
 
         //check if player has won
         const winCheck = BOARD.countWindowsInPattern(BOARD.patterns, 4, this.playerPieces[player]);
         const win = winCheck.count > 0;
-        //console.info("winCheck", winCheck, win);
         if (win) return this.gameCompleted(winCheck.indices, player);
 
         //calculate and draw score
@@ -753,17 +741,9 @@ const GAME = {
                 $(`#${player}_player_agents`).append(`<option value="${agent}">${agent}</option>`);
             }
         }
-        //defaults to both random
-        /*for (let player of ["red", "blue"]) {
-            $(`#${player}_player_agents`).val("Random");
-        }*/
 
-        //defaults to both Human
-        /*for (let player of ["red", "blue"]) {
-            $(`#${player}_player_agents`).val("Human");
-        }*/
-
-        $(`#red_player_agents`).val("Human");
+        //$(`#red_player_agents`).val("Human");
+        $(`#red_player_agents`).val("Random");
         $(`#blue_player_agents`).val("Random");
     },
     setTitle() {
