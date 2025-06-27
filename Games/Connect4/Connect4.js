@@ -76,7 +76,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.5.0",
+    VERSION: "0.5.1",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -296,14 +296,14 @@ const BOARD = {
     /**
      * @param {*} players array of players to check, allows [1], [2], [1,2]
      */
-    boardToPatterns(players) {
+    boardToPatterns(players, board = GAME.map) {
         console.time("analyze");
         const patterns = [];
         const coordinates = [];
         let pat, coord;
         let functs = ["boardDiagonals", "boardHorizontals", "boardVerticals"];
         for (const F of functs) {
-            [pat, coord] = this[F](players);
+            [pat, coord] = this[F](players, board);
             patterns.push(...pat);
             coordinates.push(...coord);
         }
@@ -311,8 +311,8 @@ const BOARD = {
         console.timeEnd("analyze");
         return [patterns, coordinates];
     },
-    boardDiagonals(players) {
-        const GA = GAME.map;
+    boardDiagonals(players, board) {
+        const GA = board;
         const patterns = [];
         const coordinates = [];
 
@@ -356,8 +356,8 @@ const BOARD = {
 
         return [patterns, coordinates];
     },
-    boardHorizontals(players) {
-        const GA = GAME.map;
+    boardHorizontals(players, board) {
+        const GA = board;
         const patterns = [];
         const coordinates = [];
 
@@ -381,8 +381,8 @@ const BOARD = {
 
         return [patterns, coordinates];
     },
-    boardVerticals(players) {
-        const GA = GAME.map;
+    boardVerticals(players, board) {
+        const GA = board;
         const patterns = [];
         const coordinates = [];
         for (let x = 0; x < INI.COLS; x++) {
@@ -419,14 +419,11 @@ const BOARD = {
         );
     },
     countWindowsInPattern(patterns, num, player) {
-        //console.warn(".countWindowsInPattern", patterns, num, player);
         const indices = [];
         patterns.forEach((window, index) => {
             const playerCount = window.filter(v => v === player).length;
             const zeroCount = window.filter(v => v === 0).length;
-            //console.debug("..", window, index, "-->", playerCount, zeroCount);
             if (playerCount === num && zeroCount === INI.INROW - num) {
-                //console.log("...pushed", index);
                 indices.push(index);
             }
         });
@@ -436,7 +433,6 @@ const BOARD = {
             indices: indices
         };
     },
-
 };
 
 const AGENT = {
@@ -447,12 +443,16 @@ const AGENT = {
         return move;
     },
     Random() {
-        console.info("*** Random ***");
-        console.time("random");
         let legal_moves = AGENT_MANAGER.getLegalMoves();
-        console.timeEnd("random");
-        console.info("*************\n");
         return legal_moves.chooseRandom();
+    },
+    Village_Idiot(playerIndex) {
+        console.info("*** Village_Idiot ***");
+        console.time("Village_Idiot");
+        let moves = AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
+        console.timeEnd("Village_Idiot");
+        console.info("*************\n");
+        return moves[0];
     }
 };
 
@@ -466,14 +466,76 @@ const AGENT_MANAGER = {
         }
         return legalMoves;
     },
+    getLegalCentreOrderedMoves() {
+        const legalMoves = [];
+        for (let c = 0; c < INI.COLS; c++) {
+            let grid = new Grid(TURN_MANAGER.order[c], INI.ROWS - 1);
+            if (GAME.map.isZero(grid)) legalMoves.push(TURN_MANAGER.order[c]);
+        }
+        return legalMoves;
+    },
+    getEmptyRow(map, col) {
+        for (let row = 0; row < INI.ROWS; row++) {
+            let grid = new Grid(row, col);
+            if (map.isZero(grid)) return grid;
+        }
+        throw "Oh, god; this should not have happened ever!!! Empty row not found!"; // debug
+    },
     getDestination(move) {
         let grid = new Grid(move, INI.ROWS - 1);
         while (GAME.map.isZero(grid.add(UP))) {
             grid = grid.add(UP);
         }
         return grid;
-    }
-};
+    },
+    N_step_lookahead(playerIndex, N) {
+        console.info("### N_step_lookahead ###", "playerIndex", playerIndex, "N", N);
+        let moves = this.getLegalCentreOrderedMoves();
+        const scores = {};
+        for (const move of moves) {
+            scores[move] = this.scoreMove(GAME.map, move, playerIndex, N);
+        }
+
+
+        console.table(scores);
+        //debug
+        return moves;
+    },
+    scoreMove(grid, move, playerIndex, N) {
+        let nextGrid = this.dropPiece(grid, move, playerIndex);                                     //GA!
+        let score = this.minimax(nextGrid, N - 1, false, playerIndex, -Infinity, Infinity);
+        console.log("... scoreMove", nextGrid, "move", move, "score", score);
+        return score || 0;
+    },
+    dropPiece(grid, move, playerIndex) {
+        let nextGrid = grid.clone();                                                                //this is GA!
+        let placedGrid = this.getEmptyRow(nextGrid, move);
+        nextGrid.setValue(placedGrid, playerIndex);
+    },
+    minimax(GA, depth, maximizingPlayer, playerIndex, A, B) {
+        if (depth === 0 || this.isTerminalNode()) return this.getHeuristic(GA, playerIndex);
+        ///continue!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    },
+    getHeuristic(GA, playerIndex) {
+        const pieces = [2, 3, 4];
+        const patterns = BOARD.boardToPatterns([1, 2], GA)[0];                                      //ignoring coordinates
+        const player = [];
+        for (const p in pieces) {
+            player.push(BOARD.countWindowsInPattern(patterns, p, playerIndex));
+        }
+        const oppoPlayer = playerIndex % 2 + 1;
+        const oppo = [];
+        for (const p in pieces) {
+            player.push(BOARD.countWindowsInPattern(patterns, p, oppoPlayer));
+        }
+
+        console.warn("getHeuristic", player, oppo); ž
+        throw "debug"; ///continue!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    },
+    isTerminalNode() { },
+    isTerminalWindow() { },
+}
 
 class Token {
     constructor(move, startGrid, destination, player) {
@@ -529,6 +591,7 @@ const TURN_MANAGER = {
     lastInput: null,
     inputCallback: null,
     allowed: null,
+    order: null,
     init() {
         const next = $("#select_player_start")[0].value;
         switch (next) {
@@ -555,15 +618,30 @@ const TURN_MANAGER = {
         this.awaitingInput = false;
         this.lastInput = null;
         this.allowed = null;
+        this.order = this.getCenterOutOrder();
         /////////////
         console.info("Agents:");
         console.table(TURN_MANAGER.agent);
         console.info("Mode:", this.mode);
     },
+    getCenterOutOrder(cols = INI.COLS) {
+        const order = [];
+        for (let i = 0; i < cols; i++) {
+            if (i % 2 === 0) {
+                order.push(Math.floor(cols / 2) + Math.floor(i / 2));
+            } else {
+                order.push(Math.floor(cols / 2) - Math.floor(i / 2) - 1);
+            }
+        }
+        return order;
+    },
     getPlayer() {
         let player = this.players[this.nextPlayerIndex];
         this.switchPlayer();
         return player;
+    },
+    playerToIndex(player) {
+        return this.players.indexOf(player);
     },
     switchPlayer() {
         this.nextPlayerIndex++;
@@ -591,7 +669,7 @@ const TURN_MANAGER = {
             }
 
             player = this.getPlayer();
-            move = AGENT[this.agent[player]]();
+            move = AGENT[this.agent[player]](this.playerToIndex(player) + 1);
             console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
         }
 
@@ -744,7 +822,8 @@ const GAME = {
 
         //$(`#red_player_agents`).val("Human");
         $(`#red_player_agents`).val("Random");
-        $(`#blue_player_agents`).val("Random");
+        //$(`#blue_player_agents`).val("Random");
+        $(`#blue_player_agents`).val("VillageIdiot");
     },
     setTitle() {
         const text = GAME.generateTitleText();

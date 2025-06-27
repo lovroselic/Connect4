@@ -1166,6 +1166,7 @@ class GridArray extends Classes([ArrayBasedDataStructure, GA_Dimension_Agnostic_
         this.minY = 1;
         this.map = GM;
         this.nodeMap = null;
+        this.byte = byte;
         this.gridSizeBit = byte * 8;
         if (fill !== 0) this.map.fill(fill);
     }
@@ -1544,7 +1545,6 @@ class GridArray extends Classes([ArrayBasedDataStructure, GA_Dimension_Agnostic_
         const check = this.check(grid, exclusion.sum());
         return !check;
     }
-
     lookForGrid(startGrid, dir, lookGrid) {
         do {
             startGrid = startGrid.add(dir);
@@ -1577,6 +1577,11 @@ class GridArray extends Classes([ArrayBasedDataStructure, GA_Dimension_Agnostic_
             }
         }
         return pixelData;
+    }
+    clone(){
+        const clone = new GridArray(this.width, this.height, this.byte);
+        clone.map.set(this.map);                                                            // deep copy of the typed array
+        return clone;
     }
 }
 

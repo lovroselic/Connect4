@@ -72,7 +72,6 @@ def N_step_lookahead(obs, config):
                     num_windows += 1
         return num_windows
     
-
     def is_terminal_window(window, config):
         return window.count(1) == config.inarow or window.count(2) == config.inarow
 
@@ -142,7 +141,7 @@ def N_step_lookahead(obs, config):
 
     ########################################################
 
-    order = [config.columns//2 - i//2 - 1 if i%2 else config.columns//2 + i//2 for i in range(config.columns)]
+    order = [config.columns//2 - i//2 - 1 if i%2 else config.columns//2 + i//2 for i in range(config.columns)] ## 3,2,4,1,5,0,6
     valid_moves = [c for c in order if obs.board[c] == 0]
     grid = np.asarray(obs.board).reshape(config.rows, config.columns)
     scores = dict(zip(valid_moves, [score_move(grid, col, obs.mark, config, N_STEPS) for col in valid_moves]))
