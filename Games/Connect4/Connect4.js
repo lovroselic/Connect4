@@ -15,7 +15,8 @@ known bugs:
 retests:
 
 engine changes:
-    - ENGINE:
+
+    - prototype
 
  */
 ////////////////////////////////////////////////////
@@ -76,7 +77,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.5.1",
+    VERSION: "0.5.2",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -428,10 +429,7 @@ const BOARD = {
             }
         });
 
-        return {
-            count: indices.length,
-            indices: indices
-        };
+        return { count: indices.length, indices: indices };
     },
 };
 
@@ -503,38 +501,57 @@ const AGENT_MANAGER = {
     },
     scoreMove(grid, move, playerIndex, N) {
         let nextGrid = this.dropPiece(grid, move, playerIndex);                                     //GA!
-        let score = this.minimax(nextGrid, N - 1, false, playerIndex, -Infinity, Infinity);
-        console.log("... scoreMove", nextGrid, "move", move, "score", score);
-        return score || 0;
+        console.log("... scoreMove", nextGrid, "move", move);
+        const patterns = BOARD.boardToPatterns([1, 2], nextGrid)[0];  
+        let score = this.minimax(nextGrid, N - 1, false, playerIndex, -Infinity, Infinity, patterns);
+        console.log(".... score", score);
+
+        return score;
     },
     dropPiece(grid, move, playerIndex) {
         let nextGrid = grid.clone();                                                                //this is GA!
         let placedGrid = this.getEmptyRow(nextGrid, move);
-        nextGrid.setValue(placedGrid, playerIndex);
+        nextGrid.setValue(placedGrid, playerIndex);                                                 //ignoring coordinates
+        return nextGrid;
     },
-    minimax(GA, depth, maximizingPlayer, playerIndex, A, B) {
-        if (depth === 0 || this.isTerminalNode()) return this.getHeuristic(GA, playerIndex);
+    minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
+        if (depth === 0 || this.isTerminalNode(GA, patterns)) return this.getHeuristic(playerIndex, patterns);
         ///continue!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        throw "..minimax in progress";
 
     },
-    getHeuristic(GA, playerIndex) {
+    getHeuristic(playerIndex, patterns) {
         const pieces = [2, 3, 4];
-        const patterns = BOARD.boardToPatterns([1, 2], GA)[0];                                      //ignoring coordinates
-        const player = [];
-        for (const p in pieces) {
-            player.push(BOARD.countWindowsInPattern(patterns, p, playerIndex));
-        }
         const oppoPlayer = playerIndex % 2 + 1;
-        const oppo = [];
-        for (const p in pieces) {
-            player.push(BOARD.countWindowsInPattern(patterns, p, oppoPlayer));
-        }
+        const player = pieces.map(p => BOARD.countWindowsInPattern(patterns, p, playerIndex));
+        const oppo = pieces.map(p => BOARD.countWindowsInPattern(patterns, p, oppoPlayer));
+        const score = pieces.reduce((sum, n, i) => {
+            const weight = INI[`INROW${n}`];
+            return sum + weight * (player[i] - oppo[i]);
+        }, 0);
 
-        console.warn("getHeuristic", player, oppo); ž
-        throw "debug"; ///continue!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        console.warn("getHeuristic", player, oppo, "score", score);
+        return score;
     },
-    isTerminalNode() { },
-    isTerminalWindow() { },
+    isTerminalWindow(window) {
+        if (window.count(1) === INI.INROW || window.count(2) === INI.INROW) return true;
+        return false;
+    },
+    isTerminalNode(GA) {
+        //Check for draw 
+        let topRow = Array.from(GA.map.slice(-INI.COLS));
+        console.log("..isTerminalNode; topRow", topRow);
+        if (topRow.count(0) === 0) return true;
+
+        //cont...
+
+
+        //
+        return false;
+    },
+
+
+
 }
 
 class Token {
@@ -669,6 +686,7 @@ const TURN_MANAGER = {
             }
 
             player = this.getPlayer();
+            console.warn(this.agent[player]);
             move = AGENT[this.agent[player]](this.playerToIndex(player) + 1);
             console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
         }
@@ -823,7 +841,7 @@ const GAME = {
         //$(`#red_player_agents`).val("Human");
         $(`#red_player_agents`).val("Random");
         //$(`#blue_player_agents`).val("Random");
-        $(`#blue_player_agents`).val("VillageIdiot");
+        $(`#blue_player_agents`).val("Village_Idiot");
     },
     setTitle() {
         const text = GAME.generateTitleText();

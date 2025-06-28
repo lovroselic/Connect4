@@ -532,6 +532,10 @@ Array.prototype.removeValueOnce = function (value) {
         this.splice(idx, 1);
     }
 };
+Array.prototype.count = function (value) {
+    let filtered = this.filter(item => item === value);
+    return filtered.length;
+};
 String.prototype.capitalize = function () {
     return this.charAt(0).toUpperCase() + this.substring(1).toLowerCase();
 };
