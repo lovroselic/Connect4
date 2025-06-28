@@ -77,7 +77,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.5.3",
+    VERSION: "0.5.4",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -298,7 +298,6 @@ const BOARD = {
      * @param {*} players array of players to check, allows [1], [2], [1,2]
      */
     boardToPatterns(players, board = GAME.map) {
-        console.time("analyze");
         const patterns = [];
         const coordinates = [];
         let pat, coord;
@@ -309,7 +308,6 @@ const BOARD = {
             coordinates.push(...coord);
         }
 
-        console.timeEnd("analyze");
         return [patterns, coordinates];
     },
     boardDiagonals(players, board) {
@@ -412,10 +410,12 @@ const BOARD = {
         const uniquePlayers = new Set(pattern.filter(v => v !== 0)).size;
         const playerWith2OrMore = players.some(p => pattern.filter(v => v === p).length >= 2);
 
+
+        // !(zeros === 0 && uniquePlayers > 1) && 
         return (
             zeros < 3 &&
             matches >= 2 &&
-            !(zeros === 0 && uniquePlayers > 1) &&
+            //!(zeros === 0 && uniquePlayers > 1) &&
             playerWith2OrMore
         );
     },
@@ -447,7 +447,7 @@ const AGENT = {
     Village_Idiot(playerIndex) {
         console.info("*** Village_Idiot ***");
         console.time("Village_Idiot");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
+        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 4);
         console.timeEnd("Village_Idiot");
         console.info("*************\n");
         return move;
@@ -455,7 +455,6 @@ const AGENT = {
 };
 
 const AGENT_MANAGER = {
-    //map --> GAME.map
     getLegalMoves(map = GAME.map) {
         const legalMoves = [];
         for (let c = 0; c < INI.COLS; c++) {
@@ -477,6 +476,7 @@ const AGENT_MANAGER = {
             let grid = new Grid(row, col);
             if (map.isZero(grid)) return grid;
         }
+        console.error("getEmptyRow", map, col);
         throw "Oh, god; this should not have happened ever!!! Empty row not found!"; // debug
     },
     getDestination(move) {
@@ -496,29 +496,26 @@ const AGENT_MANAGER = {
         console.table(scores);
         const maxScore = Math.max(...Object.values(scores));
         const bestMoves = Object.entries(scores)
-            .filter(([key, score]) => score === maxScore)
-            .map(([move]) => parseInt(move)); // convert move (key) back to integer key
-        //console.log("best moves", bestMoves);
+            .filter(([_, score]) => score === maxScore)
+            .map(([move]) => parseInt(move));
+        console.log("best moves", bestMoves);
         const innermost = this.innermost(bestMoves);
         console.log("innermost", innermost);
 
-        //debug
-        //throw "debug";
-        //debug
         return innermost;
     },
     scoreMove(grid, move, playerIndex, N) {
-        let nextGrid = this.dropPiece(grid, move, playerIndex);                                     //GA!
-        //console.log("... scoreMove", nextGrid, "move", move);
+        console.info("scoring move", move, "playerIndex", playerIndex, "N", N);
+        let nextGrid_GA = this.dropPiece(grid, move, playerIndex);                                     //GA! - cloned
         const patterns = BOARD.boardToPatterns([1, 2], nextGrid)[0];
-        let score = this.minimax(nextGrid, N - 1, false, playerIndex, -Infinity, Infinity, patterns);
-        //console.log(".... score", score);
+        let score = this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity, patterns);
+        console.log("... scoreMove", "move", move, "score", score);
         return score;
     },
     dropPiece(grid, move, playerIndex) {
         let nextGrid = grid.clone();                                                                //this is GA!
-        let placedGrid = this.getEmptyRow(nextGrid, move);
-        nextGrid.setValue(placedGrid, playerIndex);                                                 //ignoring coordinates
+        let placedGrid = this.getEmptyRow(nextGrid, move);                                          //filtered for valid moves
+        nextGrid.setValue(placedGrid, playerIndex);                                                 
         return nextGrid;
     },
     minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
@@ -527,35 +524,35 @@ const AGENT_MANAGER = {
 
         const validMoves = this.getLegalCentreOrderedMoves(GA);
         //console.log("\nvalidMoves", ...validMoves);
-        let value;
 
         if (maximizingPlayer) {
-            value = -Infinity;
+            let value = -Infinity;
             for (const col of validMoves) {
-                //console.error("col max", col);
+
                 const childGA = this.dropPiece(GA, col, playerIndex);
                 const childPatterns = BOARD.boardToPatterns([1, 2], childGA)[0];
                 const newValue = this.minimax(childGA, depth - 1, false, playerIndex, A, B, childPatterns);
                 value = Math.max(value, newValue);
                 if (value >= B) break;
                 A = Math.max(A, value);
+                console.error("...col max", col, "value", value);
             }
+            return value;
         } else {
             //minimizing player
-            value = Infinity;
+            let value = Infinity;
             const opponent = playerIndex % 2 + 1;
             for (const col of validMoves) {
-                //console.error("col min", col);
                 const childGA = this.dropPiece(GA, col, opponent);
                 const childPatterns = BOARD.boardToPatterns([1, 2], childGA)[0];
                 const newValue = this.minimax(childGA, depth - 1, true, playerIndex, A, B, childPatterns);
                 value = Math.min(value, newValue);
                 if (value <= A) break;
                 B = Math.min(B, value);
+                console.error("...col min", col, "value", value);
             }
+            return value;
         }
-        
-        return value;
     },
     getHeuristic(playerIndex, patterns) {
         const pieces = [2, 3, 4];
@@ -567,13 +564,13 @@ const AGENT_MANAGER = {
             return sum + weight * (player[i].count - oppo[i].count);
         }, 0);
 
-        //console.warn("getHeuristic", player, oppo, "score", score);
+        console.warn("getHeuristic", player, oppo, "score", score);
         return score;
     },
-    isTerminalWindow(window) {
+    /*isTerminalWindow(window) {
         if (window.count(1) === INI.INROW || window.count(2) === INI.INROW) return true;
         return false;
-    },
+    },*/
     isTerminalNode(GA, patterns) {
         //Check for draw 
         let topRow = Array.from(GA.map.slice(-INI.COLS));                                           //GA.map is UInt8Array
@@ -954,13 +951,12 @@ const GAME = {
         if (pressedKeys.length > 0) {
             const key = parseInt(pressedKeys[0], 10);
             TURN_MANAGER.awaitingInput = false;
-            TURN_MANAGER.lastInput = key - 1;
+            TURN_MANAGER.lastInput = key - 1;                                                               //convert key to zero based move
 
             //console.error("key", key, "TURN_MANAGER.lastInput", TURN_MANAGER.lastInput, "pressedKeys", pressedKeys, "allowed", TURN_MANAGER.allowed);
             ENGINE.GAME.keymap[ENGINE.KEY.map[key]] = false;
             return;
         }
-
 
         //debug
         if (map[ENGINE.KEY.map.F7]) {
