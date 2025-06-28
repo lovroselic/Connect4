@@ -28,6 +28,7 @@ const DEBUG = {
     VERBOSE: true,
     max17: false,
     keys: true,
+    simulation: true,
     board: [
         0, 2, 1, 2, 2, 2, 0,
         0, 1, 1, 1, 2, 0, 0,
@@ -77,7 +78,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.5.4",
+    VERSION: "0.5.5",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -431,6 +432,47 @@ const BOARD = {
 
         return { count: indices.length, indices: indices };
     },
+
+    printBoardToConsole(GA) {
+        const cellChar = (val) => {
+            if (val === 1) return 'X';                  //red
+            if (val === 2) return 'O';                  //blue
+            return ' ';
+        };
+        if (!DEBUG.simulation) return;
+
+        const cols = INI.COLS;
+        const rows = INI.ROWS;
+        const grid = GA.map;
+
+
+        console.log("\n");
+        // Column header
+        let header = '    ';
+        for (let c = 0; c < cols; c++) {
+            header += ` ${c + 1}  `;
+        }
+        console.log(header);
+
+        // Build each row from top to bottom
+        for (let y = rows - 1; y >= 0; y--) {
+            let horizontalBorder = '   +' + '---+'.repeat(cols);
+            let rowContent = `${(y + 1).toString().padStart(2)} |`;
+
+            for (let x = 0; x < cols; x++) {
+                const val = grid[GA.gridToIndex(new Grid(x, y))];
+                rowContent += ` ${cellChar(val)} |`;
+            }
+
+            console.log(horizontalBorder);
+            console.log(rowContent);
+        }
+
+        // Bottom border
+        console.log('   +' + '---+'.repeat(cols));
+        console.log("\n");
+    }
+
 };
 
 const AGENT = {
@@ -447,7 +489,7 @@ const AGENT = {
     Village_Idiot(playerIndex) {
         console.info("*** Village_Idiot ***");
         console.time("Village_Idiot");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 4);
+        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
         console.timeEnd("Village_Idiot");
         console.info("*************\n");
         return move;
@@ -473,7 +515,7 @@ const AGENT_MANAGER = {
     },
     getEmptyRow(map, col) {
         for (let row = 0; row < INI.ROWS; row++) {
-            let grid = new Grid(row, col);
+            let grid = new Grid(col, row);
             if (map.isZero(grid)) return grid;
         }
         console.error("getEmptyRow", map, col);
@@ -487,6 +529,7 @@ const AGENT_MANAGER = {
         return grid;
     },
     N_step_lookahead(playerIndex, N) {
+        console.clear();
         console.info("### N_step_lookahead ###", "playerIndex", playerIndex, "N", N);
         let moves = this.getLegalCentreOrderedMoves();
         const scores = {};
@@ -505,9 +548,9 @@ const AGENT_MANAGER = {
         return innermost;
     },
     scoreMove(grid, move, playerIndex, N) {
-        console.info("scoring move", move, "playerIndex", playerIndex, "N", N);
-        let nextGrid_GA = this.dropPiece(grid, move, playerIndex);                                     //GA! - cloned
-        const patterns = BOARD.boardToPatterns([1, 2], nextGrid)[0];
+        console.info("\n-------------------------------\nscoring move", move, "playerIndex", playerIndex, "N", N);
+        let nextGrid_GA = this.dropPiece(grid, move, playerIndex);                                                          //GA! - cloned
+        const patterns = BOARD.boardToPatterns([1, 2], nextGrid_GA)[0];
         let score = this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity, patterns);
         console.log("... scoreMove", "move", move, "score", score);
         return score;
@@ -515,20 +558,20 @@ const AGENT_MANAGER = {
     dropPiece(grid, move, playerIndex) {
         let nextGrid = grid.clone();                                                                //this is GA!
         let placedGrid = this.getEmptyRow(nextGrid, move);                                          //filtered for valid moves
-        nextGrid.setValue(placedGrid, playerIndex);                                                 
+        nextGrid.setValue(placedGrid, playerIndex);
+        console.warn("....placed grid", placedGrid, "playerIndex", playerIndex);
+        BOARD.printBoardToConsole(nextGrid);
         return nextGrid;
     },
     minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
-        //console.info("\n\n......minimax", depth, "playerIndex", playerIndex, maximizingPlayer, "A", A, "B", B);
+        console.info("\n\n......minimax", depth, "playerIndex", playerIndex, maximizingPlayer, "A", A, "B", B);
         if (depth === 0 || this.isTerminalNode(GA, patterns)) return this.getHeuristic(playerIndex, patterns);
-
         const validMoves = this.getLegalCentreOrderedMoves(GA);
-        //console.log("\nvalidMoves", ...validMoves);
 
         if (maximizingPlayer) {
             let value = -Infinity;
             for (const col of validMoves) {
-
+                console.info("..col max", col);
                 const childGA = this.dropPiece(GA, col, playerIndex);
                 const childPatterns = BOARD.boardToPatterns([1, 2], childGA)[0];
                 const newValue = this.minimax(childGA, depth - 1, false, playerIndex, A, B, childPatterns);
@@ -537,12 +580,14 @@ const AGENT_MANAGER = {
                 A = Math.max(A, value);
                 console.error("...col max", col, "value", value);
             }
+            console.error("..max", "value", value);
             return value;
         } else {
             //minimizing player
             let value = Infinity;
             const opponent = playerIndex % 2 + 1;
             for (const col of validMoves) {
+                console.info("..col min", col);
                 const childGA = this.dropPiece(GA, col, opponent);
                 const childPatterns = BOARD.boardToPatterns([1, 2], childGA)[0];
                 const newValue = this.minimax(childGA, depth - 1, true, playerIndex, A, B, childPatterns);
@@ -551,6 +596,7 @@ const AGENT_MANAGER = {
                 B = Math.min(B, value);
                 console.error("...col min", col, "value", value);
             }
+            console.error("..min", "value", value);
             return value;
         }
     },
