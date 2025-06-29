@@ -20,13 +20,27 @@
             <div id="load"></div>
             <div class="row win">
                 <h1 id="title" class="C4"></h1>
-                <p>Connect four is ...</p>
+                <p>Connect-4 is the intense battlefield where discs fall like rain and IQs scatter like
+                    confetti - especially when Village_idiot thinks diagonals are just tilted rows. Meanwhile, Smarty
+                    plots six moves ahead, rolling its circuits in despair as Prophet refuses to play unless someone
+                    compliments her pattern.
+                </p>
+                <p>Seriously? You don't know this game?</p>
                 <hr class="crimson-hr">
                 <p class="fw-bold"> Agents explained:</p>
                 <p><span class="fw-bold">Human:</span> That's you! Or your mate. Takes input from the keyboard (1..7 for
                     column).</p>
                 <p><span class="fw-bold">Random:</span> Take completely random turn. Not much fun to play against this
-                    one. But it is very useful for testing.</p>
+                    one. But it is was very useful for testing.</p>
+                <p><span class="fw-bold">Village_Idiot:</span> 2-step lookahead algorithm. No challenge to beat this
+                    one.</p>
+                <p><span class="fw-bold">Friendly:</span> 4-step lookahead algorithm. Some slight thinking advised to
+                    beat this
+                    one.</p>
+                <p><span class="fw-bold">Smarty:</span> 6-step lookahead algorithm. This feels like a real human
+                    opponent.</p>
+                <p><span class="fw-bold">Prophet:</span> 7-step lookahead algorithm. It's the maximum javascript can
+                    take before blocking the thread. It takes 0.5-2 seconds to calculate the move. Hard to beat.</p>
                 <hr class="crimson-hr">
                 <div id="setup" class="row">
                     <div class="col-4">
@@ -41,7 +55,7 @@
 
                         <br>
                         <label for="animation_speed">Animation speed</label>
-                        <input type="number" min="5" max="30" value="30" id="animation_speed"> <!-- use default 6-->
+                        <input type="number" min="5" max="30" value="10" id="animation_speed">
 
                         <div>
                             <fieldset>
@@ -168,28 +182,4 @@
     <script src="/Assets/Definitions/Connect4/assets_connect4.js" type="text/javascript"></script>
     <script src="/Games/Connect4/Connect4_class_extensions.js" type="text/javascript"></script>
     <script src="/Games/Connect4/Connect4.js" type="text/javascript"></script>
-
-    <!--
-
-    <script src="/Code/JS/Library/Engine/LS_Matrix_1_02.js" type="text/javascript"></script>
-    <script src='/Code/JS/Library/Engine/ENGINE_5_00.js' type="text/javascript"></script>
-    
-    <script src="/Code/JS/Library/Engine/AI_3_00.js" type="text/javascript"></script>
-    <script src='/Code/JS/Library/Engine/IndexArrayManagers_4_00.js'></script>
-    <script src="/Code/JS/Library/Engine/MAZE_5_00.js" type="text/javascript"></script>
-    <script src="/Code/JS/Library/Engine/BWT_1_00.js" type="text/javascript"></script>
-    <script src="/Code/JS/Library/Engine/WebGL_2_00.js" type="text/javascript"></script>
-    <script src="/Code/JS/Library/Engine/TURN_1_03.js" type="text/javascript"></script>
-    
-    <script src="/Code/JS/Library/Engine/Lights_and_materials_1_04.js" type="text/javascript"></script>
-    <script src="/Assets/Definitions/HauntingTheHauntessa/assets_HTH.js" type="text/javascript"></script>
-    <script src="/Assets/Definitions/HauntingTheHauntessa/MAP_HTH.js" type="text/javascript"></script>
-    <script src="/Assets/Definitions/HauntingTheHauntessa/Monsters_HTH.js" type="text/javascript"></script>
-    <script src="/Assets/Definitions/HauntingTheHauntessa/intro_movie_HTH.js" type="text/javascript"></script>
-    <script src="/Code/JS/Library/Engine/MAP and SPAWN tools_2_00.js" type="text/javascript"></script>
-    <script src="/Code/JS/Library/Engine/speech_1_11.js" type="text/javascript"></script>
-    <script src='/Code/JS/Library/Engine/SaveGame_1_05.js'></script>
-    <script src='/Code/JS/Library/Engine/MINIMAP_2_00.js'></script>
-    <script src="/Games/HauntingTheHauntessa/HauntingTheHauntessa.js" type="text/javascript"></script>
-    -->
 </body>

@@ -80,7 +80,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.6.0",
+    VERSION: "0.7.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -135,7 +135,9 @@ const PRG = {
         $(ENGINE.gameWindowId).width(ENGINE.gameWIDTH + 2 * ENGINE.sideWIDTH + 4);
         ENGINE.addBOX("TITLE", ENGINE.titleWIDTH, ENGINE.titleHEIGHT, ["title"], null);
         ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback", "red"], "side");
-        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "token", "grid", "front", "strike", "col_labels", "text", "FPS", "button", "click"], "side");
+        ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "token", "grid", "front",
+            "col_labels", "strike", "col_labels", "text", "FPS",
+            "button", "click"], "side");
         ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback", "blue",], "fside");
         ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText", "subtitle"], null);
 
@@ -199,8 +201,8 @@ const BOARD = {
                 this.drawCoverItem(CTX, grid);
             }
         }
-        this.drawTopGrid(CTX, GS);
-        this.drawColLabels(CTX, GS);
+        //this.drawTopGrid(CTX, GS);
+        this.drawColLabels(GS);
     },
     drawTopGrid(CTX, GS) {
         CTX.save();
@@ -216,7 +218,9 @@ const BOARD = {
         }
         CTX.restore();
     },
-    drawColLabels(CTX, GS) {
+    drawColLabels(GS, move = null, player = null) {
+        let CTX = LAYER.col_labels;
+        ENGINE.clearLayer("col_labels");
         const GS2 = Math.floor(GS / 2);
         const fs = 42;
         CTX.font = `${fs}px CompSmooth`;
@@ -224,6 +228,11 @@ const BOARD = {
         CTX.fillStyle = "rgba(100, 100, 100, 0.3)";
         for (let x = 0; x < INI.COLS; x++) {
             const y = GS * 0.5;
+
+            if (x === move) {
+                CTX.fillStyle = player;
+            } else CTX.fillStyle = "rgba(100, 100, 100, 0.3)";
+
             CTX.fillText(x + 1, x * GS + INI.LEFT_X + GS2, y);
         }
     },
@@ -785,6 +794,8 @@ const TURN_MANAGER = {
         const inrow3 = BOARD.countWindowsInPattern(BOARD.patterns, 3, this.playerPieces[player]).count;
         TURN_MANAGER.score[player] = inrow2 * INI.INROW2 + inrow3 * INI.INROW3;
         TITLE.score();
+
+        BOARD.drawColLabels(ENGINE.INI.GRIDPIX, destination.x, player);
     },
     manage(lapsedTime) {
         if (this.turn_completed) return this.nextPlayer();
@@ -808,13 +819,11 @@ const TURN_MANAGER = {
         CTX.restore();
     },
     gameCompleted(indices, player) {
-        console.warn("---- game completed ----", indices, player);
         const off = ENGINE.INI.GRIDPIX / 2;
         const CTX = LAYER.strike;
         CTX.lineWidth = 5;
         CTX.strokeStyle = player;
         for (const i of indices) {
-            console.info("....", i, "coords", BOARD.coordinates[i]);
             let [x1, y1] = BOARD.gridToCoord(new Grid(BOARD.coordinates[i][0][0], BOARD.coordinates[i][0][1]), off);
             let [x2, y2] = BOARD.gridToCoord(new Grid(BOARD.coordinates[i][3][0], BOARD.coordinates[i][3][1]), off);
 
@@ -886,13 +895,14 @@ const GAME = {
         //$(`#red_player_agents`).val("Human");
         //$(`#red_player_agents`).val("Random");
         //$(`#red_player_agents`).val("Smarty");
-        $(`#red_player_agents`).val("Prophet");
         //$(`#red_player_agents`).val("Friendly");
         //$(`#red_player_agents`).val("Village_Idiot");
         //$(`#blue_player_agents`).val("Random");
         //$(`#blue_player_agents`).val("Human");
         //$(`#blue_player_agents`).val("Human");
-        $(`#blue_player_agents`).val("Friendly");
+
+        $(`#red_player_agents`).val("Human");
+        $(`#blue_player_agents`).val("Prophet");
     },
     setTitle() {
         const text = GAME.generateTitleText();
@@ -1033,7 +1043,6 @@ const GAME = {
 };
 
 const TITLE = {
-    //scoreY: null,
     stack: {
     },
     startTitle() {
