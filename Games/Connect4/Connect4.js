@@ -80,7 +80,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.7.0",
+    VERSION: "0.7.1",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -892,17 +892,24 @@ const GAME = {
             }
         }
 
+        //Default settings:
+        $(`#red_player_agents`).val("Human");
+        $(`#blue_player_agents`).val("Prophet");
+
+        //DEBUG settings
+        
         //$(`#red_player_agents`).val("Human");
         //$(`#red_player_agents`).val("Random");
-        //$(`#red_player_agents`).val("Smarty");
+        $(`#red_player_agents`).val("Smarty");
         //$(`#red_player_agents`).val("Friendly");
         //$(`#red_player_agents`).val("Village_Idiot");
         //$(`#blue_player_agents`).val("Random");
         //$(`#blue_player_agents`).val("Human");
         //$(`#blue_player_agents`).val("Human");
 
-        $(`#red_player_agents`).val("Human");
-        $(`#blue_player_agents`).val("Prophet");
+        $("#analyze_mode").prop("checked", true);
+
+
     },
     setTitle() {
         const text = GAME.generateTitleText();
