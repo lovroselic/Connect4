@@ -29,6 +29,7 @@ const DEBUG = {
     max17: false,
     keys: true,
     simulation: false,
+
     board: [
         0, 2, 1, 2, 2, 2, 0,
         0, 1, 1, 1, 2, 0, 0,
@@ -73,12 +74,13 @@ const INI = {
     OVER_TURN: 6 * 7 + 1,
     MIN_END_TURN: 4 + 3,
     INROW2: 1,
-    INROW3: 64,
-    INROW4: 1000,
+    INROW3: 100,
+    INROW4: 10000,
+    DEFENSIVE_FACTOR: 1.1,
 };
 
 const PRG = {
-    VERSION: "0.5.7",
+    VERSION: "0.6.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -103,11 +105,7 @@ const PRG = {
         if (DEBUG.SETTING) {
             $("#engine_version").html(ENGINE.VERSION);
             $("#grid_version").html(GRID.VERSION);
-            //$("#maze_version").html(DUNGEON.VERSION);
-            //$("#iam_version").html(IndexArrayManagers.VERSION);
             $("#lib_version").html(LIB.VERSION);
-            //$("#webgl_version").html(WebGL.VERSION);
-            //$("#maptools_version").html(MAP_TOOLS.VERSION);
             $("#speech_version").html(SPEECH.VERSION);
         } else {
             $('#debug').hide();
@@ -408,16 +406,10 @@ const BOARD = {
     isValidPattern(pattern, players) {
         const zeros = pattern.filter(v => v === 0).length;
         const matches = pattern.filter(v => players.includes(v)).length;
-        const uniquePlayers = new Set(pattern.filter(v => v !== 0)).size;
-        const playerWith2OrMore = players.some(p => pattern.filter(v => v === p).length >= 2);
 
-
-        // !(zeros === 0 && uniquePlayers > 1) && 
         return (
             zeros < 3 &&
-            matches >= 2 &&
-            //!(zeros === 0 && uniquePlayers > 1) &&
-            playerWith2OrMore
+            matches >= 2
         );
     },
     countWindowsInPattern(patterns, num, player) {
@@ -438,6 +430,7 @@ const BOARD = {
             if (val === 2) return 'O';                  //blue
             return ' ';
         };
+
         if (!DEBUG.simulation) return;
 
         const cols = INI.COLS;
@@ -468,7 +461,6 @@ const BOARD = {
         // Bottom border
         console.log('   +' + '---+'.repeat(cols));
     }
-
 };
 
 const AGENT = {
@@ -483,26 +475,19 @@ const AGENT = {
         return legal_moves.chooseRandom();
     },
     Village_Idiot(playerIndex) {
-        console.info("*** Village_Idiot ***");
-        console.time("Village_Idiot");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
-        console.timeEnd("Village_Idiot");
-        console.info("*************\n");
-        return move;
+        return AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
     },
     Friendly(playerIndex) {
-        console.info("*** Friendly ***");
-        console.time("Friendly");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 3);
-        console.timeEnd("Friendly");
-        console.info("*************\n");
-        return move;
+        return AGENT_MANAGER.N_step_lookahead(playerIndex, 4);
     },
     Smarty(playerIndex) {
-        console.info("*** Smarty ***");
-        console.time("Smarty");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 4);
-        console.timeEnd("Smarty");
+        return AGENT_MANAGER.N_step_lookahead(playerIndex, 6);
+    },
+    Prophet(playerIndex) {
+        console.info("*** Prophet ***");
+        console.time("Prophet");
+        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 7);
+        console.timeEnd("Prophet");
         console.info("*************\n");
         return move;
     }
@@ -535,7 +520,6 @@ const AGENT_MANAGER = {
         return this.getEmptyRow(GAME.map, move);
     },
     N_step_lookahead(playerIndex, N) {
-        console.info("### N_step_lookahead ###", "playerIndex", playerIndex, "N", N);
         let moves = this.getLegalCentreOrderedMoves();
         const scores = {};
         for (const move of moves) {
@@ -548,32 +532,26 @@ const AGENT_MANAGER = {
             .map(([move]) => parseInt(move));
 
         const innermost = this.innermost(bestMoves);
-        console.log("best moves", bestMoves, "innermost", innermost);
+        const selectedMove = innermost.chooseRandom();
+        console.log("best moves", bestMoves, "innermost", innermost, "selectedMove", selectedMove);
 
-        return innermost;
+        return selectedMove;
     },
     scoreMove(grid, move, playerIndex, N) {
-        //console.group("MOVE");
-        //console.warn("\n-------------------------------\nscoring move", move, "playerIndex", playerIndex, "N", N);
         let nextGrid_GA = this.dropPiece(grid, move, playerIndex);                                                          //GA! - cloned
         const patterns = BOARD.boardToPatterns([1, 2], nextGrid_GA)[0];
         let score = this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity, patterns);
-        //console.log("... scoreMove", "move", move, "score", score);
-        //console.groupEnd("MOVE");
-
         return score;
     },
     dropPiece(grid, move, playerIndex) {
         let nextGrid = grid.clone();                                                                                        //this is GA!
         let placedGrid = this.getEmptyRow(nextGrid, move);                                                                  //filtered for valid moves
         nextGrid.setValue(placedGrid, playerIndex);
-        //console.info(move, "player", TURN_MANAGER.players[playerIndex - 1]);
         BOARD.printBoardToConsole(nextGrid);
         return nextGrid;
     },
     minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
-        //console.error("..minimax depth", depth, "maximizingPlayer", maximizingPlayer, "player", TURN_MANAGER.players[playerIndex - 1]);
-        if (depth === 0 || this.isTerminalNode(GA, patterns)) return this.getHeuristic(playerIndex, patterns);
+        if (depth === 0 || this.isTerminalNode(patterns)) return this.getHeuristic(playerIndex, patterns);
         const validMoves = this.getLegalCentreOrderedMoves(GA);
 
         if (maximizingPlayer) {
@@ -608,42 +586,31 @@ const AGENT_MANAGER = {
         const oppo = pieces.map(p => BOARD.countWindowsInPattern(patterns, p, oppoPlayer));
         const score = pieces.reduce((sum, n, i) => {
             const weight = INI[`INROW${n}`];
-            return sum + weight * (player[i].count - oppo[i].count);
+            return sum + weight * (player[i].count - oppo[i].count * INI.DEFENSIVE_FACTOR);
         }, 0);
 
-        //console.warn("....score after terminal or depth", score);
-        //console.log("\n");
-        return score;
+        return Math.ceil(score);
     },
-    isTerminalNode(GA, patterns) {
-        //Check for draw - this is redundant?
-        let topRow = Array.from(GA.map.slice(-INI.COLS));                                           //GA.map is UInt8Array
-        //console.log("..isTerminalNode; topRow", topRow);
-        //if (topRow.count(0) === 0) return true;
-        if (topRow.count(0) === 0) {
-            console.error("topRow full");
-            throw "topRow full";
-            return true;
-        }
-
-        //check for win
+    isTerminalNode(patterns) {
         const FourInARow = BOARD.countWindowsInPattern(patterns, 4, 1).count + BOARD.countWindowsInPattern(patterns, 4, 2).count;
         return FourInARow > 0;
     },
     innermost(arr) {
         const mid = (INI.COLS - 1) / 2;
-        let bestMove = arr[0];
-        let bestScore = -Math.abs(arr[0] - mid);
+        let bestMoves = [];
+        let bestScore = -Infinity;
 
-        for (let i = 1; i < arr.length; i++) {
-            const score = -Math.abs(arr[i] - mid);
+        for (const move of arr) {
+            const score = -Math.abs(move - mid);
             if (score > bestScore) {
                 bestScore = score;
-                bestMove = arr[i];
+                bestMoves = [move];                                 // new best
+            } else if (score === bestScore) {
+                bestMoves.push(move);                               // equally good
             }
         }
 
-        return bestMove;
+        return bestMoves;
     }
 }
 
@@ -654,7 +621,6 @@ class Token {
         this.destination = destination;
         this.player = player;
         this.onDestination = false;
-        //this.moveSpeed = 6;
         this.moveSpeed = parseInt($("#animation_speed")[0].value, 10);
     }
     manage(lapsedTime) {
@@ -716,7 +682,6 @@ const TURN_MANAGER = {
                 break;
 
         }
-        //this.nextPlayerIndex = 0; //debug red starts
         if ($('input[name="mode"]:checked').val() === "analyze") this.mode = 0;
         this.turn = 0;
         this.turn_completed = true;
@@ -731,7 +696,7 @@ const TURN_MANAGER = {
         this.lastInput = null;
         this.allowed = [];
         this.order = this.getCenterOutOrder();
-        /////////////
+
         console.info("Agents:");
         console.table(TURN_MANAGER.agent);
         console.info("Mode:", this.mode);
@@ -760,7 +725,6 @@ const TURN_MANAGER = {
         this.nextPlayerIndex %= 2;
     },
     nextPlayer() {
-        console.clear();
         if (TURN_MANAGER.awaitingInput) return;
 
         let move = null;
@@ -777,17 +741,11 @@ const TURN_MANAGER = {
             if (this.turn === INI.OVER_TURN) {
                 this.winner = "Tie";
                 GAME.completed = true;
-                //console.error(`Tied game from overturn on turn ${this.turn}!`);
                 return;
             }
 
             player = this.getPlayer();
-            //console.warn(this.agent[player]);
-            SUBTITLE.subtitle(`${this.name[player]}: thinking`, player);
             move = AGENT[this.agent[player]](this.playerToIndex(player) + 1);
-
-
-            //console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
         }
 
         if (TURN_MANAGER.awaitingInput) {
@@ -795,16 +753,15 @@ const TURN_MANAGER = {
             return;
         }
 
-
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
-        //console.info("DESTINATION", destination, GAME.map.getValue(destination));
 
         if (this.mode) {
             this.setMove(move, destination, player);
-        } else this.applyDestination(destination);
+        } else this.applyDestination(destination, player);
 
-        SUBTITLE.subtitle(`${this.name[player]}: column ${move + 1}`, player);
+        const nextPlayer = this.name[this.players[(this.playerToIndex(player) + 1) % 2]];
+        SUBTITLE.subtitle(`${nextPlayer}: thinking`, nextPlayer);
     },
     setMove(move, destination, player) {
         this.token = new Token(move, new Grid(move, INI.ROWS), destination, player);
@@ -813,7 +770,6 @@ const TURN_MANAGER = {
         this.turn_completed = true;
         this.token = null;
         GAME.map.setToken(destination, player);
-        //console.info("applyDestination", destination, "player", player);
         BOARD.drawContent();
 
         //analyze
@@ -829,10 +785,6 @@ const TURN_MANAGER = {
         const inrow3 = BOARD.countWindowsInPattern(BOARD.patterns, 3, this.playerPieces[player]).count;
         TURN_MANAGER.score[player] = inrow2 * INI.INROW2 + inrow3 * INI.INROW3;
         TITLE.score();
-
-        //DEBUG
-        //if (this.turn === 4) throw "debug after turn 4";
-        //
     },
     manage(lapsedTime) {
         if (this.turn_completed) return this.nextPlayer();
@@ -908,22 +860,13 @@ const GAME = {
         GAME.prepareForRestart();
         TURN_MANAGER.init();
         SUBTITLE.init("subtitle", 24, "CompSmooth");
-        //BOARD.debugBoard();
-        //BOARD.importBoard(DEBUG.board);
+        const nextPlayer = TURN_MANAGER.name[TURN_MANAGER.players[TURN_MANAGER.nextPlayerIndex]];
+        SUBTITLE.subtitle(`${nextPlayer}: thinking`, nextPlayer);
         GAME.levelExecute();
     },
     levelExecute() {
         console.info("------------ GAME starts ------------ ");
         GAME.drawFirstFrame();
-
-
-        //DEBUG.test();
-
-
-
-
-        //ENGINE.GAME.ANIMATION.next(GAME.run);
-
         ENGINE.GAME.resume();
     },
     prepareForRestart() {
@@ -942,7 +885,8 @@ const GAME = {
 
         //$(`#red_player_agents`).val("Human");
         //$(`#red_player_agents`).val("Random");
-        $(`#red_player_agents`).val("Smarty");
+        //$(`#red_player_agents`).val("Smarty");
+        $(`#red_player_agents`).val("Prophet");
         //$(`#red_player_agents`).val("Friendly");
         //$(`#red_player_agents`).val("Village_Idiot");
         //$(`#blue_player_agents`).val("Random");
@@ -984,13 +928,8 @@ const GAME = {
     },
     run(lapsedTime) {
         if (ENGINE.GAME.stopAnimation) return;
-        //const date = Date.now();
         GAME.respond(lapsedTime);
-
         TURN_MANAGER.manage(lapsedTime);
-
-        //ENGINE.TIMERS.update();
-
         GAME.frameDraw(lapsedTime);
         if (GAME.completed) GAME.complete();
     },
@@ -1228,7 +1167,6 @@ const TITLE = {
         CTX.textAlign = "left";
         CTX.fillStyle = "red";
         CTX.font = `${fs}px CompSmooth`;
-        //CTX.fillText(`Name: ${$("#red_player_name")[0].value}`, X, y);
         CTX.fillText(`Name: ${TURN_MANAGER.name.red}`, X, y);
         CTX.fillText(`Agent: ${TURN_MANAGER.agent.red}`, X, y + 1.5 * fs);
         CTX.fillText(`Score: ${TURN_MANAGER.score.red}`, X, y + 3 * fs);
