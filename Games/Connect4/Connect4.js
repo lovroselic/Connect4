@@ -17,6 +17,7 @@ retests:
 engine changes:
 
     - prototype
+    - GRID
 
  */
 ////////////////////////////////////////////////////
@@ -78,7 +79,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.5.5",
+    VERSION: "0.5.6",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -432,7 +433,6 @@ const BOARD = {
 
         return { count: indices.length, indices: indices };
     },
-
     printBoardToConsole(GA) {
         const cellChar = (val) => {
             if (val === 1) return 'X';                  //red
@@ -445,8 +445,6 @@ const BOARD = {
         const rows = INI.ROWS;
         const grid = GA.map;
 
-
-        console.log("\n");
         // Column header
         let header = '    ';
         for (let c = 0; c < cols; c++) {
@@ -470,7 +468,6 @@ const BOARD = {
 
         // Bottom border
         console.log('   +' + '---+'.repeat(cols));
-        console.log("\n");
     }
 
 };
@@ -489,8 +486,24 @@ const AGENT = {
     Village_Idiot(playerIndex) {
         console.info("*** Village_Idiot ***");
         console.time("Village_Idiot");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
+        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 1);
         console.timeEnd("Village_Idiot");
+        console.info("*************\n");
+        return move;
+    },
+    Friendly(playerIndex) {
+        console.info("*** Friendly ***");
+        console.time("Friendly");
+        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
+        console.timeEnd("Friendly");
+        console.info("*************\n");
+        return move;
+    },
+    Smarty(playerIndex) {
+        console.info("*** Smarty ***");
+        console.time("Smarty");
+        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 4);
+        console.timeEnd("Smarty");
         console.info("*************\n");
         return move;
     }
@@ -518,18 +531,11 @@ const AGENT_MANAGER = {
             let grid = new Grid(col, row);
             if (map.isZero(grid)) return grid;
         }
-        console.error("getEmptyRow", map, col);
-        throw "Oh, god; this should not have happened ever!!! Empty row not found!"; // debug
     },
     getDestination(move) {
-        let grid = new Grid(move, INI.ROWS - 1);
-        while (GAME.map.isZero(grid.add(UP))) {
-            grid = grid.add(UP);
-        }
-        return grid;
+        return this.getEmptyRow(GAME.map, move);
     },
     N_step_lookahead(playerIndex, N) {
-        console.clear();
         console.info("### N_step_lookahead ###", "playerIndex", playerIndex, "N", N);
         let moves = this.getLegalCentreOrderedMoves();
         const scores = {};
@@ -541,62 +547,58 @@ const AGENT_MANAGER = {
         const bestMoves = Object.entries(scores)
             .filter(([_, score]) => score === maxScore)
             .map(([move]) => parseInt(move));
-        console.log("best moves", bestMoves);
+
         const innermost = this.innermost(bestMoves);
-        console.log("innermost", innermost);
+        console.log("best moves", bestMoves, "innermost", innermost);
 
         return innermost;
     },
     scoreMove(grid, move, playerIndex, N) {
-        console.info("\n-------------------------------\nscoring move", move, "playerIndex", playerIndex, "N", N);
+        console.group("MOVE");
+        console.warn("\n-------------------------------\nscoring move", move, "playerIndex", playerIndex, "N", N);
         let nextGrid_GA = this.dropPiece(grid, move, playerIndex);                                                          //GA! - cloned
         const patterns = BOARD.boardToPatterns([1, 2], nextGrid_GA)[0];
         let score = this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity, patterns);
         console.log("... scoreMove", "move", move, "score", score);
+        console.groupEnd("MOVE");
+
         return score;
     },
     dropPiece(grid, move, playerIndex) {
-        let nextGrid = grid.clone();                                                                //this is GA!
-        let placedGrid = this.getEmptyRow(nextGrid, move);                                          //filtered for valid moves
+        let nextGrid = grid.clone();                                                                                        //this is GA!
+        let placedGrid = this.getEmptyRow(nextGrid, move);                                                                  //filtered for valid moves
         nextGrid.setValue(placedGrid, playerIndex);
-        console.warn("....placed grid", placedGrid, "playerIndex", playerIndex);
+        console.info(move, "player", TURN_MANAGER.players[playerIndex - 1]);
         BOARD.printBoardToConsole(nextGrid);
         return nextGrid;
     },
     minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
-        console.info("\n\n......minimax", depth, "playerIndex", playerIndex, maximizingPlayer, "A", A, "B", B);
+        console.error("..minimax depth", depth, "maximizingPlayer", maximizingPlayer, "player", TURN_MANAGER.players[playerIndex - 1]);
         if (depth === 0 || this.isTerminalNode(GA, patterns)) return this.getHeuristic(playerIndex, patterns);
         const validMoves = this.getLegalCentreOrderedMoves(GA);
 
         if (maximizingPlayer) {
             let value = -Infinity;
             for (const col of validMoves) {
-                console.info("..col max", col);
                 const childGA = this.dropPiece(GA, col, playerIndex);
                 const childPatterns = BOARD.boardToPatterns([1, 2], childGA)[0];
                 const newValue = this.minimax(childGA, depth - 1, false, playerIndex, A, B, childPatterns);
                 value = Math.max(value, newValue);
                 if (value >= B) break;
                 A = Math.max(A, value);
-                console.error("...col max", col, "value", value);
             }
-            console.error("..max", "value", value);
             return value;
         } else {
-            //minimizing player
             let value = Infinity;
             const opponent = playerIndex % 2 + 1;
             for (const col of validMoves) {
-                console.info("..col min", col);
                 const childGA = this.dropPiece(GA, col, opponent);
                 const childPatterns = BOARD.boardToPatterns([1, 2], childGA)[0];
                 const newValue = this.minimax(childGA, depth - 1, true, playerIndex, A, B, childPatterns);
                 value = Math.min(value, newValue);
                 if (value <= A) break;
                 B = Math.min(B, value);
-                console.error("...col min", col, "value", value);
             }
-            console.error("..min", "value", value);
             return value;
         }
     },
@@ -610,18 +612,20 @@ const AGENT_MANAGER = {
             return sum + weight * (player[i].count - oppo[i].count);
         }, 0);
 
-        console.warn("getHeuristic", player, oppo, "score", score);
+        console.warn("....score after terminal or depth", score);
+        console.log("\n");
         return score;
     },
-    /*isTerminalWindow(window) {
-        if (window.count(1) === INI.INROW || window.count(2) === INI.INROW) return true;
-        return false;
-    },*/
     isTerminalNode(GA, patterns) {
         //Check for draw 
         let topRow = Array.from(GA.map.slice(-INI.COLS));                                           //GA.map is UInt8Array
         //console.log("..isTerminalNode; topRow", topRow);
-        if (topRow.count(0) === 0) return true;
+        //if (topRow.count(0) === 0) return true;
+        if (topRow.count(0) === 0) {
+            console.error("topRow full");
+            throw "topRow full";
+            return true;
+        }
 
         //check for win
         const FourInARow = BOARD.countWindowsInPattern(patterns, 4, 1).count + BOARD.countWindowsInPattern(patterns, 4, 2).count;
@@ -652,7 +656,7 @@ class Token {
         this.player = player;
         this.onDestination = false;
         //this.moveSpeed = 6;
-        this.moveSpeed = $("#animation_speed")[0].value;
+        this.moveSpeed = parseInt($("#animation_speed")[0].value, 10);
     }
     manage(lapsedTime) {
         if (this.moveState.moving) {
@@ -697,7 +701,7 @@ const TURN_MANAGER = {
     awaitingInput: false,
     lastInput: null,
     inputCallback: null,
-    allowed: null,
+    allowed: [],
     order: null,
     init() {
         const next = $("#select_player_start")[0].value;
@@ -711,7 +715,9 @@ const TURN_MANAGER = {
             case "random":
                 this.nextPlayerIndex = RND(0, 1);
                 break;
+
         }
+        //this.nextPlayerIndex = 0; //debug red starts
         if ($('input[name="mode"]:checked').val() === "analyze") this.mode = 0;
         this.turn = 0;
         this.turn_completed = true;
@@ -724,7 +730,7 @@ const TURN_MANAGER = {
         this.winner = null;
         this.awaitingInput = false;
         this.lastInput = null;
-        this.allowed = null;
+        this.allowed = [];
         this.order = this.getCenterOutOrder();
         /////////////
         console.info("Agents:");
@@ -755,6 +761,7 @@ const TURN_MANAGER = {
         this.nextPlayerIndex %= 2;
     },
     nextPlayer() {
+        console.clear();
         if (TURN_MANAGER.awaitingInput) return;
 
         let move = null;
@@ -771,13 +778,16 @@ const TURN_MANAGER = {
             if (this.turn === INI.OVER_TURN) {
                 this.winner = "Tie";
                 GAME.completed = true;
-                console.error(`Tied game from overturn on turn ${this.turn}!`);
+                //console.error(`Tied game from overturn on turn ${this.turn}!`);
                 return;
             }
 
             player = this.getPlayer();
             console.warn(this.agent[player]);
+            SUBTITLE.subtitle(`${this.name[player]}: thinking`, player);
             move = AGENT[this.agent[player]](this.playerToIndex(player) + 1);
+
+
             console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
         }
 
@@ -786,10 +796,10 @@ const TURN_MANAGER = {
             return;
         }
 
-        //if (move === undefined) throw "undefined move - this should not happen!"; //debug
 
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
+        console.info("DESTINATION", destination, GAME.map.getValue(destination));
 
         if (this.mode) {
             this.setMove(move, destination, player);
@@ -804,6 +814,7 @@ const TURN_MANAGER = {
         this.turn_completed = true;
         this.token = null;
         GAME.map.setToken(destination, player);
+        console.info("applyDestination", destination, "player", player);
         BOARD.drawContent();
 
         //analyze
@@ -819,6 +830,10 @@ const TURN_MANAGER = {
         const inrow3 = BOARD.countWindowsInPattern(BOARD.patterns, 3, this.playerPieces[player]).count;
         TURN_MANAGER.score[player] = inrow2 * INI.INROW2 + inrow3 * INI.INROW3;
         TITLE.score();
+
+        //DEBUG
+        //if (this.turn === 4) throw "debug after turn 4";
+        //
     },
     manage(lapsedTime) {
         if (this.turn_completed) return this.nextPlayer();
@@ -861,11 +876,9 @@ const TURN_MANAGER = {
         this.winner = player;
     },
     getInput(allowed = null) {
-        //console.warn("getting input from", allowed);
         this.awaitingInput = true;
         this.lastInput = null;
         this.allowed = allowed;
-
     },
 };
 
@@ -928,10 +941,15 @@ const GAME = {
             }
         }
 
-        $(`#red_player_agents`).val("Human");
+        //$(`#red_player_agents`).val("Human");
         //$(`#red_player_agents`).val("Random");
+        $(`#red_player_agents`).val("Smarty");
+        //$(`#red_player_agents`).val("Friendly");
+        //$(`#red_player_agents`).val("Village_Idiot");
         //$(`#blue_player_agents`).val("Random");
-        $(`#blue_player_agents`).val("Village_Idiot");
+        //$(`#blue_player_agents`).val("Human");
+        //$(`#blue_player_agents`).val("Human");
+        $(`#blue_player_agents`).val("Friendly");
     },
     setTitle() {
         const text = GAME.generateTitleText();
@@ -984,10 +1002,6 @@ const GAME = {
         TURN_MANAGER.drawToken();
     },
     respond(lapsedTime) {
-        //if (HERO.dead) return;
-
-        //HERO.player.respond(lapsedTime);
-        //WebGL.GAME.respond(lapsedTime);
         ENGINE.GAME.respond(lapsedTime);
         const map = ENGINE.GAME.keymap;
 
@@ -998,8 +1012,6 @@ const GAME = {
             const key = parseInt(pressedKeys[0], 10);
             TURN_MANAGER.awaitingInput = false;
             TURN_MANAGER.lastInput = key - 1;                                                               //convert key to zero based move
-
-            //console.error("key", key, "TURN_MANAGER.lastInput", TURN_MANAGER.lastInput, "pressedKeys", pressedKeys, "allowed", TURN_MANAGER.allowed);
             ENGINE.GAME.keymap[ENGINE.KEY.map[key]] = false;
             return;
         }

@@ -262,10 +262,8 @@ const GRID = {
             entity.moveState.pos.x + 0.975 * entity.moveState.dir.x * revertX,
             entity.moveState.pos.y + 0.975 * entity.moveState.dir.y * revertY
         );
-        //console.log(".... translateMoveState", "entity.moveState.startGrid.y", entity.moveState.startGrid.y, "entity.moveState.pos.y", entity.moveState.pos.y, "entity.moveState.homeGrid.y", entity.moveState.homeGrid.y);
-        if (GRID.same(entity.moveState.endGrid, entity.moveState.homeGrid)) {
-            //console.warn("...... grid reached", entity.moveState.endGrid, entity.moveState.homeGrid);
-            //console.warn("........... grid Y reached", "entity.moveState.pos.y", entity.moveState.pos.y, "entity.moveState.homeGrid.y", entity.moveState.homeGrid.y);
+        const overallDistance = entity.moveState.pos.EuclidianDistance(entity.moveState.startGrid);
+        if (overallDistance > 1.0) {
             entity.moveState.moving = false;
             entity.moveState.startGrid = entity.moveState.endGrid;
             if (onFinish) onFinish.call();
@@ -1578,7 +1576,7 @@ class GridArray extends Classes([ArrayBasedDataStructure, GA_Dimension_Agnostic_
         }
         return pixelData;
     }
-    clone(){
+    clone() {
         const clone = new GridArray(this.width, this.height, this.byte);
         clone.map.set(this.map);                                                            // deep copy of the typed array
         return clone;
