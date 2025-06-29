@@ -16,8 +16,7 @@ retests:
 
 engine changes:
 
-    - prototype
-    - GRID
+
 
  */
 ////////////////////////////////////////////////////
@@ -29,7 +28,7 @@ const DEBUG = {
     VERBOSE: true,
     max17: false,
     keys: true,
-    simulation: true,
+    simulation: false,
     board: [
         0, 2, 1, 2, 2, 2, 0,
         0, 1, 1, 1, 2, 0, 0,
@@ -79,7 +78,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.5.6",
+    VERSION: "0.5.7",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -486,7 +485,7 @@ const AGENT = {
     Village_Idiot(playerIndex) {
         console.info("*** Village_Idiot ***");
         console.time("Village_Idiot");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 1);
+        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
         console.timeEnd("Village_Idiot");
         console.info("*************\n");
         return move;
@@ -494,7 +493,7 @@ const AGENT = {
     Friendly(playerIndex) {
         console.info("*** Friendly ***");
         console.time("Friendly");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
+        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 3);
         console.timeEnd("Friendly");
         console.info("*************\n");
         return move;
@@ -554,13 +553,13 @@ const AGENT_MANAGER = {
         return innermost;
     },
     scoreMove(grid, move, playerIndex, N) {
-        console.group("MOVE");
-        console.warn("\n-------------------------------\nscoring move", move, "playerIndex", playerIndex, "N", N);
+        //console.group("MOVE");
+        //console.warn("\n-------------------------------\nscoring move", move, "playerIndex", playerIndex, "N", N);
         let nextGrid_GA = this.dropPiece(grid, move, playerIndex);                                                          //GA! - cloned
         const patterns = BOARD.boardToPatterns([1, 2], nextGrid_GA)[0];
         let score = this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity, patterns);
-        console.log("... scoreMove", "move", move, "score", score);
-        console.groupEnd("MOVE");
+        //console.log("... scoreMove", "move", move, "score", score);
+        //console.groupEnd("MOVE");
 
         return score;
     },
@@ -568,12 +567,12 @@ const AGENT_MANAGER = {
         let nextGrid = grid.clone();                                                                                        //this is GA!
         let placedGrid = this.getEmptyRow(nextGrid, move);                                                                  //filtered for valid moves
         nextGrid.setValue(placedGrid, playerIndex);
-        console.info(move, "player", TURN_MANAGER.players[playerIndex - 1]);
+        //console.info(move, "player", TURN_MANAGER.players[playerIndex - 1]);
         BOARD.printBoardToConsole(nextGrid);
         return nextGrid;
     },
     minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
-        console.error("..minimax depth", depth, "maximizingPlayer", maximizingPlayer, "player", TURN_MANAGER.players[playerIndex - 1]);
+        //console.error("..minimax depth", depth, "maximizingPlayer", maximizingPlayer, "player", TURN_MANAGER.players[playerIndex - 1]);
         if (depth === 0 || this.isTerminalNode(GA, patterns)) return this.getHeuristic(playerIndex, patterns);
         const validMoves = this.getLegalCentreOrderedMoves(GA);
 
@@ -612,12 +611,12 @@ const AGENT_MANAGER = {
             return sum + weight * (player[i].count - oppo[i].count);
         }, 0);
 
-        console.warn("....score after terminal or depth", score);
-        console.log("\n");
+        //console.warn("....score after terminal or depth", score);
+        //console.log("\n");
         return score;
     },
     isTerminalNode(GA, patterns) {
-        //Check for draw 
+        //Check for draw - this is redundant?
         let topRow = Array.from(GA.map.slice(-INI.COLS));                                           //GA.map is UInt8Array
         //console.log("..isTerminalNode; topRow", topRow);
         //if (topRow.count(0) === 0) return true;
@@ -783,12 +782,12 @@ const TURN_MANAGER = {
             }
 
             player = this.getPlayer();
-            console.warn(this.agent[player]);
+            //console.warn(this.agent[player]);
             SUBTITLE.subtitle(`${this.name[player]}: thinking`, player);
             move = AGENT[this.agent[player]](this.playerToIndex(player) + 1);
 
 
-            console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
+            //console.log(`\n\nTurn ${this.turn}, player: ${player}, agent: ${this.agent[player]}, move: ${move}`);
         }
 
         if (TURN_MANAGER.awaitingInput) {
@@ -799,7 +798,7 @@ const TURN_MANAGER = {
 
         this.turn_completed = false;
         const destination = AGENT_MANAGER.getDestination(move);
-        console.info("DESTINATION", destination, GAME.map.getValue(destination));
+        //console.info("DESTINATION", destination, GAME.map.getValue(destination));
 
         if (this.mode) {
             this.setMove(move, destination, player);
@@ -814,7 +813,7 @@ const TURN_MANAGER = {
         this.turn_completed = true;
         this.token = null;
         GAME.map.setToken(destination, player);
-        console.info("applyDestination", destination, "player", player);
+        //console.info("applyDestination", destination, "player", player);
         BOARD.drawContent();
 
         //analyze
