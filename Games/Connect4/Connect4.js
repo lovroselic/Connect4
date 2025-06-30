@@ -80,7 +80,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.7.1",
+    VERSION: "0.7.2",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -136,7 +136,7 @@ const PRG = {
         ENGINE.addBOX("TITLE", ENGINE.titleWIDTH, ENGINE.titleHEIGHT, ["title"], null);
         ENGINE.addBOX("LSIDE", INI.SCREEN_BORDER, ENGINE.gameHEIGHT, ["Lsideback", "red"], "side");
         ENGINE.addBOX("ROOM", ENGINE.gameWIDTH, ENGINE.gameHEIGHT, ["background", "token", "grid", "front",
-            "col_labels", "strike", "col_labels", "text", "FPS",
+            "col_labels", "strike", "text", "FPS",
             "button", "click"], "side");
         ENGINE.addBOX("SIDE", ENGINE.sideWIDTH, ENGINE.gameHEIGHT, ["sideback", "blue",], "fside");
         ENGINE.addBOX("DOWN", ENGINE.bottomWIDTH, ENGINE.bottomHEIGHT, ["bottom", "bottomText", "subtitle"], null);
@@ -493,12 +493,7 @@ const AGENT = {
         return AGENT_MANAGER.N_step_lookahead(playerIndex, 6);
     },
     Prophet(playerIndex) {
-        console.info("*** Prophet ***");
-        console.time("Prophet");
-        let move = AGENT_MANAGER.N_step_lookahead(playerIndex, 7);
-        console.timeEnd("Prophet");
-        console.info("*************\n");
-        return move;
+        return AGENT_MANAGER.N_step_lookahead(playerIndex, 7);
     }
 };
 
@@ -534,7 +529,7 @@ const AGENT_MANAGER = {
         for (const move of moves) {
             scores[move] = this.scoreMove(GAME.map, move, playerIndex, N);
         }
-        console.table(scores);
+        //console.table(scores);
         const maxScore = Math.max(...Object.values(scores));
         const bestMoves = Object.entries(scores)
             .filter(([_, score]) => score === maxScore)
@@ -542,7 +537,7 @@ const AGENT_MANAGER = {
 
         const innermost = this.innermost(bestMoves);
         const selectedMove = innermost.chooseRandom();
-        console.log("best moves", bestMoves, "innermost", innermost, "selectedMove", selectedMove);
+        //console.log("best moves", bestMoves, "innermost", innermost, "selectedMove", selectedMove);
 
         return selectedMove;
     },
@@ -647,6 +642,8 @@ class Token {
 }
 
 const TURN_MANAGER = {
+    analysis_in_progress: false,
+    runCounter: 0,
     winner: null,
     patterns: null,
     indices: null,
@@ -677,6 +674,11 @@ const TURN_MANAGER = {
     inputCallback: null,
     allowed: [],
     order: null,
+    ANALYSIS: {},
+    STARTS: {
+        red: 0,
+        blue: 0,
+    },
     init() {
         const next = $("#select_player_start")[0].value;
         switch (next) {
@@ -706,9 +708,20 @@ const TURN_MANAGER = {
         this.allowed = [];
         this.order = this.getCenterOutOrder();
 
-        console.info("Agents:");
-        console.table(TURN_MANAGER.agent);
-        console.info("Mode:", this.mode);
+        if (this.mode === 0) {
+            if (!this.analysis_in_progress) this.initAnalysis();
+            this.STARTS[this.players[this.nextPlayerIndex]]++;
+        }
+    },
+    initAnalysis() {
+        this.runCounter = parseInt($("#number_of_runs")[0].value, 10);
+        this.analysis_in_progress = true;
+        this.ANALYSIS = {};
+        this.ANALYSIS[this.agent.red] = 0;
+        this.ANALYSIS[this.agent.blue] = 0;
+        this.ANALYSIS.Tie = 0;
+        this.STARTS.red = 0;
+        this.STARTS.blue = 0;
     },
     getCenterOutOrder(cols = INI.COLS) {
         const order = [];
@@ -897,7 +910,7 @@ const GAME = {
         $(`#blue_player_agents`).val("Prophet");
 
         //DEBUG settings
-        
+
         //$(`#red_player_agents`).val("Human");
         //$(`#red_player_agents`).val("Random");
         $(`#red_player_agents`).val("Smarty");
@@ -938,7 +951,6 @@ const GAME = {
         GAME.movingText.draw();
     },
     drawFirstFrame() {
-        if (DEBUG.VERBOSE) console.log("drawing first frame");
         TITLE.firstFrame();
         BOARD.drawFront();
         BOARD.drawContent();
@@ -1015,10 +1027,7 @@ const GAME = {
         }
     },
     complete() {
-        console.warn("\n---------------------- completing game -------------------------------------------------");
-
         const winner = TURN_MANAGER.winner;
-        console.info("WINNER:", winner);
         ENGINE.GAME.pauseBlock();
         ENGINE.GAME.ANIMATION.stop();
         const layersToClear = ["FPS"];
@@ -1036,17 +1045,35 @@ const GAME = {
             SUBTITLE.subtitle(subtitleText, color);
             ENGINE.GAME.ANIMATION.next(GAME.completeRun);
         } else {
-            console.info("game completes in analyze mode");
-            //to be implemented
+            console.info("game completes in analyze mode", "WINNER:", winner);
+            TURN_MANAGER.runCounter--;
+            
+            if (winner === "Tie") {
+                TURN_MANAGER.ANALYSIS.Tie++
+            } else {
+                TURN_MANAGER.ANALYSIS[TURN_MANAGER.agent[winner]]++;
+            }
+            
+            if (TURN_MANAGER.runCounter === 0) return GAME.showAnalysis();
+            GAME.start();
         }
-
-        console.warn("-------------------------------------------------\n");
     },
     completeRun(lapsedTime) {
         if (ENGINE.GAME.stopAnimation) return;
         if (ENGINE.GAME.keymap[ENGINE.KEY.map.enter]) ENGINE.GAME.ANIMATION.next(GAME.start);
         if (ENGINE.GAME.keymap[ENGINE.KEY.map.space]) ENGINE.GAME.ANIMATION.next(TITLE.startTitle);
     },
+    showAnalysis() {
+        TURN_MANAGER.analysis_in_progress = false;
+        console.clear();
+        console.info("*****************************");
+        console.info("Analysis results:");
+        console.table(TURN_MANAGER.ANALYSIS);
+        console.info("Starts:");
+        console.table(TURN_MANAGER.STARTS);
+        console.info("*****************************");
+        TITLE.startTitle();
+    }
 };
 
 const TITLE = {
@@ -1069,7 +1096,7 @@ const TITLE = {
     },
     clearAllLayers() {
         ENGINE.layersToClear = new Set(["text", "sideback", "button", "title", "FPS",
-            "bottomText", "subtitle", "token", "strike", "grid", "front", "red", "blue"]);
+            "bottomText", "subtitle", "token", "strike", "grid", "front", "red", "blue", "col_labels", "strike"]);
         ENGINE.clearLayerStack();
     },
     blackBackgrounds() {
