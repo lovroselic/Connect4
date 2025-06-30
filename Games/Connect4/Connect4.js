@@ -80,7 +80,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.7.2",
+    VERSION: "0.8.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -483,14 +483,14 @@ const AGENT = {
         let legal_moves = AGENT_MANAGER.getLegalMoves();
         return legal_moves.chooseRandom();
     },
-    Village_Idiot(playerIndex) {
+    /*Village_Idiot(playerIndex) {
         return AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
-    },
-    Friendly(playerIndex) {
-        return AGENT_MANAGER.N_step_lookahead(playerIndex, 4);
+    },*/
+    Silly(playerIndex) {
+        return AGENT_MANAGER.N_step_lookahead(playerIndex, 3);
     },
     Smarty(playerIndex) {
-        return AGENT_MANAGER.N_step_lookahead(playerIndex, 6);
+        return AGENT_MANAGER.N_step_lookahead(playerIndex, 5);
     },
     Prophet(playerIndex) {
         return AGENT_MANAGER.N_step_lookahead(playerIndex, 7);
@@ -913,14 +913,14 @@ const GAME = {
 
         //$(`#red_player_agents`).val("Human");
         //$(`#red_player_agents`).val("Random");
-        $(`#red_player_agents`).val("Smarty");
+        //$(`#red_player_agents`).val("Smarty");
         //$(`#red_player_agents`).val("Friendly");
         //$(`#red_player_agents`).val("Village_Idiot");
         //$(`#blue_player_agents`).val("Random");
         //$(`#blue_player_agents`).val("Human");
         //$(`#blue_player_agents`).val("Human");
 
-        $("#analyze_mode").prop("checked", true);
+        //$("#analyze_mode").prop("checked", true);
 
 
     },
@@ -1047,13 +1047,13 @@ const GAME = {
         } else {
             console.info("game completes in analyze mode", "WINNER:", winner);
             TURN_MANAGER.runCounter--;
-            
+
             if (winner === "Tie") {
                 TURN_MANAGER.ANALYSIS.Tie++
             } else {
                 TURN_MANAGER.ANALYSIS[TURN_MANAGER.agent[winner]]++;
             }
-            
+
             if (TURN_MANAGER.runCounter === 0) return GAME.showAnalysis();
             GAME.start();
         }

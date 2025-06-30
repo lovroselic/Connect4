@@ -32,15 +32,13 @@
                     column).</p>
                 <p><span class="fw-bold">Random:</span> Take completely random turn. Not much fun to play against this
                     one. But it is was very useful for testing.</p>
-                <p><span class="fw-bold">Village_Idiot:</span> 2-step lookahead algorithm. No challenge to beat this
-                    one.</p>
-                <p><span class="fw-bold">Friendly:</span> 4-step lookahead algorithm. Some slight thinking advised to
-                    beat this
-                    one.</p>
-                <p><span class="fw-bold">Smarty:</span> 6-step lookahead algorithm. This feels like a real human
-                    opponent.</p>
+                <p><span class="fw-bold">Silly:</span> 3-step lookahead algorithm. No challenge to beat this
+                    one. But it beats Random player all the time. What a surprise.</p>
+                <p><span class="fw-bold">Smarty:</span> 5-step lookahead algorithm. This feels like a real human (if
+                    slightly drunk)
+                    opponent. It beats Silly in 82% of cases, the rest were ties.</p>
                 <p><span class="fw-bold">Prophet:</span> 7-step lookahead algorithm. It's the maximum javascript can
-                    take before blocking the thread. It takes 0.5-2 seconds to calculate the move. Hard to beat.</p>
+                    take before blocking the thread. It takes 0.5-2 seconds to calculate the move. It beats Smarty in 74% of cases.</p>
                 <hr class="crimson-hr">
                 <div id="setup" class="row">
                     <div class="col-4">
@@ -67,7 +65,8 @@
                                 <label for="analyze_mode">Analyze</label>
                                 <br>
                                 <label for="number_of_runs">Number of runs</label>
-                                <input type="number" min="5" max="100" value="5" id="number_of_runs" disabled>
+                                <input type="number" min="5" max="100" value="20" id="number_of_runs" disabled>
+                                <p>Game analysis is found in the console.</p>
                             </fieldset>
                         </div>
                     </div>
