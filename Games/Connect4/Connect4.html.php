@@ -1,20 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <!-- bootstrap, css -->
-    <meta charset="UTF-8">
-    <link href="/CSS/bootstrap.min.css" rel="stylesheet" type="text/css">
-    <link href="/CSS/LaughingStyle.css" rel="stylesheet" type="text/css">
-    <!-- END -->
-
-    <title>Connect4</title>
-</head>
-
-<body>
-
-    <!-- copy start-->
-    <div id="preload" class="hidden"></div>
+   <!-- copy start-->
+   <div id="preload" class="hidden"></div>
     <div class="container my-5 p-5 cool_page">
         <div>
             <div id="load"></div>
@@ -158,18 +143,3 @@
         <div id="temp2" class="hidden"></div>
     </div>
     <!-- COPY END -->
-
-    <!-- External JS -->
-    <script src="/External/bootstrap.bundle.min.js"></script>
-    <script src="/External/jquery-3.6.0.min.js"></script>
-
-    <!-- JS -->
-    <script src='/Code/JS/Library/Engine/Prototype_5_00.js' type="text/javascript"></script>
-    <script src='/Code/JS/Library/Engine/ENGINE_5_00.js' type="text/javascript"></script>
-    <script src="/Code/JS/Library/Engine/GRID_4_00.js" type="text/javascript"></script>
-    <script src="/Code/JS/Library/Engine/GenericTimers_1_03.js" type="text/javascript"></script>
-    <script src="/Code/JS/Library/Engine/SUBTITLE_1_00.js" type="text/javascript"></script>
-    <script src="/Assets/Definitions/Connect4/assets_connect4.js" type="text/javascript"></script>
-    <script src="/Games/Connect4/Connect4_class_extensions.js" type="text/javascript"></script>
-    <script src="/Games/Connect4/Connect4.js" type="text/javascript"></script>
-</body>

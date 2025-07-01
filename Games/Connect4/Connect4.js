@@ -23,11 +23,10 @@ engine changes:
 
 const DEBUG = {
     SETTING: true,
-    AUTO_TEST: false,
-    FPS: true,
-    VERBOSE: true,
+    FPS: false,
+    VERBOSE: false,
     max17: false,
-    keys: true,
+    keys: false,
     simulation: false,
 
     board: [
@@ -38,28 +37,6 @@ const DEBUG = {
         0, 0, 1, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0,
     ],
-    test() {
-        console.warn("-------------------------------------------------");
-        let [patterns, coordinates] = BOARD.boardToPatterns([2]);
-        console.log(patterns);
-        console.log(coordinates);
-        /*
-        console.warn("-------------------------------------------------");
-        let [patterns2, coordinates2] = BOARD.boardToPatterns([2]);
-        console.log(patterns2);
-        console.log(coordinates2);
-        console.warn("-------------------------------------------------");
-        let [patterns3, coordinates3] = BOARD.boardToPatterns([1, 2]);
-        console.log(patterns3);
-        console.log(coordinates3);
-        */
-        console.warn("-------------------------------------------------");
-        //let check_2_1 = BOARD.countWindowsInPattern(patterns1, 2, 1);
-        //console.log("check_2_1", check_2_1);
-        let check_4_2 = BOARD.countWindowsInPattern(patterns, 4, 2);
-        console.log("check_4_2", check_4_2);
-
-    },
 };
 
 const INI = {
@@ -80,7 +57,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "0.8.0",
+    VERSION: "1.0.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -106,14 +83,10 @@ const PRG = {
             $("#engine_version").html(ENGINE.VERSION);
             $("#grid_version").html(GRID.VERSION);
             $("#lib_version").html(LIB.VERSION);
-            $("#speech_version").html(SPEECH.VERSION);
         } else {
             $('#debug').hide();
         }
 
-        $("#toggleHelp").click(function () {
-            $("#help").toggle(400);
-        });
         $("#toggleAbout").click(function () {
             $("#about").toggle(400);
         });
@@ -164,9 +137,6 @@ const PRG = {
         /** dev settings */
         if (DEBUG.VERBOSE) {
             ENGINE.verbose = true;
-
-            console.warn(" *** verbose setting ***");
-            console.warn("ENGINE:", ENGINE.verbose);
         }
     },
     start() {
@@ -176,11 +146,6 @@ const PRG = {
         $(ENGINE.topCanvas).off("mousemove", ENGINE.mouseOver);
         $(ENGINE.topCanvas).off("click", ENGINE.mouseClick);
         $(ENGINE.topCanvas).css("cursor", "");
-
-        if (SPEECH.VERBOSE) {
-            console.info("SPEECH available voices");
-            console.table(SPEECH.voices);
-        }
 
         $("#startGame").addClass("hidden");
         ENGINE.disableDefaultKeys();
@@ -483,9 +448,6 @@ const AGENT = {
         let legal_moves = AGENT_MANAGER.getLegalMoves();
         return legal_moves.chooseRandom();
     },
-    /*Village_Idiot(playerIndex) {
-        return AGENT_MANAGER.N_step_lookahead(playerIndex, 2);
-    },*/
     Silly(playerIndex) {
         return AGENT_MANAGER.N_step_lookahead(playerIndex, 3);
     },
@@ -529,7 +491,6 @@ const AGENT_MANAGER = {
         for (const move of moves) {
             scores[move] = this.scoreMove(GAME.map, move, playerIndex, N);
         }
-        //console.table(scores);
         const maxScore = Math.max(...Object.values(scores));
         const bestMoves = Object.entries(scores)
             .filter(([_, score]) => score === maxScore)
@@ -537,7 +498,6 @@ const AGENT_MANAGER = {
 
         const innermost = this.innermost(bestMoves);
         const selectedMove = innermost.chooseRandom();
-        //console.log("best moves", bestMoves, "innermost", innermost, "selectedMove", selectedMove);
 
         return selectedMove;
     },
@@ -908,21 +868,6 @@ const GAME = {
         //Default settings:
         $(`#red_player_agents`).val("Human");
         $(`#blue_player_agents`).val("Prophet");
-
-        //DEBUG settings
-
-        //$(`#red_player_agents`).val("Human");
-        //$(`#red_player_agents`).val("Random");
-        //$(`#red_player_agents`).val("Smarty");
-        //$(`#red_player_agents`).val("Friendly");
-        //$(`#red_player_agents`).val("Village_Idiot");
-        //$(`#blue_player_agents`).val("Random");
-        //$(`#blue_player_agents`).val("Human");
-        //$(`#blue_player_agents`).val("Human");
-
-        //$("#analyze_mode").prop("checked", true);
-
-
     },
     setTitle() {
         const text = GAME.generateTitleText();
@@ -937,7 +882,7 @@ const GAME = {
              
             Music: 'There's No There There' written and performed by LaughingSkull, ${"\u00A9"
             } 2018 Lovro Selič. `;
-        text += "     ENGINE, SPEECH, GRID and GAME code by Lovro Selič using JavaScript. ";
+        text += "     ENGINE, GRID and GAME code by Lovro Selič using JavaScript. ";
         text = text.split("").join(String.fromCharCode(8202));
         return text;
     },
@@ -945,7 +890,6 @@ const GAME = {
         if (ENGINE.GAME.stopAnimation) return;
         GAME.movingText.process();
         GAME.titleFrameDraw();
-        SPEECH.silence();
     },
     titleFrameDraw() {
         GAME.movingText.draw();
@@ -985,8 +929,8 @@ const GAME = {
 
         //debug
         if (map[ENGINE.KEY.map.F7]) {
-            throw "Breaking execution!";
             if (!DEBUG.keys) return;
+            throw "Breaking execution!";
         }
         if (map[ENGINE.KEY.map.F8]) {
             if (!DEBUG.keys) return;
@@ -994,13 +938,6 @@ const GAME = {
             console.info("BOARD", GAME.map);
             console.log("#####################################");
             ENGINE.GAME.keymap[ENGINE.KEY.map.F8] = false;
-        }
-        if (map[ENGINE.KEY.map.F9]) {
-            if (!DEBUG.keys) return;
-            console.log("\nDEBUG:");
-            console.log("#######################################################");
-            console.log("#######################################################");
-            ENGINE.GAME.keymap[ENGINE.KEY.map.F9] = false;
         }
 
         return;
@@ -1018,7 +955,6 @@ const GAME = {
         if (ENGINE.GAME.keymap[ENGINE.KEY.map.enter]) {
             ENGINE.GAME.ANIMATION.waitThen(TITLE.startTitle);
         }
-        //const date = Date.now();
         GAME.gameOverFrameDraw(lapsedTime);
     },
     gameOverFrameDraw(lapsedTime) {
@@ -1081,7 +1017,7 @@ const TITLE = {
     },
     startTitle() {
         if (DEBUG.VERBOSE) console.log("TITLE started");
-        //if (AUDIO.Title) AUDIO.Title.play(); //dev
+        if (AUDIO.Title) AUDIO.Title.play(); 
         ENGINE.GAME.pauseBlock();
         TITLE.clearAllLayers();
         TITLE.blackBackgrounds();
@@ -1227,7 +1163,6 @@ const TITLE = {
 
 // -- main --
 $(function () {
-    SPEECH.init();
     PRG.INIT();
     PRG.setup();
     ENGINE.LOAD.preload();
