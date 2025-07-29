@@ -57,7 +57,7 @@ const INI = {
 };
 
 const PRG = {
-    VERSION: "1.0.3",
+    VERSION: "1.0.4",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
