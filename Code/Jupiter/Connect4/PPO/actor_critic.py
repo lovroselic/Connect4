@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from connect4_lookahead import Connect4Lookahead
+from C4.connect4_lookahead import Connect4Lookahead
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 Lookahead = Connect4Lookahead()  # instantiate once for reuse

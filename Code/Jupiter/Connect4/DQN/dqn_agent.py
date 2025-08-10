@@ -11,9 +11,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from DQN_replay_memory import ReplayMemory
-from dqn_model import DQN
-from connect4_lookahead import Connect4Lookahead  # you must define/import this
+from DQN.DQN_replay_memory import ReplayMemory
+from DQN.dqn_model import DQN
+from C4.connect4_lookahead import Connect4Lookahead  # you must define/import this
 
 class DQNAgent:
     def __init__(self, lr=0.001, gamma=0.99, epsilon=1.0, epsilon_min=0.1, epsilon_decay=0.999, device=None):

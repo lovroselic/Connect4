@@ -7,7 +7,7 @@ Created on Sun Aug  3 18:50:36 2025
 
 # get_phase.py
 
-from training_phases_config import TRAINING_PHASES
+from DQN.training_phases_config import TRAINING_PHASES
 
 def get_phase(episode):
     for phase_name, phase_data in TRAINING_PHASES.items():

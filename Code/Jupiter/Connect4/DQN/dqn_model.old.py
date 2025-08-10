@@ -19,7 +19,6 @@ class DQN(nn.Module):
         # Convolutional layers
         self.conv = nn.Sequential(
             nn.Conv2d(1, 64, kernel_size=2, padding=1),
-            # nn.BatchNorm2d(64),# worse
             nn.ReLU(),
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
             nn.ReLU(),

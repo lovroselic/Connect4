@@ -2,18 +2,34 @@
 """
 Created on Sun Aug  3 14:01:51 2025
 
-@author: Uporabnik
+@author: Lovro
 """
 
+# connect4_env.py
 import numpy as np
+from C4.connect4_lookahead import Connect4Lookahead
 
 class Connect4Env:
     ROWS = 6
     COLS = 7
+    
+    # Configurable reward parameters
+    THREAT2_VALUE = 2  
+    THREAT3_VALUE = 10   
+    BLOCK2_VALUE = 2.2   
+    BLOCK3_VALUE = 11    
+    MAX_REWARD = 40 
+    WIN_REWARD = 100
+    DRAW_REWARD = 50
+    LOSS_PENALTY = -100
+    CENTER_REWARD = 1
+    CENTER_WEIGHTS = [-0.25, -0.125, 0.5, 1.0, 0.5, -0.125, -0.25]
+    ILLEGAL_MOVE_PENALTY = -1000000 # this is obsolete
 
     def __init__(self):
         self.reset()
-
+        self.lookahead = Connect4Lookahead()
+        
     def reset(self):
         self.board = np.zeros((self.ROWS, self.COLS), dtype=int)
         self.current_player = 1
@@ -29,26 +45,82 @@ class Connect4Env:
 
     def step(self, action):
         if self.done or self.board[0][action] != 0:
-            return self.get_state(), -10, True  # Illegal move penalty
-    
-        # Drop piece in the selected column
+            return self.get_state(), self.ILLEGAL_MOVE_PENALTY, True
+        
+        # Save board state BEFORE move for threat detection
+        board_before = self.board.copy()
+        opponent_before = -self.current_player
+        
+        # Drop piece in selected column
         for row in reversed(range(self.ROWS)):
             if self.board[row][action] == 0:
                 self.board[row][action] = self.current_player
                 break
-    
+        
+
         reward = 0
-        self.done, winner = self.check_game_over()
-        self.winner = winner  # ✅ Store winner in env
-    
-        if self.done:
-            if winner == self.current_player:
-                reward = 1  # Win
-            elif winner == 0:
-                reward = 0.5  # Draw
+        threat2_count = 0
+        threat3_count = 0
+        block2_count = 0
+        block3_count = 0
+        
+        # Check game status
+        self.done, self.winner = self.check_game_over()
+        
+        if not self.done:
+            # Get patterns for current board
+            patterns_current = self.lookahead.board_to_patterns(
+                self.board, [self.current_player, opponent_before]
+            )
+            patterns_before = self.lookahead.board_to_patterns(
+                board_before, [self.current_player, opponent_before]
+            )
+            
+            # COUNT THREATS
+            threat2_count = self.lookahead.count_windows(
+                patterns_current, 2, self.current_player
+            )
+            threat3_count = self.lookahead.count_windows(
+                patterns_current, 3, self.current_player
+            )
+            
+            # COUNT BLOCKS
+            opp2_before = self.lookahead.count_windows(
+                patterns_before, 2, opponent_before
+            )
+            opp2_after = self.lookahead.count_windows(
+                patterns_current, 2, opponent_before
+            )
+            block2_count = max(0, opp2_before - opp2_after)
+            
+            opp3_before = self.lookahead.count_windows(
+                patterns_before, 3, opponent_before
+            )
+            opp3_after = self.lookahead.count_windows(
+                patterns_current, 3, opponent_before
+            )
+            block3_count = max(0, opp3_before - opp3_after)
+            
+            center_reward = self.CENTER_REWARD * self.CENTER_WEIGHTS[action]
+                
+            
+            # CALCULATE SCALED REWARDS
+            threat_reward = (self.THREAT2_VALUE * threat2_count) + (self.THREAT3_VALUE * threat3_count) + center_reward
+            block_reward = (self.BLOCK2_VALUE * block2_count) + (self.BLOCK3_VALUE * block3_count)
+            
+            
+            reward = threat_reward + block_reward
+            reward = min(reward, self.MAX_REWARD)
+
+            
+        else:  # Terminal rewards
+            if self.winner == self.current_player:
+                reward = self.WIN_REWARD
+            elif self.winner == 0:
+                reward = self.DRAW_REWARD
             else:
-                reward = -1  # Loss
-    
+                reward = self.LOSS_PENALTY
+                
         self.current_player *= -1  # Switch turns
         return self.get_state(), reward, self.done
 

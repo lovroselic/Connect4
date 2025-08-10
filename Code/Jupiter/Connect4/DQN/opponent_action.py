@@ -5,19 +5,34 @@ Created on Sun Aug  3 15:15:37 2025
 @author: Lovro
 """
 import random
-from connect4_lookahead import Connect4Lookahead
-from training_phases_config import TRAINING_PHASES
+from C4.connect4_lookahead import Connect4Lookahead
+from DQN.training_phases_config import TRAINING_PHASES
 
 Lookahead = Connect4Lookahead()
 
 def get_opponent_action(env, agent, episode, next_state, player, depth):
     valid_actions = env.available_actions()
 
-    if episode < TRAINING_PHASES["Random"]["length"]:
+    if episode < TRAINING_PHASES["Random1"]["length"]:
         opp_action = random.choice(valid_actions)
 
-    elif episode < TRAINING_PHASES["Mixed"]["length"]:
-        if random.randint(0,1) == 0:
+    elif episode < TRAINING_PHASES["Random2"]["length"]:
+        opp_action = random.choice(valid_actions)
+
+    elif episode < TRAINING_PHASES["Mixed_RR1"]["length"]:
+        if random.random() < 0.75:
+            opp_action = random.choice(valid_actions)
+        else:
+            opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=1)
+
+    elif episode < TRAINING_PHASES["Mixed_R1"]["length"]:
+        if random.random() < 0.5:
+            opp_action = random.choice(valid_actions)
+        else:
+            opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=1)
+
+    elif episode < TRAINING_PHASES["Mixed_R11"]["length"]:
+        if random.random() < 0.3:
             opp_action = random.choice(valid_actions)
         else:
             opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=1)
@@ -27,11 +42,7 @@ def get_opponent_action(env, agent, episode, next_state, player, depth):
 
     ####################################
 
-    elif episode < TRAINING_PHASES["Mixed2"]["length"]:
-        if random.randint(0,2) == 0:
-            opp_action = random.choice(valid_actions)
-        else:
-            opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=1)
+
 
     elif episode < TRAINING_PHASES["Fixed1"]["length"]:
         opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=1)
@@ -62,23 +73,27 @@ def get_opponent_action(env, agent, episode, next_state, player, depth):
         else:
             opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=2)
 
-    # elif episode < TRAINING_PHASES["SelfPlay_L1L2"]["length"]:
-    #     opp_action = agent.act_with_curriculum(next_state, valid_actions, player=-1, depth=depth)
+    elif episode < TRAINING_PHASES["Mixed12"]["length"]:
+        shallow_depth = random.randint(1, 2)
+        opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=shallow_depth)
 
-    # elif episode < TRAINING_PHASES["Shallow"]["length"]:
-    #     shallow_depth = random.randint(1, 2)
-    #     opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=shallow_depth)
-
-    # elif episode < TRAINING_PHASES["SelfPlay_shallow2"]["length"]:
-    #     opp_action = agent.act_with_curriculum(next_state, valid_actions, player=-1, depth=depth)
+    elif episode < TRAINING_PHASES["SelfPlay_L1L2"]["length"]:
+        opp_action = agent.act_with_curriculum(next_state, valid_actions, player=-1, depth=depth)
 
     # ######################################
 
-    # elif episode < TRAINING_PHASES["Fixed2"]["length"]:
-    #     opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=2)
+    elif episode < TRAINING_PHASES["Mixed123"]["length"]:
+        depth = random.choice([1,2,3])
+        opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=depth)
 
-    # elif episode < TRAINING_PHASES["SelfPlay_L2"]["length"]:
-    #     opp_action = agent.act_with_curriculum(next_state, valid_actions, player=-1, depth=depth)
+    elif episode < TRAINING_PHASES["Fixed2"]["length"]:
+        opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=2)
+
+    elif episode < TRAINING_PHASES["Fixed2_Reprise"]["length"]:
+        opp_action = Lookahead.n_step_lookahead(next_state, player=-1, depth=2)
+
+    elif episode < TRAINING_PHASES["SelfPlay_L2"]["length"]:
+        opp_action = agent.act_with_curriculum(next_state, valid_actions, player=-1, depth=depth)
 
     # ######################################
 

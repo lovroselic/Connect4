@@ -9,31 +9,48 @@ Created on Wed Aug  6 09:17:31 2025
 # memory prune not yes applied
 
 TRAINING_PHASES = {
-    "Random": {
+    "Random1": {
         "length": 500,
         "lookahead": None,  # Random opponent
         "memory_prune": 0.0,
     },
-    # "Fixed1": {
-    #     "length": 1500,
-    #     "lookahead": 1,
-    #     "memory_prune": 0.0,
-    # },
-    # "Fixed2": {
-    #     "length": 2500,
-    #     "lookahead": 2,
-    #     "memory_prune": 0.0,
+    "L1_1": {
+        "length": 1000,
+        "lookahead": 1,
+        "memory_prune": 0.0,
+    },
+     "Random12": {
+        "length": 1500,
+        "lookahead": None,  # Random opponent
+        "memory_prune": 0.0,
+    },
+    "L1_2": {
+        "length": 2000,
+        "lookahead": 1,
+        "memory_prune": 0.0,
+    },
+    
+    "L2_1": {
+        "length": 3000,
+        "lookahead": 2,
+        "memory_prune": 0.0,
+    },
+
+     "L1_3": {
+        "length": 4000,
+        "lookahead": 1,
+        "memory_prune": 0.0,
     },
     # "Fixed3": {
-    #     "length": 3500,
+    #     "length": 8000,
     #     "lookahead": 3,
     #     "memory_prune": 0.0,
     # },
     # "SelfPlay3": {
-    #     "length": 4000,
+    #     "length": 10000,
     #     "lookahead": None,  # Use model as opponent
     #     "memory_prune": 0.0,
-    # },
+    #},
 
 
     ## ---- FINAL ---- ##
