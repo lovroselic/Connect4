@@ -10,7 +10,9 @@ Created on Sun Aug  3 18:50:36 2025
 from IPython.display import display
 import numpy as np
 import matplotlib.pyplot as plt
+from copy import deepcopy
 from DQN.training_phases_config import TRAINING_PHASES
+from C4.connect4_env import Connect4Env
 
 
 def get_phase(episode):
@@ -21,16 +23,37 @@ def get_phase(episode):
                 phase_name,
                 phase_data["weights"],
                 phase_data["epsilon"],
-                phase_data["memory_prune"]
+                phase_data["memory_prune"],
+                phase_data.get("epsilon_min", 0.0),
             )
 
-def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune):
+
+def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune, epsilon_min):
+    frozen_opp = None  # default
+    
+    
+    # Freeze opponent model for self-play phases
+    if new_phase.startswith("SelfPlay"):
+        frozen_opp = deepcopy(agent)
+        frozen_opp.model.eval()
+        frozen_opp.target_model.eval()
+        frozen_opp.epsilon = 0.0
+        frozen_opp.epsilon_min = 0.0
+    
+
     if new_phase != current_phase:
+        # Phase transition → set exploration parameters
         agent.epsilon = epsilon
+        agent.epsilon_min = epsilon_min
+
+        # Memory prune if configured
         if memory_prune:
             agent.memory.prune(memory_prune)
-        return new_phase
-    return current_phase
+
+        return new_phase, frozen_opp
+
+    return current_phase, frozen_opp
+
 
 def evaluate_final_result(env, agent_player):
     if env.winner == agent_player:
@@ -41,6 +64,17 @@ def evaluate_final_result(env, agent_player):
         return 0.5
     else:
         return None
+
+def map_final_result_to_reward(final_result):
+    if final_result == 1:
+        return Connect4Env.WIN_REWARD
+    elif final_result == -1:
+        return Connect4Env.LOSS_PENALTY
+    elif final_result == 0.5:
+        return Connect4Env.DRAW_REWARD
+    else:
+        return 0  # None or invalid
+
 
 def track_result(final_result, win_history):
     if final_result == 1:
@@ -53,10 +87,10 @@ def track_result(final_result, win_history):
         win_history.append(0)
         return 0, 0, 1
     else:
-        raise ValueError("Invalid final_result — env.winner was not set correctly.")
+        raise ValueError("Invalid final_result — env.winner was not set correctly. Lovro, get a grip!")
 
-def plot_live_training(episode, reward_history, win_history, epsilon_history, phase, win_count, loss_count, draw_count, title="title", memory_prune = 0):
-    fig, ax = plt.subplots(3, 1, figsize=(10, 9), sharex=True)
+def plot_live_training(episode, reward_history, win_history, epsilon_history, phase, win_count, loss_count, draw_count, title, memory_prune_history, epsilon_min_history):
+    fig, ax = plt.subplots(4, 1, figsize=(10, 9), sharex=True)
 
     # Plot reward
     ax[0].plot(reward_history, label='Reward')
@@ -84,12 +118,20 @@ def plot_live_training(episode, reward_history, win_history, epsilon_history, ph
     ax[1].legend()
     ax[1].grid(True)
 
-    # Epsilon
+    # Epsilon, epsilon min
     ax[2].plot(epsilon_history, label='Epsilon', color='orange')
+    ax[2].plot(epsilon_min_history, label='Epsilon_min', color='black', linestyle='--')
     ax[2].set_xlabel('Episode')
     ax[2].set_ylabel('Epsilon')
     ax[2].legend()
     ax[2].grid(True)
+    
+    # memory prune
+    ax[3].plot(memory_prune_history, label='Memory_prune', color='red')
+    ax[3].set_xlabel('Episode')
+    ax[3].set_ylabel('Memory_prune')
+    ax[3].legend()
+    ax[3].grid(True)
 
     fig.suptitle(f"{title} - Episode {episode} — Phase: {phase} | Wins: {win_count}, Losses: {loss_count}, Draws: {draw_count} | ε={epsilon_history[-1]:.3f}")
     plt.tight_layout(rect=[0, 0, 1, 0.95])

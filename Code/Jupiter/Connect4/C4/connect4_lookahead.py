@@ -2,7 +2,7 @@
 """
 Created on Sun Aug  3 14:26:37 2025
 
-@author: Uporabnik
+@author: Lovro
 """
 
 import numpy as np
@@ -105,6 +105,7 @@ class Connect4Lookahead:
             return value
 
     def n_step_lookahead(self, board, player, depth=3):
+        #print(f"....called n_step_lookahead with player {player}, depth {depth}")
         valid_moves = self.get_legal_moves(board)
         scores = {}
         for move in valid_moves:

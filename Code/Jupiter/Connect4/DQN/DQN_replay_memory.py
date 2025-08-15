@@ -2,18 +2,20 @@
 """
 Created on Sun Aug  3 18:17:00 2025
 
-@author: Uporabnik
+@author: Lovro
 """
 
 import random
-from collections import deque
+from collections import deque, namedtuple
+
+Transition = namedtuple('Transition', ('state', 'player', 'action', 'reward', 'next_state', 'next_player', 'done'))
 
 class ReplayMemory:
-    def __init__(self, capacity=10000):
+    def __init__(self, capacity=100000):
         self.memory = deque(maxlen=capacity)
 
-    def push(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+    def push(self, s, p, a, r, s2, p2, done):
+        self.memory.append(Transition(s, p, a, r, s2, p2, done))
 
     def sample(self, batch_size):
         return random.sample(self.memory, batch_size)

@@ -15,12 +15,12 @@ class Connect4Env:
     
     # Configurable reward parameters
     THREAT2_VALUE = 2  
-    THREAT3_VALUE = 10   
-    BLOCK2_VALUE = 2.2   
-    BLOCK3_VALUE = 11    
+    THREAT3_VALUE = 12   
+    BLOCK2_VALUE = 3   
+    BLOCK3_VALUE = 14    
     MAX_REWARD = 40 
     WIN_REWARD = 100
-    DRAW_REWARD = 50
+    DRAW_REWARD = 25
     LOSS_PENALTY = -100
     CENTER_REWARD = 1
     CENTER_WEIGHTS = [-0.25, -0.125, 0.5, 1.0, 0.5, -0.125, -0.25]
@@ -107,10 +107,8 @@ class Connect4Env:
             # CALCULATE SCALED REWARDS
             threat_reward = (self.THREAT2_VALUE * threat2_count) + (self.THREAT3_VALUE * threat3_count) + center_reward
             block_reward = (self.BLOCK2_VALUE * block2_count) + (self.BLOCK3_VALUE * block3_count)
-            
-            
             reward = threat_reward + block_reward
-            reward = min(reward, self.MAX_REWARD)
+            reward = np.clip(reward, -self.MAX_REWARD, self.MAX_REWARD)
 
             
         else:  # Terminal rewards
