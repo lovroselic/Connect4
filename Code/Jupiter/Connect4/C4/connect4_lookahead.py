@@ -11,6 +11,8 @@ class Connect4Lookahead:
     ROWS = 6
     COLS = 7
     CENTER_COL = 3
+    immediate_w = 250
+    fork_w = 150
 
     def __init__(self, weights=None):
         # Default heuristic weights for 2-in-a-row, 3-in-a-row, 4-in-a-row
@@ -71,6 +73,19 @@ class Connect4Lookahead:
             my_count = self.count_windows(patterns, n, player)
             opp_count = self.count_windows(patterns, n, opponent)
             score += self.weights[n] * (my_count - 1.5 * opp_count)
+            
+        # immediate wins / forks (computed only at leaf)
+        my_imm  = len(self.count_immediate_wins(board, player))
+        opp_imm = len(self.count_immediate_wins(board, opponent))
+        
+        score += self.immediate_w * (my_imm - 1.5 * opp_imm)
+        
+        # forks: >=2 immediate wins → bonus/penalty (scale with (count-1))
+        if my_imm >= 2:
+            score += self.fork_w * (my_imm - 1)
+        if opp_imm >= 2:
+            score -= 1.5 * self.fork_w * (opp_imm - 1)
+        
         return score
 
     def is_terminal(self, board):
@@ -117,3 +132,34 @@ class Connect4Lookahead:
         best_moves = [m for m, s in scores.items() if s == max_score]
         best_moves.sort(key=lambda x: abs(self.CENTER_COL - x))  # prefer center
         return best_moves[0]
+    
+    def has_four(self, board, player: int) -> bool:
+        """True if 'player' has a 4-in-a-row on 'board'."""
+        patterns = self.board_to_patterns(board, [player])
+        return self.count_windows(patterns, 4, player) > 0
+    
+    def count_immediate_wins(self, board, player: int):
+        """
+        Return list of columns that produce an immediate win for 'player'
+        (i.e., drop once and you win).
+        """
+        wins = []
+        for col in self.get_legal_moves(board):
+            b2 = self.drop_piece(board, col, player)
+            if self.has_four(b2, player):
+                wins.append(col)
+        return wins
+    
+    def compute_fork_signals(self, board_before, board_after, mover: int):
+        """
+        For the move just played by 'mover':
+          - my_after: # of mover's immediate wins after the move
+          - opp_before: # of opponent's immediate wins before the move
+          - opp_after:  # of opponent's immediate wins after the move
+        """
+        opp = -mover
+        my_after   = len(self.count_immediate_wins(board_after, mover))
+        opp_before = len(self.count_immediate_wins(board_before, opp))
+        opp_after  = len(self.count_immediate_wins(board_after,  opp))
+        return {"my_after": my_after, "opp_before": opp_before, "opp_after": opp_after}
+    

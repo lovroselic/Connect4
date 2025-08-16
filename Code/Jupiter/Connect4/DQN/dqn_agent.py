@@ -82,15 +82,45 @@ class DQNAgent:
     def act_with_curriculum(self, state, valid_actions, player, depth, strategy_weights=None):
         return self.act(state, valid_actions, player, depth, strategy_weights)
 
-    def remember(self, s, p, a, r, s2, p2, done):
-       scaled = r * self.reward_scale
-       self.memory.push(s,  p,  a, scaled, s2,  p2,  done)
+    def remember(self, s, p, a, r, s2, p2, done, add_mirror=True, add_colorswap=True, add_mirror_colorswap=True):
+        
+        """Store transition + symmetric augmentations.
+    
+        s, s2: (6,7) in {-1,0,+1}
+        p, p2: current player on s and s2 respectively (±1)
+        a:     column [0..6]
+        r:     env reward from the agent side that moved on s  (we negate under color-swap)
+        """
+        
+        scaled = r * self.reward_scale
+    
+        # 1) original
+        self.memory.push(s, p, a, scaled, s2, p2, done)
+    
+        # 2) horizontal mirror (no player change)
+        if add_mirror:
+            fs  = np.flip(s,  axis=-1).copy()
+            fs2 = np.flip(s2, axis=-1).copy()
+            fa  = 6 - a
+            self.memory.push(fs, p, fa, scaled, fs2, p2, done)
+    
+        # 3) color swap (invert stones & players, negate reward)
+        if add_colorswap:
+            cs   = (-s).copy()
+            cs2  = (-s2).copy()
+            cp   = -p
+            cp2  = -p2
+            self.memory.push(cs, cp, a, -scaled, cs2, cp2, done)
+    
+        # 4) mirror + color swap 
+        if add_mirror_colorswap:
+            mcs   = np.flip(-s,  axis=-1).copy()
+            mcs2  = np.flip(-s2, axis=-1).copy()
+            cfa   = 6 - a
+            cp    = -p
+            cp2   = -p2
+            self.memory.push(mcs, cp, cfa, -scaled, mcs2, cp2, done)
 
-       # horizontal flip augmentation
-       fs  = np.flip(s,  axis=-1).copy()
-       fs2 = np.flip(s2, axis=-1).copy()
-       fa  = 6 - a
-       self.memory.push(fs, p, fa, scaled, fs2, p2, done)
 
     def replay(self, batch_size):
         if len(self.memory) < batch_size:

@@ -28,6 +28,7 @@ const DEBUG = {
     max17: false,
     keys: false,
     simulation: false,
+    drawToConsole:false,
 
     board: [
         0, 2, 1, 2, 2, 2, 0,
@@ -53,11 +54,13 @@ const INI = {
     INROW2: 1,
     INROW3: 100,
     INROW4: 10000,
-    DEFENSIVE_FACTOR: 1.1,
+    IMMEDIATE_WIN: 500,
+    FORK_BONUS: 150,
+    DEFENSIVE_FACTOR: 1.5,
 };
 
 const PRG = {
-    VERSION: "1.1.7",
+    VERSION: "1.2.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -248,18 +251,6 @@ const BOARD = {
         CTX.arc(x, y, INI.RADIUS, 0, Math.PI * 2, false);
         CTX.fill();
         CTX.restore();
-    },
-    debugBoard() {
-        //reds
-        GAME.map.toRed(new Grid(0, 0));
-        GAME.map.toRed(new Grid(0, INI.ROWS - 1));
-        //blues
-        GAME.map.toBlue(new Grid(INI.COLS - 1, 0));
-        GAME.map.toBlue(new Grid(INI.COLS - 1, INI.ROWS - 1));
-        //red top row
-        GAME.map.toRed(new Grid(0, INI.ROWS));
-        //
-        console.info("debugBoard", GAME.map);
     },
     importBoard(list) {
         for (let i = 0; i < list.length; i++) {
@@ -481,6 +472,7 @@ const AGENT_MANAGER = {
             let grid = new Grid(col, row);
             if (map.isZero(grid)) return grid;
         }
+        throw "This should be only called for legal moves!!";
     },
     getDestination(move) {
         return this.getEmptyRow(GAME.map, move);
@@ -511,11 +503,11 @@ const AGENT_MANAGER = {
         let nextGrid = grid.clone();                                                                                        //this is GA!
         let placedGrid = this.getEmptyRow(nextGrid, move);                                                                  //filtered for valid moves
         nextGrid.setValue(placedGrid, playerIndex);
-        BOARD.printBoardToConsole(nextGrid);
+        if (DEBUG.drawToConsole) BOARD.printBoardToConsole(nextGrid);
         return nextGrid;
     },
     minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
-        if (depth === 0 || this.isTerminalNode(patterns)) return this.getHeuristic(playerIndex, patterns);
+        if (depth === 0 || this.isTerminalNode(patterns, GA)) return this.getHeuristic(playerIndex, patterns, GA);
         const validMoves = this.getLegalCentreOrderedMoves(GA);
 
         if (maximizingPlayer) {
@@ -543,21 +535,47 @@ const AGENT_MANAGER = {
             return value;
         }
     },
-    getHeuristic(playerIndex, patterns) {
+    getHeuristic(playerIndex, patterns, currentBoard) {
         const pieces = [2, 3, 4];
         const oppoPlayer = playerIndex % 2 + 1;
         const player = pieces.map(p => BOARD.countWindowsInPattern(patterns, p, playerIndex));
         const oppo = pieces.map(p => BOARD.countWindowsInPattern(patterns, p, oppoPlayer));
-        const score = pieces.reduce((sum, n, i) => {
+        let score = pieces.reduce((sum, n, i) => {
             const weight = INI[`INROW${n}`];
             return sum + weight * (player[i].count - oppo[i].count * INI.DEFENSIVE_FACTOR);
         }, 0);
 
+        // immediate wins / forks (computed only at leaf)
+        const player_imm = this.countImmediateWins(currentBoard, playerIndex).length;
+        const oppo_imm = this.countImmediateWins(currentBoard, oppoPlayer).length;
+
+        if ((player_imm + oppo_imm) > 0) {
+            score += INI.IMMEDIATE_WIN * (player_imm - INI.DEFENSIVE_FACTOR * oppo_imm);
+            if (player_imm >= 2) score += INI.IMMEDIATE_WIN * (player_imm - 1);
+            if (oppo_imm >= 2) score -= INI.DEFENSIVE_FACTOR * (INI.IMMEDIATE_WIN * (oppo_imm - 1));
+        }
+
         return Math.ceil(score);
     },
-    isTerminalNode(patterns) {
+    hasFour(board, playerIndex) {
+        const patterns = BOARD.boardToPatterns([playerIndex], board)[0];
+        return BOARD.countWindowsInPattern(patterns, 4, playerIndex).count > 0;
+    },
+    countImmediateWins(board, playerIndex) {
+        const wins = [];
+        const legalColumns = this.getLegalMoves(board);
+        for (let column of legalColumns) {
+            const leaf_board = this.dropPiece(board, column, playerIndex);
+            if (this.hasFour(leaf_board, playerIndex)) {
+                wins.push(column);
+            }
+        }
+        return wins;
+    },
+    isTerminalNode(patterns, GA) {
         const FourInARow = BOARD.countWindowsInPattern(patterns, 4, 1).count + BOARD.countWindowsInPattern(patterns, 4, 2).count;
-        return FourInARow > 0;
+        if (FourInARow > 0) return true;
+        return this.getLegalMoves(GA).length === 0; // draw
     },
     innermost(arr) {
         const mid = (INI.COLS - 1) / 2;
@@ -1017,7 +1035,7 @@ const TITLE = {
     },
     startTitle() {
         if (DEBUG.VERBOSE) console.log("TITLE started");
-        if (AUDIO.Title) AUDIO.Title.play(); 
+        if (AUDIO.Title) AUDIO.Title.play();
         ENGINE.GAME.pauseBlock();
         TITLE.clearAllLayers();
         TITLE.blackBackgrounds();

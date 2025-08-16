@@ -13,18 +13,21 @@ class Connect4Env:
     ROWS = 6
     COLS = 7
     
-    # Configurable reward parameters
     THREAT2_VALUE = 2  
     THREAT3_VALUE = 12   
     BLOCK2_VALUE = 3   
-    BLOCK3_VALUE = 14    
-    MAX_REWARD = 40 
+    BLOCK3_VALUE = 15    
+    MAX_REWARD = 50 
     WIN_REWARD = 100
-    DRAW_REWARD = 25
+    DRAW_REWARD = 15
     LOSS_PENALTY = -100
-    CENTER_REWARD = 1
-    CENTER_WEIGHTS = [-0.25, -0.125, 0.5, 1.0, 0.5, -0.125, -0.25]
-    ILLEGAL_MOVE_PENALTY = -1000000 # this is obsolete
+    CENTER_REWARD = 1.5
+    CENTER_REWARD_BOTTOM = 7
+    FORK_BONUS = 15
+    BLOCK_FORK_BONUS = 20
+
+    CENTER_WEIGHTS = [0.25, 0, 0.5, 1.0, 0.5, 0, 0.25]
+    #ILLEGAL_MOVE_PENALTY = -1000000 # this is obsolete
 
     def __init__(self):
         self.reset()
@@ -55,6 +58,7 @@ class Connect4Env:
         for row in reversed(range(self.ROWS)):
             if self.board[row][action] == 0:
                 self.board[row][action] = self.current_player
+                placed_row = row
                 break
         
 
@@ -102,12 +106,22 @@ class Connect4Env:
             block3_count = max(0, opp3_before - opp3_after)
             
             center_reward = self.CENTER_REWARD * self.CENTER_WEIGHTS[action]
+            
+            # Extra if it is **bottom-center** specifically
+            if action == 3 and placed_row == self.ROWS - 1:
+                center_reward += self.CENTER_REWARD_BOTTOM
+                
+            # --- Fork / anti-fork shaping using Lookahead ---
+            signals = self.lookahead.compute_fork_signals(board_before, self.board, self.current_player)
+            fork_bonus = self.FORK_BONUS if signals["my_after"] >= 2 else 0
+            blocked_fork = (signals["opp_before"] >= 2) and (signals["opp_after"] < signals["opp_before"])
+            block_fork_bonus = self.BLOCK_FORK_BONUS if blocked_fork else 0
                 
             
             # CALCULATE SCALED REWARDS
-            threat_reward = (self.THREAT2_VALUE * threat2_count) + (self.THREAT3_VALUE * threat3_count) + center_reward
+            threat_reward = (self.THREAT2_VALUE * threat2_count) + (self.THREAT3_VALUE * threat3_count)
             block_reward = (self.BLOCK2_VALUE * block2_count) + (self.BLOCK3_VALUE * block3_count)
-            reward = threat_reward + block_reward
+            reward = threat_reward + block_reward + fork_bonus + block_fork_bonus + center_reward
             reward = np.clip(reward, -self.MAX_REWARD, self.MAX_REWARD)
 
             

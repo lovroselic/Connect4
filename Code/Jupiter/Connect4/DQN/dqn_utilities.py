@@ -28,17 +28,20 @@ def get_phase(episode):
             )
 
 
-def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune, epsilon_min):
-    frozen_opp = None  # default
-    
+def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune, epsilon_min, prev_frozen_opp):
+    frozen_opp = prev_frozen_opp 
     
     # Freeze opponent model for self-play phases
-    if new_phase.startswith("SelfPlay"):
-        frozen_opp = deepcopy(agent)
-        frozen_opp.model.eval()
-        frozen_opp.target_model.eval()
-        frozen_opp.epsilon = 0.0
-        frozen_opp.epsilon_min = 0.0
+    if new_phase.startswith("SelfPlay"): 
+        if frozen_opp is None:
+            frozen_opp = deepcopy(agent)
+            frozen_opp.model.eval()
+            frozen_opp.target_model.eval()
+            frozen_opp.epsilon = 0.0
+            frozen_opp.epsilon_min = 0.0
+        
+    else:
+        frozen_opp = None
     
 
     if new_phase != current_phase:

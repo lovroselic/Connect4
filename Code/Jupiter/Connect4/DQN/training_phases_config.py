@@ -17,13 +17,13 @@ TRAINING_PHASES = {
     "Random1": {
         "duration": 500,
         "weights": [0.50, 0.45, 0.05, 0.00, 0.00, 0.00, 0.00, 0.00],
-        "epsilon": 1.0, "epsilon_min": 0.20, "memory_prune": 0.00,
+        "epsilon": 1.0, "epsilon_min": 0.10, "memory_prune": 0.00,
         "opponent": [1, 0, 0, 0, 0, 0, 0, 0],  
     },
     "Random2": {
-        "duration": 200,
-        "weights": [0.45, 0.45, 0.10, 0.00, 0.00, 0.00, 0.00, 0.00],
-        "epsilon": 1.0, "epsilon_min": 0.20, "memory_prune": 0.20,
+        "duration": 500,
+        "weights": [0.40, 0.50, 0.10, 0.00, 0.00, 0.00, 0.00, 0.00],
+        "epsilon": 0.90, "epsilon_min": 0.10, "memory_prune": 0.20,
         "opponent": [1, 0, 0, 0, 0, 0, 0, 0],  
     },
 
@@ -43,7 +43,7 @@ TRAINING_PHASES = {
     },
     "Mixed_R11": {
         "duration": 500,
-        "weights": [0.20, 0.50, 0.25, 0.05, 0.00, 0.00, 0.00, 0.00],
+        "weights": [0.20, 0.55, 0.20, 0.05, 0.00, 0.00, 0.00, 0.00],
         "epsilon": 0.80, "epsilon_min": 0.12, "memory_prune": 0.25,
         "opponent": [0.40, 0.60, 0, 0, 0, 0, 0, 0],  
     },
@@ -65,7 +65,7 @@ TRAINING_PHASES = {
     },
     "Fixed1-Reprise": {
         "duration": 500,
-        "weights": [0.05, 0.60, 0.25, 0.08, 0.02, 0.00, 0.00, 0.00],
+        "weights": [0.05, 0.60, 0.25, 0.10, 0.00, 0.00, 0.00, 0.00],
         "epsilon": 0.55, "epsilon_min": 0.08, "memory_prune": 0.20,
         "opponent": [0.15, 0.85, 0, 0, 0, 0, 0, 0],  
     },
@@ -107,7 +107,7 @@ TRAINING_PHASES = {
     "Relax_R1122": {
         "duration": 500,
         "weights":   [0.00, 0.30, 0.50, 0.20, 0.00, 0.00, 0.00, 0.00],
-        "opponent":  [0.30, 0.49, 0.21, 0.00, 0.00, 0.00, 0.00, 0.00],
+        "opponent":  [0.30, 0.50, 0.20, 0.00, 0.00, 0.00, 0.00, 0.00],
         "epsilon": 0.25, "epsilon_min": 0.12, "memory_prune": 0.10,
     },
         
@@ -118,8 +118,8 @@ TRAINING_PHASES = {
         "opponent":  [0.00, 0.50, 0.50, 0.00, 0.00, 0.00, 0.00, 0.00],  
         "epsilon": 0.40, "epsilon_min": 0.08, "memory_prune": 0.15,
     },
-    "Breather_L1L2Bridge": {
-        "duration": 250,
+    "Challenge_L1L2_HeadToHead": {
+        "duration": 500,
         "weights":   [0.00, 0.25, 0.50, 0.25, 0.00, 0.00, 0.00, 0.00],
         "opponent":  [0.00, 0.25, 0.50, 0.25, 0.00, 0.00, 0.00, 0.00],  
         "epsilon": 0.40, "epsilon_min": 0.08, "memory_prune": 0.10,
@@ -134,7 +134,7 @@ TRAINING_PHASES = {
 # -------------------- L2 block --------------------
     "Mixed123": {
         "duration": 500,
-        "weights":   [0.05, 0.30, 0.35, 0.25, 0.05, 0.00, 0.00, 0.00],
+        "weights":   [0.00, 0.30, 0.30, 0.30, 0.10, 0.00, 0.00, 0.00],
         "opponent":  [0.00, 1/3, 1/3, 1/3, 0.00, 0.00, 0.00, 0.00],     
         "epsilon": 0.40, "epsilon_min": 0.06, "memory_prune": 0.10,
     },
@@ -146,14 +146,14 @@ TRAINING_PHASES = {
     },
     "Fixed2_Reprise": {
         "duration": 500,
-        "weights":   [0.00, 0.15, 0.50, 0.20, 0.10, 0.05, 0.00, 0.00],
+        "weights":   [0.00, 0.10, 0.50, 0.25, 0.10, 0.05, 0.00, 0.00],
         "opponent":  [0.00, 0.00, 1.00, 0.00, 0.00, 0.00, 0.00, 0.00],  # pure L2
         "epsilon": 0.40, "epsilon_min": 0.05, "memory_prune": 0.05,
     },
-    "Breather_L2Consolidate": {
-        "duration": 200,
-        "weights":   [0.00, 0.15, 0.65, 0.20, 0.00, 0.00, 0.00, 0.00],
-        "opponent":  [0.00, 0.00, 1.00, 0.00, 0.00, 0.00, 0.00, 0.00],  # pure L2
+    "Breather_L2_Consolidate": {
+        "duration": 500,
+        "weights":   [0.00, 0.10, 0.60, 0.20, 0.10, 0.00, 0.00, 0.00],
+        "opponent":  [0.30, 0.30, 0.40, 0.00, 0.00, 0.00, 0.00, 0.00],  #make agent feel great again
         "epsilon": 0.20, "epsilon_min": 0.05, "memory_prune": 0.10,
     },
     "SelfPlay_L2": {
@@ -176,9 +176,9 @@ TRAINING_PHASES = {
         "opponent":  [0.00, 1/3, 1/3, 1/3, 0.00, 0.00, 0.00, 0.00],     
         "epsilon": 0.40, "epsilon_min": 0.05, "memory_prune": 0.10,
     },
-    "Breather_L2L3Blend": {
+    "Breather_L2L3_Blend": {
         "duration": 200,
-        "weights":   [0.00, 0.05, 0.45, 0.45, 0.05, 0.00, 0.00, 0.00],
+        "weights":   [0.00, 0.05, 0.40, 0.40, 0.15, 0.00, 0.00, 0.00],
         "opponent":  [0.00, 0.00, 0.50, 0.50, 0.00, 0.00, 0.00, 0.00],  
         "epsilon": 0.25, "epsilon_min": 0.05, "memory_prune": 0.10,
     },
@@ -210,13 +210,13 @@ def set_training_phases_length(DICT):
         length += int(TF["duration"])
         TF["length"] = length
         TF["sumWeights"] = np.sum(TF["weights"])
-        TF["sumOppo"] = np.sum(TF["opponent"])
+        TF["sumOppo"] = np.sum(TF["opponent"]) if TF.get("opponent") is not None else 0
         
     display_dict_as_tab(DICT)
         
 def display_dict_as_tab(DICT):
     DF = pd.DataFrame.from_dict(DICT, orient="index")  
-    cols = ['length', "duration", "epsilon", "epsilon_min", "memory_prune", "sumWeights"]
+    cols = ['length', "duration", "epsilon", "epsilon_min", "memory_prune", "sumWeights", "sumOppo"]
     DF = DF[cols]
     DF = DF.sort_values(by=['length'], ascending=True)
     display(HTML(DF.to_html()))
