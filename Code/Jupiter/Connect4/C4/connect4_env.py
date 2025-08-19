@@ -15,17 +15,17 @@ class Connect4Env:
     
     THREAT2_VALUE = 2  
     THREAT3_VALUE = 12   
-    BLOCK2_VALUE = 3   
-    BLOCK3_VALUE = 15    
+    BLOCK2_VALUE = 4   
+    BLOCK3_VALUE = 20    
     MAX_REWARD = 50 
     WIN_REWARD = 100
     DRAW_REWARD = 15
     LOSS_PENALTY = -100
-    CENTER_REWARD = 1.5
-    CENTER_REWARD_BOTTOM = 7
+    CENTER_REWARD = 1.0
+    CENTER_REWARD_BOTTOM = 4
     FORK_BONUS = 15
-    BLOCK_FORK_BONUS = 20
-
+    BLOCK_FORK_BONUS = 30
+    OPP_IMMEDIATE_PENALTY = 50 
     CENTER_WEIGHTS = [0.25, 0, 0.5, 1.0, 0.5, 0, 0.25]
     #ILLEGAL_MOVE_PENALTY = -1000000 # this is obsolete
 
@@ -48,7 +48,8 @@ class Connect4Env:
 
     def step(self, action):
         if self.done or self.board[0][action] != 0:
-            return self.get_state(), self.ILLEGAL_MOVE_PENALTY, True
+            # was: self.ILLEGAL_MOVE_PENALTY (commented out above)
+            return self.get_state(), self.LOSS_PENALTY, True
         
         # Save board state BEFORE move for threat detection
         board_before = self.board.copy()
@@ -116,13 +117,25 @@ class Connect4Env:
             fork_bonus = self.FORK_BONUS if signals["my_after"] >= 2 else 0
             blocked_fork = (signals["opp_before"] >= 2) and (signals["opp_after"] < signals["opp_before"])
             block_fork_bonus = self.BLOCK_FORK_BONUS if blocked_fork else 0
-                
             
+            # do NOT leave opponent a 1-move win (can be >1 if you blunder badly)
+            opp_immediate_after = signals["opp_after"]
+            immediate_loss_penalty = self.OPP_IMMEDIATE_PENALTY * opp_immediate_after
+
             # CALCULATE SCALED REWARDS
             threat_reward = (self.THREAT2_VALUE * threat2_count) + (self.THREAT3_VALUE * threat3_count)
-            block_reward = (self.BLOCK2_VALUE * block2_count) + (self.BLOCK3_VALUE * block3_count)
-            reward = threat_reward + block_reward + fork_bonus + block_fork_bonus + center_reward
+            block_reward  = (self.BLOCK2_VALUE * block2_count) + (self.BLOCK3_VALUE * block3_count)
+            
+            reward = (
+                threat_reward
+                + block_reward
+                + fork_bonus
+                + block_fork_bonus
+                + center_reward
+                - immediate_loss_penalty        
+            )
             reward = np.clip(reward, -self.MAX_REWARD, self.MAX_REWARD)
+
 
             
         else:  # Terminal rewards
@@ -133,7 +146,7 @@ class Connect4Env:
             else:
                 reward = self.LOSS_PENALTY
                 
-        self.current_player *= -1  # Switch turns
+        self.current_player *= -1  # Switch turns, used for evaluation! KEEP!
         return self.get_state(), reward, self.done
 
     def check_game_over(self):

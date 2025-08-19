@@ -2,18 +2,22 @@
 """
 Created on Wed Aug  6 20:18:59 2025
 
-@author: Uporabnik
+@author: Lovro
 """
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from DQN.training_phases_config import TRAINING_PHASES
+#from DQN.training_phases_config import TRAINING_PHASES
 
 
 # plot_phase_summary.py
 
-def plot_phase_summary(summary_stats):
+def plot_phase_summary(summary_stats, TRAINING_PHASES):
+    if not summary_stats:
+        print("Plot_phase_summary: summary_stats is empty. Nothing to plot.")
+        return
+    
     # Convert summary to DataFrame
     df = pd.DataFrame.from_dict(summary_stats, orient='index')
 

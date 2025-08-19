@@ -23,12 +23,13 @@ def get_phase(episode):
                 phase_name,
                 phase_data["weights"],
                 phase_data["epsilon"],
-                phase_data["memory_prune"],
+                phase_data["memory_prune_recent"],
+                phase_data["memory_prune_low"],
                 phase_data.get("epsilon_min", 0.0),
             )
 
 
-def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune, epsilon_min, prev_frozen_opp):
+def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune_recent, memory_prune_low, epsilon_min, prev_frozen_opp):
     frozen_opp = prev_frozen_opp 
     
     # Freeze opponent model for self-play phases
@@ -45,14 +46,11 @@ def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune, 
     
 
     if new_phase != current_phase:
-        # Phase transition → set exploration parameters
+        # Phase transition → set exploration parameters, memory prunes are always set 
         agent.epsilon = epsilon
         agent.epsilon_min = epsilon_min
-
-        # Memory prune if configured
-        if memory_prune:
-            agent.memory.prune(memory_prune)
-
+        agent.memory.prune(memory_prune_recent, mode="recent")
+        agent.memory.prune(memory_prune_low, mode="low_priority")
         return new_phase, frozen_opp
 
     return current_phase, frozen_opp
@@ -92,7 +90,10 @@ def track_result(final_result, win_history):
     else:
         raise ValueError("Invalid final_result — env.winner was not set correctly. Lovro, get a grip!")
 
-def plot_live_training(episode, reward_history, win_history, epsilon_history, phase, win_count, loss_count, draw_count, title, memory_prune_history, epsilon_min_history):
+def plot_live_training(episode, reward_history, win_history, epsilon_history, phase, win_count, loss_count, draw_count, title, memory_prune_history, 
+                       epsilon_min_history, memory_prune_low_history,
+                       save = False, path = None):
+    
     fig, ax = plt.subplots(4, 1, figsize=(10, 9), sharex=True)
 
     # Plot reward
@@ -130,7 +131,8 @@ def plot_live_training(episode, reward_history, win_history, epsilon_history, ph
     ax[2].grid(True)
     
     # memory prune
-    ax[3].plot(memory_prune_history, label='Memory_prune', color='red')
+    ax[3].plot(memory_prune_history, label='Memory_prune_recent', color='red')
+    ax[3].plot(memory_prune_low_history, label='Memory_prune_priority', color='black', linestyle=(0, (1, 5)))
     ax[3].set_xlabel('Episode')
     ax[3].set_ylabel('Memory_prune')
     ax[3].legend()
@@ -147,6 +149,13 @@ def plot_live_training(episode, reward_history, win_history, epsilon_history, ph
                 axis.text(transition_ep + 2, axis.get_ylim()[1] * 0.95, name, rotation=90, va='top', ha='left', fontsize=8)
 
     display(fig)
+    
+    if save and path is not None:
+        #save_final_winrate_plot(win_history=win_history, training_phases=TRAINING_PHASES, save_path=PLOTS, session_name=TRAINING_SESSION)
+        full_path = f"{path}{title}_complete_training_plot.png"
+        fig.savefig(full_path)
+        print(f"Win rate plot saved to {full_path}")
+        
     plt.close()
     
 

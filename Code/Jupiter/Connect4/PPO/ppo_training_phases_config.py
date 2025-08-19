@@ -6,57 +6,72 @@ Created on Wed Aug  6 09:17:31 2025
 """
 
 # ppo_training_phases_config.py
-# memory prune not yes applied
 
 TRAINING_PHASES = {
     "Random1": {
-        "length": 500,
-        "lookahead": None,  # Random opponent
-        "memory_prune": 0.0,
-    },
-    "L1_1": {
-        "length": 1000,
-        "lookahead": 1,
-        "memory_prune": 0.0,
-    },
-     "Random12": {
-        "length": 1500,
-        "lookahead": None,  # Random opponent
-        "memory_prune": 0.0,
-    },
-    "L1_2": {
-        "length": 2000,
-        "lookahead": 1,
-        "memory_prune": 0.0,
-    },
-    
-    "L2_1": {
-        "length": 3000,
-        "lookahead": 2,
-        "memory_prune": 0.0,
-    },
-
-     "L1_3": {
-        "length": 4000,
-        "lookahead": 1,
-        "memory_prune": 0.0,
-    },
-    # "Fixed3": {
-    #     "length": 8000,
-    #     "lookahead": 3,
-    #     "memory_prune": 0.0,
-    # },
-    # "SelfPlay3": {
-    #     "length": 10000,
-    #     "lookahead": None,  # Use model as opponent
-    #     "memory_prune": 0.0,
-    #},
-
-
-    ## ---- FINAL ---- ##
-    "Final": {
-        "length": None,
+        "duration": 500,
         "lookahead": None,
-        "memory_prune": 0.0,
-    }
+        "params": {"lr": 3e-4, "clip": 0.20, "entropy": 0.010, "epochs": 4},
+    },
+    "SelfPlay_Random": {
+        "duration": 500,
+        "lookahead": "self",
+        "params": {"lr": 1.5e-4, "clip": 0.12, "entropy": 0.007, "epochs": 4},
+    },
+    "L1_Intro": {
+        "duration": 750,
+        "lookahead": 1,
+        "params": {"lr": 3e-4, "clip": 0.20, "entropy": 0.010, "epochs": 4},
+    },
+    "Random2": {
+        "duration": 250,
+        "lookahead": None,
+        "params": {"lr": 3e-4, "clip": 0.20, "entropy": 0.010, "epochs": 4},
+    },
+    "L1_Consol": {
+        "duration": 1000,
+        "lookahead": 1,
+        "params": {"lr": 2e-4, "clip": 0.18, "entropy": 0.009, "epochs": 4},
+    },
+    "Random3": {
+        "duration": 250,
+        "lookahead": None,
+        "params": {"lr": 2e-4, "clip": 0.18, "entropy": 0.009, "epochs": 4},
+    },
+    "L2_Intro": {
+        "duration": 750,
+        "lookahead": 2,
+        "params": {"lr": 2e-4, "clip": 0.15, "entropy": 0.008, "epochs": 4},
+    },
+    "Random4": {
+        "duration": 250,
+        "lookahead": None,
+        "params": {"lr": 2e-4, "clip": 0.15, "entropy": 0.008, "epochs": 4},
+    },
+    "L2_Consol": {
+        "duration": 1000,
+        "lookahead": 2,
+        "params": {"lr": 1.5e-4, "clip": 0.12, "entropy": 0.007, "epochs": 4},
+    },
+    "SelfPlay_L1L2": {
+        "duration": 500,
+        "lookahead": "self",
+        "params": {"lr": 1.5e-4, "clip": 0.12, "entropy": 0.007, "epochs": 4},
+    },
+    "L3_Intro": {
+        "duration": 500,
+        "lookahead": 3,
+        "params": {"lr": 1e-4, "clip": 0.10, "entropy": 0.006, "epochs": 4},
+    },
+    "Random5": {
+        "duration": 250,
+        "lookahead": None,
+        "params": {"lr": 1e-4, "clip": 0.10, "entropy": 0.006, "epochs": 4},
+    },
+    "L3_Consol": {
+        "duration": 1000,
+        "lookahead": 3,
+        "params": {"lr": 1e-4, "clip": 0.10, "entropy": 0.006, "epochs": 4},
+    },
 }
+

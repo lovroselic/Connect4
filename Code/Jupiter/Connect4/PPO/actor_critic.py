@@ -1,70 +1,94 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Aug  3 18:34:01 2025
-
-@author: Lovro
-"""
 # actor_critic.py
 
-import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from C4.connect4_lookahead import Connect4Lookahead
+import numpy as np
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-Lookahead = Connect4Lookahead()  # instantiate once for reuse
 
 class ActorCritic(nn.Module):
-    def __init__(self, input_shape=(6, 7), output_size=7):
-        super(ActorCritic, self).__init__()
-        self.input_shape = input_shape
-        self.output_size = output_size
-
-        self.conv_layers = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=4, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Flatten()
-        )
+    def __init__(self, action_dim: int = 7):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)   # (6x7) -> (6x7)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, padding=1)  # -> (5x6)
+        self.flatten = nn.Flatten()
 
         with torch.no_grad():
-            dummy = torch.zeros(1, 1, *input_shape)
-            conv_out_size = self.conv_layers(dummy).shape[1]
+            dummy = torch.zeros(1, 1, 6, 7)
+            n_flat = self._forward_conv(dummy).view(1, -1).size(1)
 
-        self.fc_layers = nn.Sequential(
-            nn.Linear(conv_out_size, 256),
-            nn.LayerNorm(256),
-            nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU()
-        )
+        self.fc = nn.Linear(n_flat, 128)
+        self.policy_head = nn.Linear(128, action_dim)
+        self.value_head  = nn.Linear(128, 1)
 
-        self.policy_head = nn.Linear(128, output_size)
-        self.value_head = nn.Linear(128, 1)
+    def _forward_conv(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        return x
 
-    def forward(self, x):
-        x = self.conv_layers(x)
-        x = self.fc_layers(x)
-        policy_logits = self.policy_head(x)          # ⬅️ raw logits
-        value = self.value_head(x)
-        return policy_logits, value                   # ⬅️ no softmax here
+    def forward(self, x: torch.Tensor):
+        if x.dim() == 2:            # [6,7]
+            x = x.unsqueeze(0).unsqueeze(0)
+        elif x.dim() == 3:          # [B,6,7]
+            x = x.unsqueeze(1)      # -> [B,1,6,7]
+        x = x.to(dtype=torch.float32, device=DEVICE)
 
-    def act(self, state, valid_actions=None):
-        state = state.to(DEVICE)
-        logits, value = self.forward(state)
+        x = self._forward_conv(x)
+        x = self.flatten(x)
+        x = F.relu(self.fc(x))
 
-        if valid_actions is not None:
-            mask = torch.full_like(logits, -float('inf'))
-            mask[0, valid_actions] = 0
-            logits = logits + mask                    # ⬅️ mask applied to logits
+        logits = self.policy_head(x)              # [B, A]
+        value  = self.value_head(x).squeeze(-1)   # [B]
+        return logits, value
 
-        probs = F.softmax(logits, dim=-1)             # ⬅️ softmax only here
+    @staticmethod
+    def make_legal_action_mask(batch_legal_actions, action_dim: int = 7) -> torch.Tensor:
+        B = len(batch_legal_actions)
+        mask = torch.zeros(B, action_dim, dtype=torch.bool, device=DEVICE)
+        for i, acts in enumerate(batch_legal_actions):
+            if acts:  # guard against empty list
+                idx = torch.as_tensor(list(acts), dtype=torch.long, device=DEVICE)
+                mask[i, idx] = True
+        return mask
+
+    @torch.no_grad()
+    def act(self, state_np: np.ndarray, legal_actions, temperature: float = 1.0):
+        logits, value = self.forward(torch.from_numpy(state_np))
+
+        # mask illegal actions
+        mask = torch.zeros_like(logits, dtype=torch.bool, device=logits.device)
+        if legal_actions:
+            mask[0, torch.as_tensor(list(legal_actions), device=logits.device)] = True
+        masked_logits = logits.masked_fill(~mask, -1e9)
+
+        if temperature <= 0:
+            probs = F.softmax(masked_logits, dim=-1)
+            action = masked_logits.argmax(dim=-1)
+            dist = Categorical(probs)
+        else:
+            probs = F.softmax(masked_logits / temperature, dim=-1)
+            dist = Categorical(probs)
+            action = dist.sample()
+
+        logprob = dist.log_prob(action)
+        return (int(action.item()),
+                logprob,           # already detached by no_grad
+                value,             # [1]
+                probs)
+
+    def greedy_act(self, state_np: np.ndarray, legal_actions):
+        return self.act(state_np, legal_actions, temperature=0.0)
+
+    def evaluate_actions(self, states: torch.Tensor, actions: torch.Tensor,
+                         legal_action_masks: torch.Tensor | None = None):
+        logits, values = self.forward(states)
+        if legal_action_masks is not None:
+            logits = logits.masked_fill(~legal_action_masks, -1e9)
+        probs = F.softmax(logits, dim=-1)
         dist = Categorical(probs)
-        action = dist.sample()
-        return action.item(), dist.log_prob(action), value
+
+        logprobs = dist.log_prob(actions)
+        entropy  = dist.entropy()
+        return logprobs, entropy, values
