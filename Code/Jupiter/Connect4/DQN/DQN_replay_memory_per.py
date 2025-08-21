@@ -11,8 +11,8 @@ class PrioritizedReplayMemory:
         capacity: int,
         alpha: float = 0.6,
         eps: float = 1e-3,
-        init_boost_terminal: float = 1.5,
-        init_boost_oppmove: float   = 1.2,
+        init_boost_terminal: float = 1.2,
+        init_boost_oppmove: float   = 1.0,
     ):
         self.capacity = int(capacity)
         self.alpha = float(alpha)
@@ -142,19 +142,24 @@ class PrioritizedReplayMemory:
         return s1, i1, w1
 
     def update_priorities(self, indices_1, td_errors_1, indices_n=None, td_errors_n=None):
-        # guard against non-finite TD errors (*** change ***)
+        PRIO_CLIP = 5.0  # gentle; try 3.0–10.0 if you like
+    
         if indices_1 is not None and len(indices_1):
             for i, e in zip(indices_1, td_errors_1):
                 e = float(e)
                 if not np.isfinite(e):
                     e = 0.0
-                self.prio_1[int(i)] = abs(e) + self.eps
+                ae = min(abs(e), PRIO_CLIP)             
+                self.prio_1[int(i)] = ae + self.eps
+    
         if indices_n is not None and len(indices_n):
             for i, e in zip(indices_n, td_errors_n):
                 e = float(e)
                 if not np.isfinite(e):
                     e = 0.0
-                self.prio_n[int(i)] = abs(e) + self.eps
+                ae = min(abs(e), PRIO_CLIP)             
+                self.prio_n[int(i)] = ae + self.eps
+
 
     # ---------- pruning ----------
     def prune(self, fraction, mode="recent"):

@@ -118,6 +118,9 @@ def plot_live_training(episode, reward_history, win_history, epsilon_history, ph
     if len(win_history) >= 250:
         win_avg = np.convolve(win_history, np.ones(250) / 250, mode='valid')
         ax[1].plot(range(249, len(win_history)), win_avg, label='Win Rate (250 ep)', color='#999', linestyle='--')
+    if len(win_history) >= 500:
+        win_avg = np.convolve(win_history, np.ones(500) / 500, mode='valid')
+        ax[1].plot(range(499, len(win_history)), win_avg, label='Win Rate (500 ep)', color='#111', linestyle=(0, (1, 5)))
     ax[1].set_ylabel('Win Rate')
     ax[1].legend()
     ax[1].grid(True)
@@ -212,10 +215,16 @@ def log_summary_stats(
 ):
     recent_rewards = reward_history[-25:] if len(reward_history) >= 25 else reward_history
     recent_win_rate = np.mean(win_history[-25:]) if len(win_history) >= 25 else np.mean(win_history)
+    
+    # --- Safe handling of None ---
+    if strategy_weights is None:
+        weights_logged = None
+    else:
+        weights_logged = strategy_weights.copy()
 
     summary_stats_dict[episode] = {
         "phase": phase,
-        "strategy_weights": strategy_weights.copy(),
+        "strategy_weights": weights_logged,
         "epsilon": agent.epsilon,
         "wins": win_count,
         "losses": loss_count,

@@ -26,7 +26,10 @@ def save_checkpoint(
         "model_state": policy.state_dict(),
         "optim_state": optim.state_dict(),
         "episode": int(episode),
-        "lookahead_depth": (0 if lookahead_depth is None else int(lookahead_depth)),
+        "lookahead_depth": (
+            -1 if isinstance(lookahead_depth, str) and lookahead_depth.lower() == "self"
+            else (0 if lookahead_depth is None else int(lookahead_depth))
+        ),
         "cfg": dict(vars(cfg)) if hasattr(cfg, "__dict__") else None,
         "hparams": dict(vars(hparams)) if hasattr(hparams, "__dict__") else None,
         "timestamp": time.strftime("%Y%m%d-%H%M%S"),

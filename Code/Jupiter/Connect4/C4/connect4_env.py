@@ -15,8 +15,8 @@ class Connect4Env:
     
     THREAT2_VALUE = 2  
     THREAT3_VALUE = 12   
-    BLOCK2_VALUE = 4   
-    BLOCK3_VALUE = 20    
+    BLOCK2_VALUE = 2   
+    BLOCK3_VALUE = 13    
     MAX_REWARD = 50 
     WIN_REWARD = 100
     DRAW_REWARD = 15
@@ -24,7 +24,7 @@ class Connect4Env:
     CENTER_REWARD = 1.0
     CENTER_REWARD_BOTTOM = 4
     FORK_BONUS = 15
-    BLOCK_FORK_BONUS = 30
+    BLOCK_FORK_BONUS = 16
     OPP_IMMEDIATE_PENALTY = 50 
     CENTER_WEIGHTS = [0.25, 0, 0.5, 1.0, 0.5, 0, 0.25]
     #ILLEGAL_MOVE_PENALTY = -1000000 # this is obsolete

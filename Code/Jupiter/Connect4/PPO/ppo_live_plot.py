@@ -30,7 +30,8 @@ def plot_live_training_ppo(
     title: str = "PPO Training",
     phases: dict | None = None,  # TRAINING_PHASES with 'length' filled (cumulative end ep)
     save: bool = False,
-    save_path: str | None = None # directory path ending with '/' or '\\'
+    save_path: str | None = None, # directory path ending with '/' or '\\'
+    reward_ylim=(-200, 200),
 ):
     # --- Figure layout ---
     fig, ax = plt.subplots(4, 1, figsize=(10, 9), sharex=True)
@@ -45,6 +46,7 @@ def plot_live_training_ppo(
     ax[0].set_ylabel('Total Reward')
     ax[0].legend()
     ax[0].grid(True)
+    ax[0].set_ylim(reward_ylim)
 
     # 2) Win rate (moving averages on 1/0 wins)
     if len(win_history) > 0:

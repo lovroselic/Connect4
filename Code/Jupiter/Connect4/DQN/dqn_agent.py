@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from collections import deque
 
 from DQN.DQN_replay_memory_per import PrioritizedReplayMemory
 from DQN.dqn_model import DQN
@@ -22,15 +23,14 @@ class DQNAgent:
         epsilon_decay=0.995,
         device=None,
         memory_capacity=200_000,
-        per_alpha=0.6,
-        per_eps=1e-3,
-        # β schedule for importance-sampling (set start=end to keep β fixed)
-        per_beta_start=0.4,
-        per_beta_end=1.0,
-        per_beta_steps=200_000,
-        # default mixing ratio for 1-step vs n-step when training
-        per_mix_1step=0.5,
-    ):
+        per_alpha=0.55,          # was 0.6  -> slightly less skewed priorities
+        per_eps=1e-2,           # was 1e-3 -> prevents tiny probs from collapsing IS weights
+        per_beta_start=0.5,     # was 0.4  -> start correcting earlier
+        per_beta_end=0.9,
+        per_beta_steps=150_000, # was 200k -> reach 1.0 sooner
+        per_mix_1step=0.6,      # default blend (tweak per-phase via replay(...))
+
+        ):
         self.device = device if device else torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
@@ -65,6 +65,11 @@ class DQNAgent:
         # keep small scale if env rewards are ~±100
         self.reward_scale = 0.01
         self.guard_prob = 0.1 # tactical guard
+        
+        self.td_hist = deque(maxlen=50_000)             # recent per-sample TD errors
+        self.loss_hist = deque(maxlen=10_000)           # per-update loss
+        self.per_w_hist = deque(maxlen=50_000)          # recent importance weights (IS)
+        self.sample_mix_hist = deque(maxlen=20_000)     # tuples: (is_nstep, player_anchor)
 
     # ------------------------- helper encodings -------------------------
 
@@ -174,9 +179,11 @@ class DQNAgent:
 
         guard_on = (random.random() < self.guard_prob)
         
+        must_play, safe_actions = self._tactical_guard(board, valid_actions, player)
+        
         # --- one-ply tactical guard applies to both explore & exploit ---
         if guard_on:
-            must_play, safe_actions = self._tactical_guard(board, valid_actions, player)
+            #must_play, safe_actions = self._tactical_guard(board, valid_actions, player)
             if must_play is not None:
                 return must_play
 
@@ -195,14 +202,20 @@ class DQNAgent:
                 return a if a in valid_actions else random.choice(valid_actions)
 
         # Exploit
+        #exploit guard -  always
+        if must_play is not None:
+            return must_play
+    
         x = torch.tensor(
             self._agent_planes(board, agent_side=player),
             dtype=torch.float32,
             device=self.device,
         ).unsqueeze(0)
+        
         with torch.no_grad():
             q_values = self.model(x).cpu().numpy()[0]
         masked = np.full_like(q_values, -np.inf)
+        
         for a in valid_actions:
             masked[a] = q_values[a]
         return int(np.argmax(masked))
@@ -265,6 +278,12 @@ class DQNAgent:
                 (len(batch_all),), dtype=np.float32
             )
         )
+        
+        # normalize then cap
+        if is_w_all.size > 0:
+            is_w_all = is_w_all / (is_w_all.max() + 1e-8)
+            np.clip(is_w_all, 0.05, 1.0, out=is_w_all)
+
 
         # 2) unpack -> tensors
         states, next_states = [], []
@@ -330,6 +349,7 @@ class DQNAgent:
             -1
         )
         isw_t = torch.tensor(is_w_all, dtype=torch.float32, device=self.device).view(-1)
+        isw_t = isw_t / (isw_t.mean() + 1e-8)
 
         # 3) Q(s,a) and Double-DQN target
         q_all = self.model(X)  # (B,7)
@@ -355,10 +375,22 @@ class DQNAgent:
         td_err_1 = td_all[:n1]
         td_err_n = td_all[n1:]
         self.memory.update_priorities(idx_1, td_err_1, indices_n=idx_n, td_errors_n=td_err_n)
+        
+        # --- telemetry ---
+        # loss
+        self.loss_hist.append(float(loss.detach().cpu().item()))
+        # per-sample td + IS weights
+        self.td_hist.extend(td_all.tolist())
+        self.per_w_hist.extend(is_w_all.tolist())
+        # sample composition: mark which were n-step and which anchor player they came from
+        for _ in range(n1):    self.sample_mix_hist.append((0, int(s_players[len(self.sample_mix_hist) % len(s_players)])))
+        for _ in range(len(batch_n)): self.sample_mix_hist.append((1, int(s_players[(len(self.sample_mix_hist)+1) % len(s_players)])))
+
 
         # 6) anneal β
         if self.per_beta < self.per_beta_end:
             self.per_beta = min(self.per_beta_end, self.per_beta + self.per_beta_step)
+            
 
     # ---------------------------------------------------------------------
 
@@ -368,3 +400,27 @@ class DQNAgent:
         flipped_next_state = np.flip(next_state, axis=-1).copy()
         flipped_action = 6 - action
         return flipped_state, flipped_action, flipped_next_state
+
+    # ---------------------------------------------------------------------
+    
+    def gave_one_ply_win(self, board, action, player):
+        """Return True if taking `action` lets the opponent win next ply."""
+        b1, _ = self._drop_piece(board, action, player)
+        if b1 is None: 
+            return False
+        opp = -player
+        for oa in range(7):
+            if b1[0, oa] != 0: 
+                continue
+            b2, _ = self._drop_piece(b1, oa, opp)
+            if b2 is not None and self._is_win(b2) == opp:
+                return True
+        return False
+    
+    def had_one_ply_win(self, board, valid_actions, player):
+        """Return (has_win, winning_action) for our immediate wins."""
+        for a in valid_actions:
+            b1, _ = self._drop_piece(board, a, player)
+            if b1 is not None and self._is_win(b1) == player:
+                return True, a
+        return False, None

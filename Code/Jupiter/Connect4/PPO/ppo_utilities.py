@@ -25,6 +25,19 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 env = Connect4Env()
 
 
+def encode_two_channel_agent_centric(state_np: np.ndarray, perspective: int) -> np.ndarray:
+    """
+    perspective: +1 if the agent whose policy we're querying is 'player +1' in env,
+                 -1 if that agent is 'player -1' in env.
+    Returns (2, 6, 7) float32: [me, opp] planes, always agent-centric.
+    """
+    s = np.asarray(state_np, dtype=np.int8) * int(perspective)
+    me  = (s == +1).astype(np.float32)
+    opp = (s == -1).astype(np.float32)
+    return np.stack([me, opp], axis=0)
+
+
+
 def params_for_phase(name: str, cfg: PPOUpdateCfg):
     """
     Expect TRAINING_PHASES[name].get("params", {})
@@ -40,6 +53,8 @@ def params_for_phase(name: str, cfg: PPOUpdateCfg):
         "vf_clip":    float(p.get("vf_clip", cfg.vf_clip_range)),
         "batch_size": int(p.get("batch_size", cfg.batch_size)),
         "max_grad_norm": float(p.get("max_grad_norm", cfg.max_grad_norm)),
+        "temperature": float(p.get("temperature", 1.0)),
+        "steps_per_update": int(p.get("steps_per_update", 0)),  
     }
 
 
