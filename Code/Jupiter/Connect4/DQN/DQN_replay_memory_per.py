@@ -6,19 +6,36 @@ Transition      = namedtuple("Transition",      ["state", "action", "reward",   
 NStepTransition = namedtuple("NStepTransition", ["state", "action", "reward_n", "next_state_n", "done_n", "player", "n_steps"])
 
 class PrioritizedReplayMemory:
+    """
+    Prioritized Experience Replay for DQN with 1-step and N-step banks.
+
+    Policy: **priority-only**.
+      - New samples are seeded at a chosen percentile of existing priorities
+        (more stable than 'max'), then lightly boosted for terminals and
+        for opponent-turn entries.
+      - Pruning removes the **lowest-priority** fraction only. No age-based
+        logic remains.
+
+    Banks:
+      bank_1 / prio_1 : 1-step transitions
+      bank_n / prio_n : n-step transitions
+    """
+
     def __init__(
         self,
         capacity: int,
-        alpha: float = 0.6,
-        eps: float = 1e-3,
-        init_boost_terminal: float = 1.2,
+        alpha: float = 0.7,          # PER exponent on priorities
+        eps: float = 1e-3,           # small additive to avoid zero prob
+        init_boost_terminal: float = 1.3,
         init_boost_oppmove: float   = 1.0,
+        init_percentile: float = 98.0,  # seed new items at this percentile of existing prios
     ):
         self.capacity = int(capacity)
         self.alpha = float(alpha)
         self.eps = float(eps)
         self.init_boost_terminal = float(init_boost_terminal)
         self.init_boost_oppmove  = float(init_boost_oppmove)
+        self.init_percentile     = float(init_percentile)
 
         self.bank_1 = []
         self.prio_1 = np.zeros((self.capacity,), dtype=np.float32)
@@ -33,16 +50,25 @@ class PrioritizedReplayMemory:
     def _finite_or(value, fallback):
         return value if np.isfinite(value) else fallback
 
+    def _seed_priority(self, prio_vector, bank_len, done_flag, player_flag):
+        """Seed initial priority using a percentile of existing, then boost."""
+        if bank_len <= 0:
+            base = 1.0
+        else:
+            pv = prio_vector[:bank_len]
+            pv = pv[np.isfinite(pv) & (pv > 0)]
+            base = np.percentile(pv, self.init_percentile) if pv.size else 1.0
+        boost = 1.0
+        if done_flag:
+            boost *= self.init_boost_terminal
+        if player_flag == -1:
+            boost *= self.init_boost_oppmove
+        init_p = max(self.eps, float(self._finite_or(base * boost, 1.0)))
+        return init_p
+
     # ---------- pushes ----------
     def push_1step(self, s, a, r, ns, done, player):
-        maxp = self.prio_1.max() if len(self.bank_1) else 1.0
-        boost = 1.0
-        if done:         boost *= self.init_boost_terminal
-        if player == -1: boost *= self.init_boost_oppmove
-        init_p = maxp * boost
-        # ensure finite, >= eps  (*** change ***)
-        init_p = max(self.eps, float(self._finite_or(init_p, 1.0)))
-
+        init_p = self._seed_priority(self.prio_1, len(self.bank_1), done, player)
         t = Transition(s, a, r, ns, bool(done), int(player))
         if len(self.bank_1) < self.capacity:
             self.bank_1.append(t)
@@ -52,14 +78,7 @@ class PrioritizedReplayMemory:
         self.pos_1 = (self.pos_1 + 1) % self.capacity
 
     def push_nstep(self, s, a, rN, nsN, doneN, player, n_steps):
-        maxp = self.prio_n.max() if len(self.bank_n) else 1.0
-        boost = 1.0
-        if doneN:        boost *= self.init_boost_terminal
-        if player == -1: boost *= self.init_boost_oppmove
-        init_p = maxp * boost
-        # ensure finite, >= eps  (*** change ***)
-        init_p = max(self.eps, float(self._finite_or(init_p, 1.0)))
-
+        init_p = self._seed_priority(self.prio_n, len(self.bank_n), doneN, player)
         t = NStepTransition(s, a, rN, nsN, bool(doneN), int(player), int(n_steps))
         if len(self.bank_n) < self.capacity:
             self.bank_n.append(t)
@@ -68,18 +87,8 @@ class PrioritizedReplayMemory:
         self.prio_n[self.pos_n] = init_p
         self.pos_n = (self.pos_n + 1) % self.capacity
 
-    # Legacy compatibility
-    def push(self, *args):
-        if len(args) == 6:
-            s, a, r, ns, done, p = args
-            self.push_1step(s, a, r, ns, done, p)
-        elif len(args) == 7:
-            s, p, a, r, ns, _p2, done = args
-            self.push_1step(s, a, r, ns, done, p)
-        else:
-            raise TypeError(f"push(...) unexpected signature with {len(args)} args.")
 
-    # ---------- augmented pushers (unchanged) ----------
+    # ---------- augmented pushers ----------
     def push_1step_aug(self, s, a, r, s2, done, player,
                        add_mirror=True, add_colorswap=True, add_mirror_colorswap=True):
         self.push_1step(s, a, r, s2, done, player)
@@ -113,7 +122,8 @@ class PrioritizedReplayMemory:
 
         size = len(bank)
         p = prio[:size].astype(np.float64, copy=True)
-        # sanitize non-finite / negatives (*** change ***)
+
+        # sanitize
         p[~np.isfinite(p)] = 0.0
         p[p < 0.0] = 0.0
 
@@ -142,62 +152,56 @@ class PrioritizedReplayMemory:
         return s1, i1, w1
 
     def update_priorities(self, indices_1, td_errors_1, indices_n=None, td_errors_n=None):
-        PRIO_CLIP = 5.0  # gentle; try 3.0–10.0 if you like
-    
+        PRIO_CLIP = 3.5  # gentle; tune 3.0–10.0 if needed
+
         if indices_1 is not None and len(indices_1):
             for i, e in zip(indices_1, td_errors_1):
                 e = float(e)
                 if not np.isfinite(e):
                     e = 0.0
-                ae = min(abs(e), PRIO_CLIP)             
+                ae = min(abs(e), PRIO_CLIP)
                 self.prio_1[int(i)] = ae + self.eps
-    
+
         if indices_n is not None and len(indices_n):
             for i, e in zip(indices_n, td_errors_n):
                 e = float(e)
                 if not np.isfinite(e):
                     e = 0.0
-                ae = min(abs(e), PRIO_CLIP)             
+                ae = min(abs(e), PRIO_CLIP)
                 self.prio_n[int(i)] = ae + self.eps
 
 
-    # ---------- pruning ----------
-    def prune(self, fraction, mode="recent"):
+    # ---------- pruning (priority-only) ----------
+    def _prune_low(self, bank, prio, fraction):
+        """Drop the lowest-priority fraction."""
+        n = len(bank)
+        if n == 0:
+            return bank, prio
+        k = int(n * float(fraction))
+        if k <= 0:
+            return bank, prio
+        idx_sorted = np.argsort(prio[:n])  # ascending
+        drop = set(idx_sorted[:k].tolist())
+        keep = [x for j, x in enumerate(bank) if j not in drop]
+        new_prio = np.zeros_like(prio)
+        new_prio[:len(keep)] = prio[[j for j in range(n) if j not in drop]]
+        return keep, new_prio
+
+    def prune(self, fraction, mode="low_priority"):
+        """
+        Prune a fraction of the buffer by **lowest priority** only.
+        `mode` is kept for API compatibility; any value other than "low_priority"
+        raises an error to make the policy explicit.
+        """
         fraction = float(fraction)
         if fraction <= 0.0:
             return
+        if mode != "low_priority":
+            raise ValueError("Only 'low_priority' pruning is supported in priority-only mode.")
 
-        def _prune_recent(bank, prio):
-            k = int(len(bank) * fraction)
-            if k <= 0:
-                return bank, prio
-            keep = bank[k:]
-            pr = np.zeros_like(prio)
-            n_keep = len(keep)
-            pr[:n_keep] = prio[k:k+n_keep]
-            return keep, pr
-
-        def _prune_low(bank, prio):
-            n = len(bank)
-            k = int(n * fraction)
-            if k <= 0:
-                return bank, prio
-            idx_sorted = np.argsort(prio[:n])
-            drop = set(idx_sorted[:k].tolist())
-            keep = [x for j, x in enumerate(bank) if j not in drop]
-            pr = np.zeros_like(prio)
-            pr[:len(keep)] = prio[[j for j in range(n) if j not in drop]]
-            return keep, pr
-
-        if mode == "recent":
-            self.bank_1, self.prio_1 = _prune_recent(self.bank_1, self.prio_1)
-            self.bank_n, self.prio_n = _prune_recent(self.bank_n, self.prio_n)
-        elif mode == "low_priority":
-            self.bank_1, self.prio_1 = _prune_low(self.bank_1, self.prio_1)
-            self.bank_n, self.prio_n = _prune_low(self.bank_n, self.prio_n)
-        else:
-            raise ValueError(f"Unknown prune mode: {mode}")
-
+        self.bank_1, self.prio_1 = self._prune_low(self.bank_1, self.prio_1, fraction)
+        self.bank_n, self.prio_n = self._prune_low(self.bank_n, self.prio_n, fraction)
+        # write pointers remain valid modulo capacity (no circular age logic needed)
         self.pos_1 = min(self.pos_1, len(self.bank_1)) % max(1, self.capacity)
         self.pos_n = min(self.pos_n, len(self.bank_n)) % max(1, self.capacity)
 

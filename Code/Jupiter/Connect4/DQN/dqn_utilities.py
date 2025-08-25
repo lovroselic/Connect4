@@ -23,13 +23,12 @@ def get_phase(episode):
                 phase_name,
                 phase_data["weights"],
                 phase_data["epsilon"],
-                phase_data["memory_prune_recent"],
                 phase_data["memory_prune_low"],
                 phase_data.get("epsilon_min", 0.0),
             )
 
 
-def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune_recent, memory_prune_low, epsilon_min, prev_frozen_opp):
+def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune_low, epsilon_min, prev_frozen_opp):
     frozen_opp = prev_frozen_opp 
     
     # Freeze opponent model for self-play phases
@@ -49,7 +48,6 @@ def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune_r
         # Phase transition → set exploration parameters, memory prunes are always set 
         agent.epsilon = epsilon
         agent.epsilon_min = epsilon_min
-        agent.memory.prune(memory_prune_recent, mode="recent")
         agent.memory.prune(memory_prune_low, mode="low_priority")
         return new_phase, frozen_opp
 
@@ -90,7 +88,7 @@ def track_result(final_result, win_history):
     else:
         raise ValueError("Invalid final_result — env.winner was not set correctly. Lovro, get a grip!")
 
-def plot_live_training(episode, reward_history, win_history, epsilon_history, phase, win_count, loss_count, draw_count, title, memory_prune_history, 
+def plot_live_training(episode, reward_history, win_history, epsilon_history, phase, win_count, loss_count, draw_count, title, 
                        epsilon_min_history, memory_prune_low_history,
                        save = False, path = None):
     
@@ -134,8 +132,7 @@ def plot_live_training(episode, reward_history, win_history, epsilon_history, ph
     ax[2].grid(True)
     
     # memory prune
-    ax[3].plot(memory_prune_history, label='Memory_prune_recent', color='red')
-    ax[3].plot(memory_prune_low_history, label='Memory_prune_priority', color='black', linestyle=(0, (1, 5)))
+    ax[3].plot(memory_prune_low_history, label='Memory_prune_priority', color='red')
     ax[3].set_xlabel('Episode')
     ax[3].set_ylabel('Memory_prune')
     ax[3].legend()

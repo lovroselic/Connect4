@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-ppo_buffer.py — PPO rollout buffer with reward scaling and simple data augmentation
-(H-flip and color-swap) suitable for Connect4.
+ppo_buffer.py — PPO rollout buffer with reward scaling and data augmentation
+(H-flip and color-swap) for Connect4 with fixed roles:
+- Agent is always +1 (channel 0 in two-plane form)
+- Opponent is always -1 (channel 1)
 
-Augmentation usage for PPO:
-    buffer.add_augmented(
-        state_np, action, logprob, value, reward, done, legal_mask,
-        hflip=True, colorswap=True, include_original=True,
-        recompute_fn=lambda s,a,lm: policy_logprob_value(s, a, lm)  # you supply this
-    )
+Color-swap is a ROLE SWAP:
+- Channel 0 continues to mean "agent" but it becomes the original opponent plane.
+- Reward is NEGATED for color-swapped variants.
+
+add_augmented(...) returns [(idx, sign), ...] where sign=+1 for same-role
+(original, hflip) and sign=-1 for role-swapped (colorswap, hflip+colorswap).
+Use add_penalty_to_entries(...) to attribute terminal penalties consistently.
 """
 from dataclasses import dataclass
 from typing import Union, List, Dict, Any, Callable, Tuple
@@ -29,16 +32,12 @@ class PPOBuffer:
     On-policy rollout storage for PPO.
     Stores only AGENT turns (insert only when the agent acts).
 
-    Perspective & state format:
-      - Agent is always +1, opponent -1 (agent-centric).
-      - You may store states as scalar boards (6x7, values in {-1,0,+1})
-        OR as two planes (2x6x7) = [agent(+1) plane, opp(-1) plane].
-      - The buffer preserves what you give it and will stack accordingly
-        in get_tensors() to [T,6,7] or [T,2,6,7].
+    State format:
+      - Scalar board (6,7) with values in {-1,0,+1}, or
+      - Two planes (2,6,7) = [agent(+1) plane, opp(-1) plane].
 
     Reward scaling:
-      - Pass reward_scale at construction (default 0.02 recommended).
-      - All rewards/penalties written through this class are multiplied by reward_scale.
+      - All rewards written through this class are multiplied by reward_scale.
     """
 
     def __init__(
@@ -46,7 +45,7 @@ class PPOBuffer:
         capacity: int,
         action_dim: int = 7,
         hparams: PPOHyperParams = PPOHyperParams(),
-        reward_scale: float = 0.02,   # global scale (±100 -> ±2)
+        reward_scale: float = 0.005,   # e.g., ±100 -> ±0.5
     ):
         self.capacity = capacity
         self.action_dim = action_dim
@@ -111,14 +110,6 @@ class PPOBuffer:
     ):
         """
         Add a single transition (no augmentation).
-
-        state_np: (6,7) OR (2,6,7)
-        action:   int in [0, action_dim)
-        logprob:  tensor scalar from behavior policy at this state/action
-        value:    tensor scalar (network value head at this state)
-        reward:   raw env reward (will be scaled)
-        done:     episode ended after this agent move/opponent response
-        legal_mask_bool: [action_dim] bool array/tensor (True for legal)
         """
         if len(self) >= self.capacity:
             raise RuntimeError("PPOBuffer capacity exceeded")
@@ -160,14 +151,16 @@ class PPOBuffer:
         colorswap: bool = False,
         include_original: bool = True,
         recompute_fn: Callable[[np.ndarray, int, np.ndarray], Tuple[torch.Tensor, torch.Tensor]] | None = None,
-    ):
+    ) -> List[Tuple[int, int]]:
         """
         Add original and/or augmented copies (H-flip, color-swap).
-        For PPO correctness, pass `recompute_fn` that returns (logprob, value)
-        for a given (state, action, legal_mask) under the behavior policy.
 
-        recompute_fn signature:
-            (state_np, action_int, legal_mask_bool_np) -> (logprob_tensor, value_tensor)
+        RETURNS: list of (idx, sign)
+          - sign = +1 for same-role variants (original, hflip)
+          - sign = -1 for role-swapped variants (colorswap, hflip+colorswap)
+
+        For PPO correctness, pass recompute_fn(state, action, legal_mask)
+        that returns (logprob_tensor, value_tensor) under the behavior policy.
         """
         # normalize inputs to numpy
         if isinstance(state_np, torch.Tensor):
@@ -180,44 +173,60 @@ class PPOBuffer:
         else:
             base_mask = np.asarray(legal_mask_bool, dtype=bool)
 
-        variants: List[Tuple[np.ndarray, int, np.ndarray]] = []
+        # build variant specs: (state, action, mask, sign)
+        variant_specs: List[Tuple[np.ndarray, int, np.ndarray, int]] = []
 
         if include_original:
-            variants.append((base_state, int(action), base_mask))
+            variant_specs.append((base_state, int(action), base_mask, +1))
 
         if hflip:
             s = self._hflip_state(base_state)
             a = self._hflip_action(action)
             m = self._hflip_mask(base_mask)
-            variants.append((s, a, m))
+            variant_specs.append((s, a, m, +1))
 
         if colorswap:
             s = self._colorswap_state(base_state)
             a = int(action)          # same column index
             m = base_mask.copy()     # legality unchanged
-            variants.append((s, a, m))
+            variant_specs.append((s, a, m, -1))  # role-swapped -> negate reward
 
         if hflip and colorswap:
             s = self._hflip_state(self._colorswap_state(base_state))
             a = self._hflip_action(action)
             m = self._hflip_mask(base_mask)
-            variants.append((s, a, m))
+            variant_specs.append((s, a, m, -1))  # role-swapped
 
-        if len(self) + len(variants) > self.capacity:
+        if len(self) + len(variant_specs) > self.capacity:
             raise RuntimeError("PPOBuffer capacity exceeded by augmented inserts")
 
-        for s, a, m in variants:
+        out: List[Tuple[int, int]] = []
+        for s, a, m, sign in variant_specs:
             if recompute_fn is not None:
                 lp, val = recompute_fn(s, a, m)
             else:
                 # Fallback (technically off-policy for PPO). Prefer passing recompute_fn.
                 lp, val = logprob, value
-            self.add(s, a, lp, val, reward, done, m)
+
+            # NEGATE reward for role-swapped variants
+            self.add(s, a, lp, val, reward * sign, done, m)
+            out.append((len(self.rewards) - 1, sign))
+
+        return out
 
     def add_to_reward(self, idx: int, delta_raw: float, *, scale_raw: bool = True):
-        """Attribute extra reward/penalty to an existing step (e.g., blame last agent move)."""
+        """Attribute extra reward/penalty to a single step."""
         if 0 <= idx < len(self.rewards):
             self.rewards[idx] += float(delta_raw) * (self.reward_scale if scale_raw else 1.0)
+
+    def add_penalty_to_entries(self, entries: List[Tuple[int, int]], delta_raw: float, *, scale_raw: bool = True):
+        """
+        Attribute terminal penalty/bonus to multiple entries with signs produced by add_augmented().
+        Each entry is (idx, sign); the delta is multiplied by sign.
+        """
+        for idx, sign in entries or []:
+            if 0 <= idx < len(self.rewards):
+                self.rewards[idx] += float(delta_raw) * sign * (self.reward_scale if scale_raw else 1.0)
 
     # -----------------------
     # GAE / tensors
@@ -262,9 +271,9 @@ class PPOBuffer:
     def _stack_states(self) -> torch.Tensor:
         assert len(self.states) > 0, "No states to stack."
         first = self.states[0]
-        if first.ndim == 2:   # [6,7]
+        if first.ndim == 2:   # [T,6,7]
             arr = np.stack(self.states, axis=0).astype(np.float32, copy=False)
-        elif first.ndim == 3: # [C,6,7]
+        elif first.ndim == 3: # [T,2,6,7] (or [T,1,6,7])
             arr = np.stack(self.states, axis=0).astype(np.float32, copy=False)
         else:
             raise ValueError(f"Unexpected state ndim {first.ndim}")

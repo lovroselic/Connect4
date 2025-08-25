@@ -120,50 +120,102 @@ class ActorCritic(nn.Module):
         return mask
 
     @torch.no_grad()
-    def act(self, state_np: np.ndarray | torch.Tensor, legal_actions, temperature: float = 1.0):
+    def act(self, state_np: np.ndarray, legal_actions, temperature: float = 1.0):
         """
-        Single-step action.
-        - state_np can be any accepted shape (see class docstring).
-        - legal_actions is an iterable of legal column indices.
+        Robust single-step action:
+          - builds a legal-action mask and guarantees at least one legal action
+          - avoids NaNs when all logits are masked or temperature==0
+          - falls back to uniform over legal actions if probs get NaN
         """
+        # Encode to [1,2,6,7] (two-channel)
         state_t = torch.from_numpy(state_np) if isinstance(state_np, np.ndarray) else state_np
-        logits, value = self.forward(state_t)     # shapes [1,A], [1]
-
-        # mask illegal actions
-        mask = torch.zeros_like(logits, dtype=torch.bool, device=logits.device)
+        logits, value = self.forward(state_t)
+    
+        # --- Build mask [1, A] and ensure at least one True ---
+        B, A = logits.shape[0], logits.shape[1]
+        mask = torch.zeros(B, A, dtype=torch.bool, device=logits.device)
         if legal_actions:
-            mask[0, torch.as_tensor(list(legal_actions), device=logits.device)] = True
+            idx = torch.as_tensor(list(legal_actions), dtype=torch.long, device=logits.device)
+            mask[0, idx] = True
+        # Guard: if somehow no legal action is marked, allow all
+        if mask.sum(dim=-1).item() == 0:
+            mask[:] = True
+    
         masked_logits = logits.masked_fill(~mask, -1e9)
-
+    
+        # --- Compute probs safely (avoid NaNs) ---
         if temperature <= 0:
-            probs = F.softmax(masked_logits, dim=-1)
-            action = masked_logits.argmax(dim=-1)
-            dist = Categorical(probs)
+            # Greedy: still use log_softmax to get a valid dist for logprob
+            log_probs = torch.log_softmax(masked_logits, dim=-1)
+            probs = torch.exp(log_probs)
         else:
-            probs = F.softmax(masked_logits / temperature, dim=-1)
+            t = max(float(temperature), 1e-6)  # avoid div by 0
+            log_probs = torch.log_softmax(masked_logits / t, dim=-1)
+            probs = torch.exp(log_probs)
+    
+        # If any NaNs sneaked in (e.g., all -inf row), replace by uniform over legal
+        if torch.isnan(probs).any():
+            legal_counts = mask.sum(dim=-1, keepdim=True).clamp_min(1).float()
+            uniform = mask.float() / legal_counts
+            probs = uniform
+            log_probs = torch.log(probs.clamp_min(1e-12))
+    
+        # --- Sample / pick action ---
+        if temperature <= 0:
+            action = masked_logits.argmax(dim=-1)  # greedy on masked logits
+        else:
             dist = Categorical(probs)
             action = dist.sample()
-
+    
+        # Build dist after final probs to compute logprob consistently
+        dist = Categorical(probs)
         logprob = dist.log_prob(action)
-        return (int(action.item()),
-                logprob,           # detached by no_grad
-                value,             # [1]
-                probs)
+    
+        return (
+            int(action.item()),
+            logprob,           # detached by no_grad
+            value,             # [1]
+            probs
+        )
+
 
     def greedy_act(self, state_np: np.ndarray, legal_actions):
         return self.act(state_np, legal_actions, temperature=0.0)
 
     def evaluate_actions(self, states: torch.Tensor, actions: torch.Tensor,
-                         legal_action_masks: torch.Tensor | None = None):
+                     legal_action_masks: torch.Tensor | None = None):
         """
-        Batched evaluation for PPO loss.
-        - states may be any accepted shape with a batch dimension.
-        - legal_action_masks: [B, A] (True where legal)
+        states: [B,6,7], [B,1,6,7], or [B,2,6,7]; we encode internally.
+        actions: [B] long
+        legal_action_masks: [B, A] bool or None
         """
         logits, values = self.forward(states)
+    
+        mask = None
         if legal_action_masks is not None:
-            logits = logits.masked_fill(~legal_action_masks, -1e9)
+            mask = legal_action_masks.to(dtype=torch.bool, device=logits.device)
+            # ---- Guard: ensure at least one legal action per row ----
+            no_legal = (mask.sum(dim=-1) == 0)
+            if no_legal.any():
+                mask = mask.clone()
+                mask[no_legal] = True  # fall back to all actions legal for those rows
+            logits = logits.masked_fill(~mask, -1e9)
+    
         probs = F.softmax(logits, dim=-1)
+    
+        # ---- Guard: replace any NaN rows with uniform over legal actions ----
+        if torch.isnan(probs).any():
+            if mask is None:
+                # uniform over all actions
+                probs = torch.full_like(probs, 1.0 / probs.size(-1))
+            else:
+                # uniform over currently legal actions
+                with torch.no_grad():
+                    legal_counts = mask.sum(dim=-1, keepdim=True).clamp_min(1)
+                    uniform = mask.float() / legal_counts
+                nan_rows = torch.isnan(probs).any(dim=-1, keepdim=True)
+                probs = torch.where(nan_rows, uniform, probs)
+    
         dist = Categorical(probs)
         logprobs = dist.log_prob(actions)
         entropy  = dist.entropy()
