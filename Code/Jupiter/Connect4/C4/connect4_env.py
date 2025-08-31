@@ -1,15 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Aug  3 14:01:51 2025
-
-@author: Lovro
-"""
-
 # connect4_env.py
 import numpy as np
 from C4.connect4_lookahead import Connect4Lookahead
 
 class Connect4Env:
+    # reward is for the mower, from mower's perspective
     ROWS = 6
     COLS = 7
     
@@ -26,6 +20,7 @@ class Connect4Env:
     FORK_BONUS = 15
     BLOCK_FORK_BONUS = 16
     OPP_IMMEDIATE_PENALTY = 50 
+    STEP_PENALTY = 1
     CENTER_WEIGHTS = [0.25, 0, 0.5, 1.0, 0.5, 0, 0.25]
     #ILLEGAL_MOVE_PENALTY = -1000000 # this is obsolete
 
@@ -40,8 +35,18 @@ class Connect4Env:
         self.winner = None
         return self.get_state()
 
-    def get_state(self):
-        return self.board.copy()
+    def get_state(self) -> np.ndarray:
+        board = self.board  # shape (6,7)
+        agent_plane = (board == self.current_player).astype(np.float32)
+        opp_plane   = (board == -self.current_player).astype(np.float32)
+    
+        # Positional encoding
+        row_plane = np.tile(np.linspace(-1, 1, self.ROWS)[:, None], (1, self.COLS))
+        col_plane = np.tile(np.linspace(-1, 1, self.COLS)[None, :], (self.ROWS, 1))
+    
+        return np.stack([agent_plane, opp_plane, row_plane, col_plane])  # (4, 6, 7)
+
+
 
     def available_actions(self):
         return [c for c in range(self.COLS) if self.board[0][c] == 0]
@@ -49,6 +54,12 @@ class Connect4Env:
     def step(self, action):
         if self.done or self.board[0][action] != 0:
             # was: self.ILLEGAL_MOVE_PENALTY (commented out above)
+            if self.done or self.board[0][action] != 0:
+                print("ILLEGAL MOVE DETECTED!")
+                print(f"Board top row: {self.board[0]}")
+                print(f"Attempted action: {action}")
+                print(f"Winner before return: {self.winner}")
+
             return self.get_state(), self.LOSS_PENALTY, True
         
         # Save board state BEFORE move for threat detection
@@ -135,9 +146,8 @@ class Connect4Env:
                 - immediate_loss_penalty        
             )
             reward = np.clip(reward, -self.MAX_REWARD, self.MAX_REWARD)
+            reward -= self.STEP_PENALTY
 
-
-            
         else:  # Terminal rewards
             if self.winner == self.current_player:
                 reward = self.WIN_REWARD

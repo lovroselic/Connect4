@@ -1,11 +1,6 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Aug  3 14:26:37 2025
-
-@author: Lovro
-"""
-
+# connect4_lookahead.py
 import numpy as np
+import random
 
 class Connect4Lookahead:
     ROWS = 6
@@ -120,23 +115,39 @@ class Connect4Lookahead:
             return value
 
     def n_step_lookahead(self, board, player, depth=3):
-        #print(f"....called n_step_lookahead with player {player}, depth {depth}")
         valid_moves = self.get_legal_moves(board)
+        
+        if not valid_moves:
+            raise ValueError("n_step_lookahead: No valid moves available — the board may be full or corrupted.")
+    
         scores = {}
         for move in valid_moves:
             new_board = self.drop_piece(board, move, player)
             score = self.minimax(new_board, depth - 1, False, player, -np.inf, np.inf)
             scores[move] = score
-
+    
+        if not scores:
+            raise ValueError("n_step_lookahead: Failed to compute scores — no moves were evaluated.")
+    
         max_score = max(scores.values())
         best_moves = [m for m, s in scores.items() if s == max_score]
+        
+        if not best_moves:
+            raise ValueError("n_step_lookahead: No best moves found despite valid scores — unexpected logic error.")
+    
         best_moves.sort(key=lambda x: abs(self.CENTER_COL - x))  # prefer center
-        return best_moves[0]
+        K = min(3, len(best_moves))
+        
+        return random.choice(best_moves[:K])
+
     
     def has_four(self, board, player: int) -> bool:
         """True if 'player' has a 4-in-a-row on 'board'."""
         patterns = self.board_to_patterns(board, [player])
         return self.count_windows(patterns, 4, player) > 0
+    
+    #alias
+    check_win = has_four
     
     def count_immediate_wins(self, board, player: int):
         """

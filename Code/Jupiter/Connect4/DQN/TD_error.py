@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Aug 20 15:36:03 2025
-
-@author: Lovro
-"""
-
 #DQN.TD_error.py
 
 import numpy as np

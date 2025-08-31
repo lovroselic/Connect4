@@ -1,9 +1,6 @@
-# -*- coding: utf-8 -*-
+#DQN.nstep_buffer.py
+
 """
-Created on Sun Aug 17 16:49:06 2025
-
-@author: Lovro
-
 NStepBuffer keeps a rolling window of transitions and emits:
   • 1-step transitions
   • n-step transitions (with early-termination handling)
