@@ -9,7 +9,7 @@ import os
 import pandas as pd
 
 def _valid_actions_of(env):
-    return env.available_actions() if hasattr(env, "available_actions") else env.valid_actions()
+    return env.available_actions()
 
 def _mask_argmax(q, valid_actions):
     q = np.asarray(q, dtype=np.float32)
@@ -28,6 +28,64 @@ def build_input(agent, state, player, device):
     reencoded = agent.board_to_state(board, player)
     x = torch.tensor(reencoded, dtype=torch.float32, device=device).unsqueeze(0)
     return x
+
+def play_single_game(agent, env, device, Lookahead, opponent_label, game_index):
+    """
+    Plays a single game between the agent and the scripted opponent.
+    Alternates starting player based on game_index (even = agent starts).
+    Always returns board where agent is +1 and opponent is -1.
+    
+    Returns:
+        outcome: 1 (win), -1 (loss), 0.5 (draw) from agent's perspective
+        final_state: the final state at game end
+    """
+    # Always treat agent as +1, opponent as -1
+    AGENT_SIDE = 1
+    OPPONENT_SIDE = -1
+
+    # Parse opponent depth
+    depth = int(opponent_label.split("-")[1]) if opponent_label.startswith("Lookahead") else None
+
+    # Alternate who starts
+    state = env.reset()
+    env.current_player = AGENT_SIDE if (game_index % 2 == 0) else OPPONENT_SIDE
+    done = False
+
+    while not done:
+        valid_actions = _valid_actions_of(env)
+        current = env.current_player
+
+        if current == AGENT_SIDE:
+            with torch.no_grad():
+                x = build_input(agent, state, player=AGENT_SIDE, device=device)
+                q = agent.model(x).squeeze(0).cpu().numpy()
+            action = _mask_argmax(q, valid_actions)
+
+        else:
+            if opponent_label == "Random":
+                action = random.choice(valid_actions)
+            else:
+                # Always decode from agent's POV (AGENT_SIDE = +1)
+                board = agent.decode_board_from_state(state, player=AGENT_SIDE)
+                action = Lookahead.n_step_lookahead(board, player=OPPONENT_SIDE, depth=depth)
+
+                # Safety: fallback to valid if needed
+                if action not in valid_actions:
+                    action = random.choice(valid_actions)
+
+        state, _, done = env.step(action)
+
+    # Outcome from agent’s POV (agent is always +1)
+    if env.winner == AGENT_SIDE:
+        outcome = 1
+    elif env.winner == OPPONENT_SIDE:
+        outcome = -1
+    else:
+        outcome = 0.5
+
+    return outcome, state
+
+
 
 def evaluate_agent_model(agent, env, evaluation_opponents, device, Lookahead):
     """
@@ -50,42 +108,16 @@ def evaluate_agent_model(agent, env, evaluation_opponents, device, Lookahead):
 
     for label, num_games in evaluation_opponents.items():
         wins = losses = draws = 0
-        depth = int(label.split("-")[1]) if label.startswith("Lookahead") else None
 
         with tqdm(total=num_games, desc=f"Opponent: {label}") as pbar:
             for game_index in range(num_games):
-                state = env.reset()
-                env.current_player = 1 if (game_index % 2 == 0) else -1
-                done = False
-
-                while not done:
-                    valid_actions = _valid_actions_of(env)
-                    player = env.current_player
-
-                    if player == 1:
-                        with torch.no_grad():
-                            x = build_input(agent, state, player=1, device=device)
-                            q = agent.model(x).squeeze(0).cpu().numpy()  # shape: (7,)
-                        action = _mask_argmax(q, valid_actions)
-                    else:
-                        if label == "Random":
-                            action = random.choice(valid_actions)
-                        else:
-                            board = agent.decode_board_from_state(state, player=-1)
-                            action = Lookahead.n_step_lookahead(board, player=-1, depth=depth)
-                            if action not in valid_actions:
-                                action = random.choice(valid_actions)
-
-                    state, _, done = env.step(action)
-
-                # Outcome tally from agent's perspective
-                if env.winner == 1:
+                outcome, _ = play_single_game(agent, env, device, Lookahead, label, game_index)
+                if outcome == 1:
                     wins += 1
-                elif env.winner == -1:
+                elif outcome == -1:
                     losses += 1
                 else:
                     draws += 1
-
                 pbar.update(1)
 
         results[label] = {
@@ -107,7 +139,6 @@ def evaluate_agent_model(agent, env, evaluation_opponents, device, Lookahead):
     print(f"✅ Evaluation completed in {elapsed/60:.1f} minutes")
 
     return results
-
 
 def log_phase_evaluation(agent, env, phase_name, episode, device, Lookahead,
                          evaluation_opponents, excel_path):

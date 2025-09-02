@@ -24,38 +24,94 @@ TRAINING_PHASES = {
         "opponent": None,
     },
     
-    "RL1_vs_Mixed": {
-        "duration": 400,
-        "weights": [0.25, 0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  
+    #keep
+    "Mixed": {
+        "duration": 550, 
+        "weights": [0.2, 0.7, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  
         "epsilon": 0.75,
         "epsilon_min": 0.1,
-        "memory_prune_low": 0.05,
+        "memory_prune_low": 0.00, # no sense pruning yet!
         "opponent": [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  
         },
     
-    "L1_vs_Mixed": {
-        "duration": 450,
+    "SelfPlay_M1": {
+        "duration": 100,
+        "weights": None,
+        "epsilon": 0.05, "epsilon_min": 0.01,
+        "memory_prune_low": 0.00,
+        "opponent": None,
+    },
+    
+    "L1_vs_Mixed2": {
+        "duration": 500, #500
         "weights": [0.0, 0.9, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  
         "epsilon": 0.75,
         "epsilon_min": 0.1,
         "memory_prune_low": 0.05,
-        "opponent": [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  
+        "opponent": [0.4, 0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  
         },
     
-    "SelfPlay_Mixed1": {
-        "duration": 200,
+    "SelfPlay_M2": {
+        "duration": 100,
         "weights": None,
-        "epsilon": 0.00, "epsilon_min": 0.00,
+        "epsilon": 0.05, "epsilon_min": 0.01,
         "memory_prune_low": 0.00,
         "opponent": None,
     },
-    "SelfPlay_Mixed2": {
-        "duration": 500,
+    
+    "L1_vs_Mixed3": {
+        "duration": 500, #500
+        "weights": [0.0, 0.9, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  
+        "epsilon": 0.75,
+        "epsilon_min": 0.1,
+        "memory_prune_low": 0.05,
+        "opponent": [0.25, 0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  
+        },
+    
+    "SelfPlay_M3": {
+        "duration": 100,
         "weights": None,
-        "epsilon": 0.00, "epsilon_min": 0.00,
+        "epsilon": 0.05, "epsilon_min": 0.01,
         "memory_prune_low": 0.00,
         "opponent": None,
     },
+    
+
+    "L1_vs_Mixed4": {
+        "duration": 600, 
+        "weights": [0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "epsilon": 0.75, 
+        "epsilon_min": 0.1,
+        "memory_prune_low": 0.05,
+        "opponent": [0.1, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    
+    "SelfPlay_Random": {
+        "duration": 1,                 
+        "weights": None,
+        "epsilon": 0.0, "epsilon_min": 0.00,
+        "memory_prune_low": 0.00, #no sense pruning last replay
+        "opponent": None,
+    },
+
+
+    # "L1L2_vs_Mixed2": {
+    #     "duration": 500,
+    #     "weights": [0.0, 0.5, 0.4, 0.1, 0.0, 0.0, 0.0, 0.0],  
+    #     "epsilon": 0.75,
+    #     "epsilon_min": 0.1,
+    #     "memory_prune_low": 0.05,
+    #     "opponent": [0.10, 0.90, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  
+    #     },
+    
+    
+    # "SelfPlay_Mixed3": {
+    #     "duration": 500,
+    #     "weights": None,
+    #     "epsilon": 0.00, "epsilon_min": 0.00,
+    #     "memory_prune_low": 0.00,
+    #     "opponent": None,
+    # },
     
     
     ##### FINAL guard #####

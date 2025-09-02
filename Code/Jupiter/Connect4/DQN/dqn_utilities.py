@@ -8,7 +8,12 @@ from DQN.training_phases_config import TRAINING_PHASES
 from C4.connect4_env import Connect4Env
 from DQN.eval_utilities import log_phase_evaluation
 
-evaluation_opponents={"Random": 100, "Lookahead-1": 100}
+evaluation_opponents = {
+    "Random": 203,
+    "Lookahead-1": 101,
+    "Lookahead-2": 53,
+    "Lookahead-3": 11,
+}
 
 def get_phase(episode):
     for phase_name, phase_data in TRAINING_PHASES.items():

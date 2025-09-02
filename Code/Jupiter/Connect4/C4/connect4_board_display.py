@@ -1,14 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Aug  4 15:10:53 2025
-
-@author: Uporabnik
-"""
-
 # board_display.py
 import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import display
+from DQN.eval_utilities import play_single_game
 
 class Connect4_BoardDisplayer:
     @staticmethod
@@ -55,3 +49,25 @@ class Connect4_BoardDisplayer:
 
         display(fig)
         plt.close(fig)
+
+
+def display_final_boards(agent, env, device, Lookahead):
+    """
+    Plays 2 games each vs Random, Lookahead-1, Lookahead-2 and shows final boards.
+    One game where agent starts, one where opponent starts.
+    """
+    opponents = ["Random", "Lookahead-1", "Lookahead-2"]
+
+    for label in opponents:
+        print(f"\n🎯 Opponent: {label}")
+
+        for game_index in [0, 1]:  # even = agent starts, odd = opponent starts
+            outcome, final_state = play_single_game(agent, env, device, Lookahead, label, game_index)
+            
+            board = agent.decode_board_from_state(final_state, player=1)
+
+            title = f"{label} — {'Agent First' if game_index == 0 else 'Opponent First'} — "
+            title += f"{'Win' if outcome==1 else 'Loss' if outcome==-1 else 'Draw'}"
+
+            Connect4_BoardDisplayer.display_board(board, title)
+

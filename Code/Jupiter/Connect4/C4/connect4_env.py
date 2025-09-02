@@ -22,7 +22,6 @@ class Connect4Env:
     OPP_IMMEDIATE_PENALTY = 50 
     STEP_PENALTY = 1
     CENTER_WEIGHTS = [0.25, 0, 0.5, 1.0, 0.5, 0, 0.25]
-    #ILLEGAL_MOVE_PENALTY = -1000000 # this is obsolete
 
     def __init__(self):
         self.reset()
@@ -35,18 +34,17 @@ class Connect4Env:
         self.winner = None
         return self.get_state()
 
-    def get_state(self) -> np.ndarray:
-        board = self.board  # shape (6,7)
-        agent_plane = (board == self.current_player).astype(np.float32)
-        opp_plane   = (board == -self.current_player).astype(np.float32)
+    def get_state(self, perspective=+1) -> np.ndarray:
+        board = self.board
+        player = perspective
     
-        # Positional encoding
+        agent_plane = (board == player).astype(np.float32)
+        opp_plane = (board == -player).astype(np.float32)
+    
         row_plane = np.tile(np.linspace(-1, 1, self.ROWS)[:, None], (1, self.COLS))
         col_plane = np.tile(np.linspace(-1, 1, self.COLS)[None, :], (self.ROWS, 1))
     
-        return np.stack([agent_plane, opp_plane, row_plane, col_plane])  # (4, 6, 7)
-
-
+        return np.stack([agent_plane, opp_plane, row_plane, col_plane])
 
     def available_actions(self):
         return [c for c in range(self.COLS) if self.board[0][c] == 0]
