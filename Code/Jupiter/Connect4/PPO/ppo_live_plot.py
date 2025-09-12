@@ -11,6 +11,7 @@ Created on Mon Aug 18 15:55:47 2025
 import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import display, clear_output
+from DQN.dqn_utilities import _plot_bench_on_axis
 
 def _moving_avg(x, k):
     if k <= 1 or len(x) < k: 
@@ -27,6 +28,7 @@ def plot_live_training_ppo(
     loss_count: int,
     draw_count: int,
     metrics_history: dict,       # dict of lists (see "How to use" below)
+    benchmark_history: dict | None = None,
     title: str = "PPO Training",
     phases: dict | None = None,  # TRAINING_PHASES with 'length' filled (cumulative end ep)
     save: bool = False,
@@ -34,7 +36,7 @@ def plot_live_training_ppo(
     reward_ylim=(-200, 200),
 ):
     # --- Figure layout ---
-    fig, ax = plt.subplots(4, 1, figsize=(10, 9), sharex=True)
+    fig, ax = plt.subplots(5, 1, figsize=(10, 9), sharex=True)
 
     # 1) Rewards
     ax[0].plot(reward_history, label='Reward')
@@ -78,6 +80,17 @@ def plot_live_training_ppo(
     ax[3].set_ylabel('Policy Stats')
     ax[3].legend()
     ax[3].grid(True)
+    
+    # 5) Benchmark win rates vs fixed opponents (e.g., Random, L1)
+    if benchmark_history and benchmark_history.get("episode"):
+        _plot_bench_on_axis(
+            ax[4],
+            history=benchmark_history,
+            smooth_k=3,
+            training_phases=phases,
+        )
+    else:
+        ax[4].set_visible(False)
 
     # Phase transition markers (vertical lines + labels)
     if phases:

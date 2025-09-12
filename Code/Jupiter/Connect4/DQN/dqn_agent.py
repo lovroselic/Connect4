@@ -17,19 +17,20 @@ class DQNAgent:
 
     def __init__(
         self,
-        lr=0.001,
+        lr=0.0003, #0.001
         gamma=0.97,
         epsilon=0.08,
         epsilon_min=0.02,
         epsilon_decay=0.995,
         device=None,
         memory_capacity=500_000,
-        per_alpha=0.55,
-        per_eps=1e-2,
+        per_alpha=0.50, #0.55
+        per_eps=3e-2, #1e-2
         per_beta_start=0.5,
-        per_beta_end=0.9,
-        per_beta_steps=150_000,
+        per_beta_end=0.9, #0.9
+        per_beta_steps=300_000, #150_000
         per_mix_1step=0.6,
+        target_update_interval=500, target_update_mode="hard", tau=0.005 #defaults, overwritten by phase change
     ):
         self.device = device if device else torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
@@ -48,26 +49,33 @@ class DQNAgent:
         self.per_beta_end = float(per_beta_end)
         steps = max(1, int(per_beta_steps))
         self.per_beta_step = (self.per_beta_end - self.per_beta) / steps
-
         self.per_mix_1step = float(per_mix_1step)
-
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=1e-5)
-        self.loss_fn = nn.SmoothL1Loss(reduction="none")
-
+        self.loss_fn = nn.SmoothL1Loss(beta=0.5, reduction="none")
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
-
         self.lookahead = Connect4Lookahead()
-
         self.reward_scale = 0.01
-        self.guard_prob = 0.5
+        self.guard_prob = 0.3                       # controlled by phase
+        self.center_start = 0.3                     # controlled by phase
 
         self.td_hist = deque(maxlen=50_000)
         self.loss_hist = deque(maxlen=10_000)
         self.per_w_hist = deque(maxlen=50_000)
         self.sample_mix_hist = deque(maxlen=20_000)
+        
+        self.target_update_interval = int(target_update_interval)
+        self.target_update_mode = str(target_update_mode)   # "hard" or "soft"
+        self.tau = float(tau)
+        self._last_target_update_step = 0
+        
+        self.q_abs_hist      = deque(maxlen=100_000)
+        self.q_max_hist      = deque(maxlen=100_000)
+        self.target_abs_hist = deque(maxlen=100_000)
+        
+        self.center_forced_used = False
 
     # ------------------------- helper encodings -------------------------
 
@@ -121,38 +129,41 @@ class DQNAgent:
                     return int(np.sign(s))
         return 0
 
-    def _tactical_guard(self, board: np.ndarray, valid_actions, player: int):
-        """
-        Simulates one-move lookahead to block instant win/loss.
-        Returns: (must_play: int or None, safe_actions: list)
-        """
-    
-        must_play = None
-        safe_actions = []
-    
-        for a in valid_actions:
-            b1, _ = self._drop_piece(board, a, player)
-            if b1 is None:
-                continue
-            
-            # Check if we would win by playing this
-            if self.lookahead.check_win(b1, player):
-                must_play = a
-                safe_actions.append(a)
-            else:
-                # Also check opponent's chance to win right after
-                opp_win = False
-                for opp_a in valid_actions:
-                    b2, _ = self._drop_piece(b1, opp_a, -player)
-                    if b2 is None:
-                        continue
-                    if self.lookahead.check_win(b2, -player):
-                        opp_win = True
-                        break
-                if not opp_win:
-                    safe_actions.append(a)
-    
-        return must_play, safe_actions
+    def _tactical_guard(self, oriented_board: np.ndarray, valid_actions, player: int):
+     """
+     player: obsolete
+     Board is already oriented so that 'us' == +1, opponent == -1.
+     Returns: (must_play: int|None, safe_actions: list[int])
+     """
+     must_play = None
+     safe_actions = []
+ 
+     for a in valid_actions:
+         b1, _ = self._drop_piece(oriented_board, a, +1)   # us = +1
+         if b1 is None:
+             continue
+ 
+         # Immediate win for us?
+         if self.lookahead.check_win(b1, +1):
+             must_play = a
+             safe_actions.append(a)
+             continue
+ 
+         # Would opponent have an immediate reply win?
+         opp_threat = False
+         for oa in valid_actions:
+             b2, _ = self._drop_piece(b1, oa, -1)          # opp = -1
+             if b2 is None:
+                 continue
+             if self.lookahead.check_win(b2, -1):
+                 opp_threat = True
+                 break
+ 
+         if not opp_threat:
+             safe_actions.append(a)
+ 
+     return must_play, safe_actions
+
 
 
     # ------------------------- action selection -------------------------
@@ -170,8 +181,15 @@ class DQNAgent:
             return state[1] - state[0]
         else:
             raise ValueError(f"Invalid player sign: {player}")
-
     
+    @staticmethod
+    def _center_col_is_empty(state) -> bool:
+        # adjust index/order to your board tensor:
+        #   - if state shape is (rows, cols): state[:, 3]
+        #   - if it’s (channels, rows, cols): state[0 or player-plane, :, 3]
+        col = state[:, 3] if state.ndim == 2 else state[0, :, 3]
+        return (col == 0).all()
+
 
     def board_to_state(self, board: np.ndarray, player: int) -> np.ndarray:
         agent_plane = (board == player).astype(np.float32)
@@ -180,7 +198,18 @@ class DQNAgent:
         col_plane = np.tile(np.linspace(-1, 1, board.shape[1])[None, :], (board.shape[0], 1))
         return np.stack([agent_plane, opp_plane, row_plane, col_plane])
 
-    def act(self, state: np.ndarray, valid_actions, player: int, depth: int, strategy_weights=None):
+    def act(self, state: np.ndarray, valid_actions, player: int, depth: int, strategy_weights=None, ply = None):
+        
+        # === Center Guard ===
+        if not self.center_forced_used and ply is not None and ply <= 1:
+            center_start_on = (random.random() < self.center_start)
+            if center_start_on and 3 in valid_actions: 
+                if self._center_col_is_empty(state):
+                    self.center_forced_used = True
+                    return 3 # start bottom center
+        
+        
+        assert len(valid_actions) > 0, f"ACT called with empty valid actions {valid_actions}"
         board = self.decode_board_from_state(state, player)
     
         # === Tactical Guard ===
@@ -234,30 +263,32 @@ class DQNAgent:
     
         return action
 
-
-    def act_with_curriculum(self, *args, **kwargs):
-        return self.act(*args, **kwargs)
     
-
     def remember(self, s, p, a, r, s2, p2, done,
-                 add_mirror=True, add_colorswap=True, add_mirror_colorswap=True):
+             add_mirror=True, add_colorswap=True, add_mirror_colorswap=True):
+        # base
         self.memory.push_1step(s, a, r, s2, done, p)
-
+    
+        # mirror (geometry only)
         if add_mirror:
-            fs = np.flip(s, axis=-1).copy()
+            fs  = np.flip(s,  axis=-1).copy()
             fs2 = np.flip(s2, axis=-1).copy()
-            fa = 6 - a
-            self.memory.push_1step(fs, fa, r, fs2, done, p)
-
+            fa  = 6 - a
+            self.memory.push_1step(fs, fa, r, fs2, done, p)   # player unchanged
+    
+        # color-swap (swap channels 0/1, row/col unchanged), invert reward, flip player
         if add_colorswap:
-            cs, cs2 = -s, -s2
+            cs  = s.copy();  cs  = cs[[1,0,2,3], ...]
+            cs2 = s2.copy(); cs2 = cs2[[1,0,2,3], ...]
             self.memory.push_1step(cs, a, -r, cs2, done, -p)
-
+    
+        # mirror + color-swap
         if add_mirror_colorswap:
-            mcs = np.flip(-s, axis=-1).copy()
-            mcs2 = np.flip(-s2, axis=-1).copy()
-            cfa = 6 - a
+            mcs  = np.flip(cs,  axis=-1).copy()
+            mcs2 = np.flip(cs2, axis=-1).copy()
+            cfa  = 6 - a
             self.memory.push_1step(mcs, cfa, -r, mcs2, done, -p)
+
 
     def replay(self, batch_size, mix_1step=0.7):
         if (len(self.memory.bank_1) + len(self.memory.bank_n)) < batch_size:
@@ -266,6 +297,10 @@ class DQNAgent:
         (batch_1, batch_n), (idx_1, idx_n), (w_1, w_n) = self.memory.sample_mixed(
             batch_size, mix=mix_1step, beta=self.per_beta
         )
+        
+        # (batch_1, batch_n), (idx_1, idx_n), (w_1, w_n) = \
+        #     self.memory.sample_mixed_seedaware(batch_size, mix=mix_1step, beta=self.per_beta, max_seed_frac=0.10)
+    
         batch_all = list(batch_1) + list(batch_n)
         n1 = len(batch_1)
 
@@ -273,7 +308,7 @@ class DQNAgent:
             np.concatenate([w_1, w_n]) if (w_1.size or w_n.size) else np.ones((len(batch_all),), dtype=np.float32)
         )
         is_w_all = is_w_all / (is_w_all.max() + 1e-8)
-        np.clip(is_w_all, 0.05, 1.0, out=is_w_all)
+        np.clip(is_w_all, 0.10, 1.0, out=is_w_all)
 
         states, next_states = [], []
         s_players, ns_players = [], []
@@ -321,16 +356,35 @@ class DQNAgent:
         q_sa = q_all.gather(1, actions_t).squeeze(1)
 
         with torch.no_grad():
-            next_a = self.model(X_next).argmax(dim=1, keepdim=True)
-            next_q = self.target_model(X_next).gather(1, next_a).squeeze(1)
+            legal_masks_t = ((X_next[:, 0, 0, :] + X_next[:, 1, 0, :]) == 0)  # [B, 7], bool
+        
+            q_next_online = self.model(X_next)                           # [B, 7]
+            q_next_online = q_next_online.masked_fill(~legal_masks_t, -1e9)
+            next_a = q_next_online.argmax(dim=1, keepdim=True)           # [B, 1]
+        
+            # Target net evaluates that action (also masked for safety)
+            q_next_tgt = self.target_model(X_next)                       # [B, 7]
+            q_next_tgt = q_next_tgt.masked_fill(~legal_masks_t, -1e9)
+            next_q = q_next_tgt.gather(1, next_a).squeeze(1)             # [B]
+        
             target = rewards_t + (~dones_t).float() * gpow_t * next_q
+        
+            # telemetry
+            self.q_abs_hist.append(float(q_all.abs().mean().item()))
+            self.q_max_hist.append(float(q_all.abs().max().item()))
+            self.target_abs_hist.append(float(target.abs().mean().item()))
+
 
         per_sample_loss = F.smooth_l1_loss(q_sa, target, reduction="none")
         loss = (isw_t * per_sample_loss).mean() if self.per_beta > 0 else per_sample_loss.mean()
+        
+        q_reg_coeff = 1e-7   # start tiny; you can tune 1e-7 ... 5e-6
+        q_reg = q_reg_coeff * (q_all.pow(2).mean())
+        loss = loss + q_reg
 
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.0) #1.0
         self.optimizer.step()
 
         td_all = (q_sa - target).detach().cpu().numpy()
@@ -360,22 +414,44 @@ class DQNAgent:
         flipped_action = 6 - action
         return flipped_state, flipped_action, flipped_next_state
 
-    def gave_one_ply_win(self, board, action, player):
-        b1, _ = self._drop_piece(board, action, player)
+    def gave_one_ply_win(self, oriented_board, action):
+        b1, _ = self._drop_piece(oriented_board, action, +1)
         if b1 is None:
             return False
-        opp = -player
         for oa in range(7):
             if b1[0, oa] != 0:
                 continue
-            b2, _ = self._drop_piece(b1, oa, opp)
-            if b2 is not None and self._is_win(b2) == opp:
+            b2, _ = self._drop_piece(b1, oa, -1)
+            if b2 is not None and self._is_win(b2) == -1:
                 return True
         return False
-
-    def had_one_ply_win(self, board, valid_actions, player):
+    
+    def had_one_ply_win(self, oriented_board, valid_actions):
         for a in valid_actions:
-            b1, _ = self._drop_piece(board, a, player)
-            if b1 is not None and self._is_win(b1) == player:
+            b1, _ = self._drop_piece(oriented_board, a, +1)
+            if b1 is not None and self._is_win(b1) == +1:
                 return True, a
         return False, None
+
+    
+    # -----------------
+    
+    def set_target_update_interval(self, steps: int):
+        self.target_update_interval = int(steps)
+    
+    def reset_target_update_timer(self, current_step: int = 0):
+        self._last_target_update_step = int(current_step)
+    
+    def soft_update_target(self, tau: float = None):
+        tau = self.tau if tau is None else float(tau)
+        with torch.no_grad():
+            for tgt, src in zip(self.target_model.parameters(), self.model.parameters()):
+                tgt.data.mul_(1.0 - tau).add_(tau * src.data)
+    
+    def maybe_update_target(self, global_env_step: int):
+        if self.target_update_mode == "soft":
+            self.soft_update_target()  # call every step
+        else:  # hard update
+            if global_env_step - self._last_target_update_step >= self.target_update_interval:
+                self.update_target_model()
+                self._last_target_update_step = global_env_step

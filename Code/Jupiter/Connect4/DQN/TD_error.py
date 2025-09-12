@@ -87,4 +87,91 @@ def show_sample_mix(agent, last_k=5000):
     cnt_n = Counter(is_n); cnt_p = Counter(p)
     total = len(arr)
     print(f"Sample mix (last {total}): n-step={cnt_n.get(1,0)/total:.2%}, 1-step={cnt_n.get(0,0)/total:.2%};  p=+1={cnt_p.get(1,0)/total:.2%}, p=-1={cnt_p.get(-1,0)/total:.2%}")
+    
+
+def plot_td_running_by_phase(agent, phases_dict, window=500):
+    """
+    Plot phase-segmented running |TD| using TRAINING_PHASES-style dict.
+
+    phases_dict: ordered dict like your TRAINING_PHASES where each value has "duration" in EPISODES.
+    window: moving average window over |TD| samples.
+    """
+    # --- TD data ---
+    td = np.asarray(getattr(agent, "td_hist", []), dtype=np.float32).ravel()
+    if td.size == 0:
+        print("[plot_td_running_by_phase] No TD samples in agent.td_hist."); return
+    k = max(1, int(window))
+    if td.size < k:
+        print(f"[plot_td_running_by_phase] Not enough TD samples ({td.size}) for window={k}."); return
+    run = np.convolve(np.abs(td), np.ones(k, dtype=np.float32)/k, mode="valid")  # length = N-k+1
+    if run.size == 0:
+        print("[plot_td_running_by_phase] Running series empty; check window/data."); return
+
+    # --- read phases (dict is ordered in Py>=3.7) ---
+    names = list(phases_dict.keys())
+    durs_ep = [int(phases_dict[n].get("duration", 0)) for n in names]
+    if not durs_ep or sum(durs_ep) <= 0:
+        print("[plot_td_running_by_phase] No positive phase durations found."); return
+    cum_ep = np.cumsum([0] + durs_ep)  # episode marks at phase starts; len = len(names)+1
+    total_ep = cum_ep[-1]
+
+    # --- episode->TD mapping (best available) ---
+    def ep_to_td(ep):
+        # exact lookup array?
+        if hasattr(agent, "td_idx_at_ep"):
+            arr = np.asarray(getattr(agent, "td_idx_at_ep"))
+            if arr.size > ep:
+                try:
+                    return int(arr[ep])
+                except Exception:
+                    pass
+        # callable mapper?
+        if hasattr(agent, "ep_to_td") and callable(getattr(agent, "ep_to_td")):
+            try:
+                return int(agent.ep_to_td(int(ep)))
+            except Exception:
+                pass
+        # fallback: proportional (approx)
+        return int(round((ep / max(1, total_ep)) * (td.size - 1)))
+
+    # convert episode marks to TD-sample marks, then to running-index space
+    td_marks = [ep_to_td(ep) for ep in cum_ep]
+    def to_run_idx(sample_idx):
+        return max(0, min(run.size - 1, int(sample_idx) - (k - 1)))
+    run_marks = [to_run_idx(i) for i in td_marks]
+
+    # dedupe/monotone boundaries
+    boundaries = [0]
+    for i in run_marks:
+        if i != boundaries[-1]:
+            boundaries.append(i)
+    if boundaries[-1] != run.size - 1:
+        boundaries.append(run.size - 1)
+
+    # --- plot ---
+    fig, ax = plt.subplots(figsize=(10, 3.6))
+    ax.plot(run, lw=1.6)
+    ax.set_title(f"|TD| running mean by phase (window={k})")
+    ax.set_xlabel("TD sample (running index)")
+    ax.set_ylabel("running |td|")
+    ax.grid(True, ls="--", alpha=0.35)
+
+    # shade segments + per-segment mean
+    for seg_idx, (a, b) in enumerate(zip(boundaries[:-1], boundaries[1:])):
+        if a >= b: 
+            continue
+        seg = run[a:b]
+        ax.axvspan(a, b, color=("0.95" if (seg_idx % 2 == 0) else "0.90"), alpha=0.9, lw=0)
+        ax.hlines(seg.mean(), a, b, ls="--", lw=1.0, alpha=0.9)
+
+    # verticals & labels at phase starts
+    y_top = ax.get_ylim()[1]
+    for x, lbl in zip(run_marks[:-1], names):  # exclude final end mark
+        ax.axvline(x, color="k", lw=1, ls=":", alpha=0.7)
+        ax.text(x + 3, y_top * 0.98, lbl, rotation=90, va="top", ha="left", fontsize=8, alpha=0.75)
+
+    plt.tight_layout()
+    plt.show()
+
+
 

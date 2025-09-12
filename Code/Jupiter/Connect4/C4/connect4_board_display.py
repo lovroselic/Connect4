@@ -51,13 +51,7 @@ class Connect4_BoardDisplayer:
         plt.close(fig)
 
 
-def display_final_boards(agent, env, device, Lookahead):
-    """
-    Plays 2 games each vs Random, Lookahead-1, Lookahead-2 and shows final boards.
-    One game where agent starts, one where opponent starts.
-    """
-    opponents = ["Random", "Lookahead-1", "Lookahead-2"]
-
+def display_final_boards(agent, env, device, Lookahead, opponents):
     for label in opponents:
         print(f"\n🎯 Opponent: {label}")
 

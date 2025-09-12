@@ -67,6 +67,24 @@ class PPOBuffer:
         self.legal_masks: List[np.ndarray] = []  # [T, action_dim] bool
         self.advantages: torch.Tensor | None = None
         self.returns: torch.Tensor | None = None
+        self.group_ids: list[int] = []      # one id per agent decision
+        self.is_primary: list[bool] = []    # True for original (temporal link)
+        self.signs: list[int] = []          # +1 for same-role, -1 for role-swapped
+        self._next_group_id: int = 0        # increments per agent decision
+        
+    def _append_entry(self, s, a, lp, val, r, done, lm, *, gid: int, primary: bool, sign: int):
+        self.states.append(s.astype(np.float32, copy=False))
+        self.actions.append(int(a))
+        self.logprobs.append(float(lp.item()))
+        self.values.append(float(val.item()))
+        self.rewards.append(float(r) * self.reward_scale)
+        self.dones.append(bool(done))
+        self.legal_masks.append(np.asarray(lm, dtype=bool))
+        self.group_ids.append(int(gid))
+        self.is_primary.append(bool(primary))
+        self.signs.append(int(sign))
+        return len(self.rewards) - 1
+
 
     def set_reward_scale(self, s: Union[int, float]):
         self.reward_scale = float(s)
@@ -109,33 +127,51 @@ class PPOBuffer:
         legal_mask_bool: Union[np.ndarray, torch.Tensor],
     ):
         """
-        Add a single transition (no augmentation).
+        Add a single (non-augmented) transition.
+        Creates a new augmentation group with exactly one *primary* entry.
         """
         if len(self) >= self.capacity:
             raise RuntimeError("PPOBuffer capacity exceeded")
-
-        # store state as float32 np array, preserving rank
+    
+        # --- ensure augmentation bookkeeping exists (in case clear() wasn't patched yet) ---
+        if not hasattr(self, "_next_group_id"):
+            self.group_ids = []
+            self.is_primary = []
+            self.signs = []
+            self._next_group_id = 0
+    
+        # --- normalize inputs ---
         if isinstance(state_np, torch.Tensor):
             s = state_np.detach().cpu().numpy()
         else:
             s = np.asarray(state_np)
         assert s.ndim in (2, 3), f"state must be (6,7) or (2,6,7); got {s.shape}"
-        self.states.append(s.astype(np.float32, copy=False))
-
-        self.actions.append(int(action))
-        self.logprobs.append(float(logprob.item()))
-        self.values.append(float(value.item()))
-
-        # scale reward on write
-        self.rewards.append(float(reward) * self.reward_scale)
-        self.dones.append(bool(done))
-
+        s = s.astype(np.float32, copy=False)
+    
         if isinstance(legal_mask_bool, torch.Tensor):
             lm = legal_mask_bool.detach().cpu().numpy().astype(bool)
         else:
             lm = np.asarray(legal_mask_bool, dtype=bool)
         assert lm.shape == (self.action_dim,), f"legal_mask must be shape ({self.action_dim},)"
+    
+        # --- group bookkeeping ---
+        gid = int(self._next_group_id)   # one real decision per group
+        self._next_group_id += 1
+    
+        # --- append ---
+        self.states.append(s)
+        self.actions.append(int(action))
+        self.logprobs.append(float(logprob.item()))
+        self.values.append(float(value.item()))
+        self.rewards.append(float(reward) * self.reward_scale)
+        self.dones.append(bool(done))
         self.legal_masks.append(lm)
+        self.group_ids.append(gid)
+        self.is_primary.append(True)     # this is the temporal link
+        self.signs.append(+1)            # same-role
+    
+        # (no return)
+
 
     def add_augmented(
         self,
@@ -153,65 +189,105 @@ class PPOBuffer:
         recompute_fn: Callable[[np.ndarray, int, np.ndarray], Tuple[torch.Tensor, torch.Tensor]] | None = None,
     ) -> List[Tuple[int, int]]:
         """
-        Add original and/or augmented copies (H-flip, color-swap).
-
-        RETURNS: list of (idx, sign)
-          - sign = +1 for same-role variants (original, hflip)
-          - sign = -1 for role-swapped variants (colorswap, hflip+colorswap)
-
-        For PPO correctness, pass recompute_fn(state, action, legal_mask)
-        that returns (logprob_tensor, value_tensor) under the behavior policy.
+        Add original and/or augmented copies (H-flip, color-swap) **as one group**.
+    
+        Returns
+        -------
+        list[(idx, sign)]
+            sign=+1 for same-role (original, hflip), sign=-1 for role-swapped
+            (colorswap, hflip+colorswap). Use with add_penalty_to_entries(...).
+    
+        Note
+        ----
+        - We DO NOT call self.add() here, because that would create multiple groups.
+        - If `recompute_fn` is provided, we use it to recompute (logprob, value)
+          for each variant under the behavior policy; otherwise we reuse the given
+          tensors (less correct for PPO, but safe fallback).
         """
-        # normalize inputs to numpy
+        if len(self) >= self.capacity:
+            raise RuntimeError("PPOBuffer capacity exceeded")
+    
+        # --- ensure augmentation bookkeeping exists (in case clear() wasn't patched yet) ---
+        if not hasattr(self, "_next_group_id"):
+            self.group_ids = []
+            self.is_primary = []
+            self.signs = []
+            self._next_group_id = 0
+    
+        # --- normalize base state/mask ---
         if isinstance(state_np, torch.Tensor):
             base_state = state_np.detach().cpu().numpy()
         else:
             base_state = np.asarray(state_np)
-
+        assert base_state.ndim in (2, 3), f"state must be (6,7) or (2,6,7); got {base_state.shape}"
+        base_state = base_state.astype(np.float32, copy=False)
+    
         if isinstance(legal_mask_bool, torch.Tensor):
             base_mask = legal_mask_bool.detach().cpu().numpy().astype(bool)
         else:
             base_mask = np.asarray(legal_mask_bool, dtype=bool)
-
-        # build variant specs: (state, action, mask, sign)
-        variant_specs: List[Tuple[np.ndarray, int, np.ndarray, int]] = []
-
+        assert base_mask.shape == (self.action_dim,), f"legal_mask must be shape ({self.action_dim},)"
+    
+        # --- construct all variants for this ONE group ---
+        gid = int(self._next_group_id)   # one real decision = one group
+        self._next_group_id += 1
+    
+        variants: List[Tuple[np.ndarray, int, np.ndarray, int, bool]] = []  # (s,a,m,sign,primary)
+    
         if include_original:
-            variant_specs.append((base_state, int(action), base_mask, +1))
-
+            variants.append((base_state, int(action), base_mask, +1, True))  # primary
+    
         if hflip:
-            s = self._hflip_state(base_state)
-            a = self._hflip_action(action)
-            m = self._hflip_mask(base_mask)
-            variant_specs.append((s, a, m, +1))
-
+            s = base_state[..., ::-1].copy()
+            a = (self.action_dim - 1) - int(action)
+            m = base_mask[::-1].copy()
+            variants.append((s, a, m, +1, False))
+    
         if colorswap:
-            s = self._colorswap_state(base_state)
-            a = int(action)          # same column index
-            m = base_mask.copy()     # legality unchanged
-            variant_specs.append((s, a, m, -1))  # role-swapped -> negate reward
-
+            if base_state.ndim == 3 and base_state.shape[0] == 2:
+                s = base_state[[1, 0], :, :].copy()
+            else:
+                s = (-base_state).copy()
+            a = int(action)
+            m = base_mask.copy()
+            variants.append((s, a, m, -1, False))
+    
         if hflip and colorswap:
-            s = self._hflip_state(self._colorswap_state(base_state))
-            a = self._hflip_action(action)
-            m = self._hflip_mask(base_mask)
-            variant_specs.append((s, a, m, -1))  # role-swapped
-
-        if len(self) + len(variant_specs) > self.capacity:
+            # colorswap then hflip
+            if base_state.ndim == 3 and base_state.shape[0] == 2:
+                cs = base_state[[1, 0], :, :]
+            else:
+                cs = -base_state
+            s = cs[..., ::-1].copy()
+            a = (self.action_dim - 1) - int(action)
+            m = base_mask[::-1].copy()
+            variants.append((s, a, m, -1, False))
+    
+        if len(self) + len(variants) > self.capacity:
             raise RuntimeError("PPOBuffer capacity exceeded by augmented inserts")
-
+    
         out: List[Tuple[int, int]] = []
-        for s, a, m, sign in variant_specs:
+        for s, a, m, sign, primary in variants:
+            # recompute behavior logprob/value if provided
             if recompute_fn is not None:
                 lp, val = recompute_fn(s, a, m)
             else:
-                # Fallback (technically off-policy for PPO). Prefer passing recompute_fn.
                 lp, val = logprob, value
-
-            # NEGATE reward for role-swapped variants
-            self.add(s, a, lp, val, reward * sign, done, m)
-            out.append((len(self.rewards) - 1, sign))
-
+    
+            # append entry
+            self.states.append(s.astype(np.float32, copy=False))
+            self.actions.append(int(a))
+            self.logprobs.append(float(lp.item()))
+            self.values.append(float(val.item()))
+            self.rewards.append(float(reward) * float(sign) * self.reward_scale)
+            self.dones.append(bool(done))
+            self.legal_masks.append(np.asarray(m, dtype=bool))
+            self.group_ids.append(gid)
+            self.is_primary.append(bool(primary))
+            self.signs.append(int(sign))
+    
+            out.append((len(self.rewards) - 1, int(sign)))
+    
         return out
 
     def add_to_reward(self, idx: int, delta_raw: float, *, scale_raw: bool = True):
@@ -239,34 +315,67 @@ class PPOBuffer:
             self.advantages = torch.empty(0, device=DEVICE)
             self.returns = torch.empty(0, device=DEVICE)
             return
-
+    
         rewards = torch.tensor(self.rewards, dtype=torch.float32, device=DEVICE)
         values  = torch.tensor(self.values,  dtype=torch.float32, device=DEVICE)
         dones   = torch.tensor(self.dones,   dtype=torch.float32, device=DEVICE)
-
-        next_values = torch.empty_like(values)
-        next_values[:-1] = values[1:]
-        next_values[-1]  = torch.tensor(float(last_value), device=DEVICE)
-
-        not_done = 1.0 - dones
+        signs   = torch.tensor(self.signs,   dtype=torch.float32, device=DEVICE)
+    
+        # indices of true temporal steps (original agent decisions)
+        prim_idx = [i for i, p in enumerate(self.is_primary) if p]
+        if not prim_idx:
+            # degenerate: no primaries; fall back to per-step (r - v)
+            adv = rewards - values
+            ret = values + adv
+            if self.h.normalize_adv and adv.numel() > 1:
+                adv = (adv - adv.mean()) / (adv.std(unbiased=False) + 1e-8)
+            self.advantages, self.returns = adv, ret
+            return
+    
+        r_p = rewards[prim_idx]
+        v_p = values[prim_idx]
+        d_p = dones[prim_idx]
+    
+        # next values along primaries
+        nv_p = torch.empty_like(v_p)
+        nv_p[:-1] = v_p[1:]
+        nv_p[-1]  = torch.tensor(float(last_value), device=DEVICE)
         if last_done:
-            next_values[-1] = 0.0
-
-        deltas = rewards + self.h.gamma * not_done * next_values - values
-
-        adv = torch.zeros(T, dtype=torch.float32, device=DEVICE)
+            nv_p[-1] = 0.0
+    
+        not_done_p = 1.0 - d_p
+        deltas_p = r_p + self.h.gamma * not_done_p * nv_p - v_p
+    
+        adv_p = torch.zeros_like(v_p)
         gae = 0.0
-        for t in reversed(range(T)):
-            gae = deltas[t] + self.h.gamma * self.h.gae_lambda * not_done[t] * gae
-            adv[t] = gae
-
-        ret = adv + values
-
-        if self.h.normalize_adv and T > 1:
+        for k in reversed(range(len(prim_idx))):
+            gae = deltas_p[k] + self.h.gamma * self.h.gae_lambda * not_done_p[k] * gae
+            adv_p[k] = gae
+        ret_p = adv_p + v_p
+    
+        # scatter to full buffer
+        adv = torch.zeros(T, dtype=torch.float32, device=DEVICE)
+        ret = torch.zeros(T, dtype=torch.float32, device=DEVICE)
+    
+        # map group_id -> primary advantage
+        # since primaries are one-per-group in insertion order, use their index
+        gid_arr = np.asarray(self.group_ids, dtype=np.int64)
+        prim_gid = gid_arr[prim_idx]
+    
+        # fill primaries
+        for a_idx, g in zip(adv_p, prim_gid):
+            adv[gid_arr == g] = a_idx  # will overwrite for augments next
+    
+        # apply signs for augments and compute returns per-entry
+        adv = adv * signs
+        ret = values + adv
+    
+        if self.h.normalize_adv and adv.numel() > 1:
             adv = (adv - adv.mean()) / (adv.std(unbiased=False) + 1e-8)
-
+    
         self.advantages = adv
         self.returns = ret
+
 
     def _stack_states(self) -> torch.Tensor:
         assert len(self.states) > 0, "No states to stack."

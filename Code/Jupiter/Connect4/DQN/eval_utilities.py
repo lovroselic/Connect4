@@ -80,6 +80,8 @@ def play_single_game(agent, env, device, Lookahead, opponent_label, game_index):
         outcome = 1
     elif env.winner == OPPONENT_SIDE:
         outcome = -1
+    elif env.winner == 0:
+        outcome = 0.5
     else:
         outcome = 0.5
 

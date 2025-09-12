@@ -16,12 +16,13 @@ class Connect4Env:
     DRAW_REWARD = 15
     LOSS_PENALTY = -100
     CENTER_REWARD = 1.0
-    CENTER_REWARD_BOTTOM = 4
+    CENTER_REWARD_BOTTOM = 10
     FORK_BONUS = 15
     BLOCK_FORK_BONUS = 16
     OPP_IMMEDIATE_PENALTY = 50 
     STEP_PENALTY = 1
     CENTER_WEIGHTS = [0.25, 0, 0.5, 1.0, 0.5, 0, 0.25]
+    OPENING_DECAY_STEPS = 6  
 
     def __init__(self):
         self.reset()
@@ -32,6 +33,7 @@ class Connect4Env:
         self.current_player = 1
         self.done = False
         self.winner = None
+        self.ply = 0
         return self.get_state()
 
     def get_state(self, perspective=+1) -> np.ndarray:
@@ -50,15 +52,17 @@ class Connect4Env:
         return [c for c in range(self.COLS) if self.board[0][c] == 0]
 
     def step(self, action):
-        if self.done or self.board[0][action] != 0:
-            # was: self.ILLEGAL_MOVE_PENALTY (commented out above)
-            if self.done or self.board[0][action] != 0:
-                print("ILLEGAL MOVE DETECTED!")
-                print(f"Board top row: {self.board[0]}")
-                print(f"Attempted action: {action}")
-                print(f"Winner before return: {self.winner}")
-
-            return self.get_state(), self.LOSS_PENALTY, True
+        if self.done:
+            return self.get_state(), 0.0, True
+        
+        if self.board[0][action] != 0:
+            print("ILLEGAL MOVE DETECTED!")
+            print(f"Board top row: {self.board[0]}")
+            print(f"Attempted action: {action}")
+            print(f"Winner before return: {self.winner}")
+            raise ValueError("ILLEGAL MOVE DETECTED!")
+            #return self.get_state(), self.LOSS_PENALTY, True
+            
         
         # Save board state BEFORE move for threat detection
         board_before = self.board.copy()
@@ -118,8 +122,12 @@ class Connect4Env:
             center_reward = self.CENTER_REWARD * self.CENTER_WEIGHTS[action]
             
             # Extra if it is **bottom-center** specifically
+            opening_decay = np.exp(-self.ply / self.OPENING_DECAY_STEPS)
             if action == 3 and placed_row == self.ROWS - 1:
-                center_reward += self.CENTER_REWARD_BOTTOM
+                opening_decay = np.exp(-self.ply / self.OPENING_DECAY_STEPS)
+                bonus = self.CENTER_REWARD_BOTTOM * (2.0 if self.ply == 0 else opening_decay)
+                center_reward += bonus
+                
                 
             # --- Fork / anti-fork shaping using Lookahead ---
             signals = self.lookahead.compute_fork_signals(board_before, self.board, self.current_player)
@@ -145,6 +153,9 @@ class Connect4Env:
             )
             reward = np.clip(reward, -self.MAX_REWARD, self.MAX_REWARD)
             reward -= self.STEP_PENALTY
+            
+            self.current_player *= -1  # Switch turns, used for evaluation! KEEP! but only for none terminal
+            self.ply += 1
 
         else:  # Terminal rewards
             if self.winner == self.current_player:
@@ -154,7 +165,7 @@ class Connect4Env:
             else:
                 reward = self.LOSS_PENALTY
                 
-        self.current_player *= -1  # Switch turns, used for evaluation! KEEP!
+            
         return self.get_state(), reward, self.done
 
     def check_game_over(self):

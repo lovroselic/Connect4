@@ -1,19 +1,36 @@
 # dqn_utilities.py
 
-from IPython.display import display
+
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from DQN.training_phases_config import TRAINING_PHASES
 from C4.connect4_env import Connect4Env
-from DQN.eval_utilities import log_phase_evaluation
+from DQN.eval_utilities import evaluate_agent_model
+import os
+from IPython.display import display, HTML
 
+
+TAU_DEFAULT = 0.006  # global default polyak rate
+GUARD_DEFAULT = 0.30 
+CENTER_START = 0.30
+
+# after phase
 evaluation_opponents = {
-    "Random": 203,
-    "Lookahead-1": 101,
-    "Lookahead-2": 53,
-    "Lookahead-3": 11,
+    "Random": 41,
+    "Lookahead-1": 21,
+    "Lookahead-2": 11,
+    #"Lookahead-3": 11,
 }
+
+# benchmarks
+EVAL_CFG = {
+    "Random": 51, 
+    "Lookahead-1": 31,
+    "Lookahead-2": 11,
+    "Lookahead-3": 9,
+    } 
 
 def get_phase(episode):
     for phase_name, phase_data in TRAINING_PHASES.items():
@@ -25,33 +42,35 @@ def get_phase(episode):
                 phase_data["epsilon"],
                 phase_data["memory_prune_low"],
                 phase_data.get("epsilon_min", 0.0),
+                phase_data.get("TU", 500),
+                phase_data.get("TU_mode", "hard"),
+                phase_data.get("tau", TAU_DEFAULT),
+                phase_data.get("guard_prob", GUARD_DEFAULT),
+                phase_data.get("center_start", CENTER_START),
             )
 
 
-def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune_low, epsilon_min, prev_frozen_opp, env, episode, device, Lookahead, training_session):
+def handle_phase_change(agent, new_phase, current_phase, epsilon, memory_prune_low, epsilon_min, prev_frozen_opp, env, episode, device, Lookahead, training_session, guard_prob, center_start):
     frozen_opp = prev_frozen_opp 
     
     if new_phase.startswith("SelfPlay"): 
-        if frozen_opp is None:
-            frozen_opp = deepcopy(agent)
-            frozen_opp.model.eval()
-            frozen_opp.target_model.eval()
-            frozen_opp.epsilon = 0.0
+        if frozen_opp is None: 
+            frozen_opp = deepcopy(agent) 
+            frozen_opp.model.eval() 
+            frozen_opp.target_model.eval() 
+            frozen_opp.epsilon = 0.0 
             frozen_opp.epsilon_min = 0.0
+            frozen_opp.guard_prob = 0.0
+            frozen_opp.center_start = 0.0
+            
     else:
         frozen_opp = None
     
     if new_phase != current_phase:
         agent.epsilon = epsilon
         agent.epsilon_min = epsilon_min
+        agent.guard_prob = guard_prob
         agent.memory.prune(memory_prune_low, mode="low_priority")
-        
-        log_phase_evaluation(
-            agent, env, phase_name=current_phase, episode=episode,
-            device=device, Lookahead=Lookahead,
-            evaluation_opponents=evaluation_opponents, excel_path= f"{training_session}-training_session.xlsx"
-            )
-        
         return new_phase, frozen_opp
 
     return current_phase, frozen_opp
@@ -111,10 +130,13 @@ def plot_live_training(
     episode, reward_history, win_history, epsilon_history, phase,
     win_count, loss_count, draw_count, title,
     epsilon_min_history, memory_prune_low_history,
-    agent=None, save=False, path=None
+    agent=None, save=False, path=None,
+    bench_history: dict | None = None, bench_smooth_k: int = 3,
+    tu_interval_history=None, tau_history=None, tu_mode_history=None,
+    guard_prob_history=None, center_prob_history = None
 ):
     # === Episode-based metrics ===
-    fig_ep, ax_ep = plt.subplots(4, 1, figsize=(12, 12), sharex=True)
+    fig_ep, ax_ep = plt.subplots(6, 1, figsize=(12, 28), sharex=True)
 
     # --- Reward ---
     plot_moving_averages(
@@ -131,8 +153,8 @@ def plot_live_training(
     # --- Win Rate + Epsilon Overlay ---
     plot_moving_averages(
         ax_ep[1], win_history, windows=[25, 100, 250, 500],
-        colors=['green', 'red', '#999', '#11F'],
-        styles=['-', '-', '--', (0, (1, 5))],
+        colors=['green', 'red', '#11F', '#000'],
+        styles=['-', '-', '--', "--"],
         labels=['25-ep', '100-ep', '250-ep', '500-ep']
     )
 
@@ -147,7 +169,11 @@ def plot_live_training(
     # --- Epsilon ---
     ax_ep[2].plot(epsilon_history, label='Epsilon', color='orange')
     ax_ep[2].plot(epsilon_min_history, label='Epsilon_min', color='black', linestyle='--')
-    ax_ep[2].set_ylabel('Epsilon')
+    if guard_prob_history:
+        ax_ep[2].plot(guard_prob_history, label='Guard Prob', color='green', linestyle=':')
+    if center_prob_history:
+        ax_ep[2].plot(center_prob_history, label='Center Prob', color='red', linestyle=':')
+    ax_ep[2].set_ylabel('Epsilon / Guard')
     ax_ep[2].legend(loc='lower left', fontsize=8)
     ax_ep[2].grid(True)
 
@@ -156,6 +182,23 @@ def plot_live_training(
     ax_ep[3].set_ylabel('Mem Prune')
     ax_ep[3].legend(loc='lower left', fontsize=8)
     ax_ep[3].grid(True)
+    
+   # --- Target update policy (NEW) ---
+    _plot_tu_axis(ax_ep[4], tu_interval_history or [], tau_history or [], tu_mode_history or [])
+    ax_ep[4].set_ylabel("Target Update")
+    ax_ep[4].grid(True)
+    
+    # --- Benchmarks move to the last axis ---
+    _plot_bench_on_axis(
+        ax_ep[5],
+        bench_history,
+        smooth_k=bench_smooth_k,
+        training_phases=TRAINING_PHASES,
+        epsilon_history=epsilon_history,
+        epsilon_min_history=epsilon_min_history,
+    )
+
+    ax_ep[5].set_xlabel("Episode")
 
     # --- Phase transition markers (bottom-left labels) ---
     ep_pos = 0.01  # X offset
@@ -188,6 +231,14 @@ def plot_live_training(
             plots.append(("TD Error", agent.td_hist, "gray"))
         if hasattr(agent, "per_w_hist") and agent.per_w_hist:
             plots.append(("IS Weights", agent.per_w_hist, "brown"))
+            
+        if hasattr(agent, "q_abs_hist") and agent.q_abs_hist:
+            plots.append(("Q |mean|", agent.q_abs_hist, "teal"))
+        if hasattr(agent, "q_max_hist") and agent.q_max_hist:
+            plots.append(("Q |max|", agent.q_max_hist, "navy"))
+        if hasattr(agent, "target_abs_hist") and agent.target_abs_hist:
+            plots.append(("|target| mean", agent.target_abs_hist, "darkgreen"))
+
     
         if plots:
             fig_step, ax_step = plt.subplots(len(plots), 1, figsize=(12, 3 * len(plots)))
@@ -217,8 +268,6 @@ def plot_live_training(
                 print(f"Plots saved to {path}")
 
     plt.close('all')
-
-
 
 
 # === FINAL SUMMARY PLOT ===
@@ -274,3 +323,265 @@ def log_summary_stats(
         "avg_reward_25": round(np.mean(recent_rewards), 2),
         "win_rate_25": round(recent_win_rate, 2)
     }
+
+
+# ----- benchmarking ----------------
+
+
+def update_benchmark_winrates(
+    agent,
+    env,
+    device,
+    Lookahead,
+    episode: int,
+    history: dict | None = None,
+    save: str | None = None,
+    opponents_cfg: dict = EVAL_CFG,
+):
+    """
+    Run a small evaluation vs fixed opponents and append to history.
+
+    Args
+    ----
+    agent, env, device, Lookahead : as in your codebase
+    episode : current training episode (x-axis)
+    history : dict returned by previous calls (or None to initialize)
+    opponents_cfg : {"Random": 40, "Lookahead-1": 20, ...}
+    save_csv : optional path to append a row with the results
+
+    Returns
+    -------
+    history : {
+        "episode": [ ... ],
+        "by_opponent": {"Random": [...], "Lookahead-1": [...], ...}
+    }
+    """
+
+
+    if history is None:
+        history = {"episode": [], "by_opponent": {k: [] for k in opponents_cfg}}
+
+    is_dqn = hasattr(agent, "model") and hasattr(agent, "target_model")
+    if is_dqn:
+        results = evaluate_agent_model(agent, env, opponents_cfg, device, Lookahead)
+    else:
+        # Lazy import to avoid circular deps
+        from PPO.ppo_eval import evaluate_actor_critic_model
+        results = evaluate_actor_critic_model(
+            agent=agent,
+            env=env,
+            evaluation_opponents=opponents_cfg,
+            Lookahead=Lookahead,
+            temperature=0.0,  # greedy eval
+        )
+
+    # Append
+    history["episode"].append(episode)
+    for label in opponents_cfg:
+        history["by_opponent"].setdefault(label, [])
+        history["by_opponent"][label].append(results[label]["win_rate"])
+
+    # persistent log (one row per benchmark)
+    if save is not None:
+        row = {"episode": episode}
+        for label in opponents_cfg:
+            row[f"{label}_wr"] = results[label]["win_rate"]
+        df = pd.DataFrame([row])
+        if os.path.exists(save):
+            try:
+                existing = pd.read_excel(save)  # default sheet
+                out = pd.concat([existing, df], ignore_index=True)
+            except Exception:
+                out = df
+            out.to_excel(save, index=False)
+        else:
+            # Create new workbook
+            df.to_excel(save, index=False)
+
+    return history
+
+def _plot_bench_on_axis(
+    ax,
+    history: dict,
+    smooth_k: int = 0,
+    training_phases: dict | None = None,
+    epsilon_history=None,
+    epsilon_min_history=None,
+):
+    """Draw benchmark win-rates as connected points and overlay epsilon traces."""
+    if not history or not history.get("episode"):
+        ax.set_visible(False)
+        return
+
+    x_all = np.asarray(history["episode"], dtype=int)
+
+    # --- Bench points/lines ---
+    for label, ys in history.get("by_opponent", {}).items():
+        y = np.asarray(ys, dtype=float)
+        if y.size == 0:
+            continue
+
+        # Align x to the last len(y) episodes in case lengths differ
+        x = x_all[-y.size:]
+
+        # Connect each point to the next, and show the points
+        ax.plot(x, y, linewidth=1.2, label=label, solid_capstyle="round")
+        ax.scatter(x, y, s=14, alpha=0.85)
+
+        # Annotate last value
+        ax.annotate(
+            f"{y[-1]:.2f}",
+            (x[-1], y[-1]),
+            textcoords="offset points",
+            xytext=(6, -6),
+            ha="left",
+            fontsize=8,
+        )
+
+    # --- Overlay epsilon on the same axis (scaled 0–1) ---
+    # Use full episode index for epsilon curves
+    if epsilon_history is not None and len(epsilon_history) > 0:
+        x_eps = np.arange(len(epsilon_history), dtype=int)
+        ax.plot(
+            x_eps, epsilon_history,
+            linewidth=1.2, color="#bbbbbb",
+            label="ε"
+        )
+
+    if epsilon_min_history is not None and len(epsilon_min_history) > 0:
+        x_eps_min = np.arange(len(epsilon_min_history), dtype=int)
+        ax.plot(
+            x_eps_min, epsilon_min_history,
+            linewidth=1.2, color="#bbbbbb",
+            linestyle=":",
+            label="ε_min"
+        )
+
+    # Optional phase markers
+    if training_phases is not None and x_all.size > 0:
+        y_top = ax.get_ylim()[1] if ax.lines or ax.collections else 1.0
+        for name, meta in training_phases.items():
+            ep = meta.get("length")
+            if ep is not None and (x_all.min() <= ep <= x_all.max()):
+                ax.axvline(ep, color="#888", lw=1, ls="dotted")
+                ax.text(
+                    ep + 2, y_top * 0.95, name, rotation=90,
+                    va="top", ha="left", fontsize=8, color="#666"
+                )
+
+    ax.set_ylabel("Bench WR")
+    ax.set_ylim(0.0, 1.0)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="lower left", ncol=1, fontsize=8)
+    
+# first move tracking
+
+def init_opening_kpis(cols=7):
+    return {
+        "agent_first_counts": np.zeros(cols, dtype=np.int64),
+        "opp_first_counts":   np.zeros(cols, dtype=np.int64),
+        "agent_first_total":  0,
+        "opp_first_total":    0,
+    }
+
+def record_first_move(kpis, col, who):
+    if col is None: 
+        return
+    if who == "agent":
+        kpis["agent_first_counts"][col] += 1
+        kpis["agent_first_total"] += 1
+    else:
+        kpis["opp_first_counts"][col] += 1
+        kpis["opp_first_total"] += 1
+
+def summarize_opening_kpis(kpis):
+    def _rate(cnts, total, col):
+        return float(cnts[col] / total) if total > 0 else 0.0
+    a_tot = kpis["agent_first_total"]
+    o_tot = kpis["opp_first_total"]
+    a_mode = int(np.argmax(kpis["agent_first_counts"])) if a_tot else None
+    o_mode = int(np.argmax(kpis["opp_first_counts"]))   if o_tot else None
+    return {
+        "a0_center_rate": _rate(kpis["agent_first_counts"], a_tot, 3),
+        "o0_center_rate": _rate(kpis["opp_first_counts"],   o_tot, 3),
+        "a0_mode": a_mode,
+        "o0_mode": o_mode,
+    }
+
+
+def _plot_tu_axis(ax, tu_hist, tau_hist, mode_hist):
+    """
+    Plot target-update policy over episodes:
+      • TU (hard) as a step line on left Y
+      • tau (soft) on a twin right Y
+      • shaded spans for soft vs hard phases
+    """
+    if not tu_hist or not tau_hist or not mode_hist:
+        ax.set_visible(False)
+        return
+
+    import numpy as np
+    x = np.arange(len(tu_hist))
+    tu_vals = np.asarray(tu_hist, dtype=float)
+    tau_vals = np.asarray(tau_hist, dtype=float)
+    soft_mask = np.asarray([m.lower() == "soft" for m in mode_hist], dtype=bool)
+
+    # Show TU only when mode == hard
+    tu_plot = tu_vals.copy()
+    tu_plot[soft_mask] = np.nan
+    ax.step(x, tu_plot, where="post", label="TU (hard, steps)", linewidth=1.5)
+    ax.set_ylabel("TU (steps)")
+    ax.grid(True, alpha=0.3)
+
+    # Twin axis for tau, shown only when mode == soft
+    ax2 = ax.twinx()
+    tau_plot = tau_vals.copy()
+    tau_plot[~soft_mask] = np.nan
+    ax2.plot(x, tau_plot, linestyle="--", label="τ (soft)", alpha=0.9)
+    ax2.set_ylabel("τ")
+
+    # Shade spans for modes
+    def _spans(mask: np.ndarray):
+        spans, s = [], None
+        for i, v in enumerate(mask):
+            if v and s is None: s = i
+            if (not v) and s is not None:
+                spans.append((s, i)); s = None
+        if s is not None: spans.append((s, len(mask)))
+        return spans
+
+    for s, e in _spans(soft_mask):
+        ax.axvspan(s, e, color="#7fd", alpha=0.10)   # soft
+    for s, e in _spans(~soft_mask):
+        ax.axvspan(s, e, color="#ddd", alpha=0.08)   # hard
+
+    # Unified legend
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(lines1 + lines2, labels1 + labels2, loc="upper right", fontsize=8)
+
+def set_training_phases_length(DICT):
+    length = 0
+    for name, TF in DICT.items():
+
+        length += int(TF["duration"])
+        TF["length"] = length
+        TF["sumWeights"] = float(np.sum(TF.get("weights", []))) if TF.get("weights") is not None else 0.0
+        opp = TF.get("opponent", [])
+        TF["sumOppo"] = (float(np.sum(opp)) if isinstance(opp, (list, tuple, np.ndarray))
+                         else (0.0 if opp is None else float(opp)))
+    display_dict_as_tab(DICT)
+    return length, name
+
+def display_dict_as_tab(DICT):
+    DF = pd.DataFrame.from_dict(DICT, orient="index")
+    cols = [
+        "length", "duration",
+        "epsilon", "epsilon_min",
+        "memory_prune_low",
+        "sumWeights", "sumOppo",
+        "TU", "TU_mode", "tau", "guard_prob"
+    ]
+    DF = DF[cols]
+    DF = DF.sort_values(by=['length'], ascending=True)
+    display(HTML(DF.to_html()))

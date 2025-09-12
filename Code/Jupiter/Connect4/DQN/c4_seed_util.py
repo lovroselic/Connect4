@@ -147,11 +147,22 @@ def _reconstruct_moves(final_board: np.ndarray,
 
     return path if dfs(0) else None
 
-def seed_from_dataframe(df, agent, n_step: int = 3, gamma: Optional[float] = None, verbose: bool = True) -> NStepBuffer:
+def seed_from_dataframe(
+    nbuf,
+    df,
+    agent,
+    n_step: int = 3,
+    gamma: Optional[float] = None,
+    verbose: bool = True,
+    reward_scale: Optional[float] = None,  # <-- NEW: explicit override
+    prefer_center: bool = True,            # keep default behavior
+) -> NStepBuffer:
     if gamma is None:
         gamma = float(agent.gamma)
 
-    nbuf = NStepBuffer(n=n_step, gamma=gamma, memory=agent.memory)
+    # Determine reward scaling: prefer explicit arg -> agent.reward_scale -> 1.0
+    rs = float(reward_scale if reward_scale is not None else getattr(agent, "reward_scale", 1.0))
+
     look = Connect4Lookahead()
 
     games_added = 0
@@ -159,15 +170,16 @@ def seed_from_dataframe(df, agent, n_step: int = 3, gamma: Optional[float] = Non
     failed = 0
     failed_labels = []
 
-    row_plane = np.tile(np.linspace(-1, 1, ROWS)[:, None], (1, COLS))
-    col_plane = np.tile(np.linspace(-1, 1, COLS)[None, :], (ROWS, 1))
+    # sanity stats
+    raw_min, raw_max = float("inf"), float("-inf")
+    sca_min, sca_max = float("inf"), float("-inf")
 
     for label, row in tqdm(df.iterrows(), total=len(df), desc="Seeding"):
         final_board = _row_to_board(row)
         winner = int(row["winner"])
         game_label = row.get("label", label)
 
-        seq = _reconstruct_moves(final_board, winner, look)
+        seq = _reconstruct_moves(final_board, winner, look, prefer_center=prefer_center)
         if seq is None:
             failed += 1
             failed_labels.append(game_label)
@@ -178,19 +190,21 @@ def seed_from_dataframe(df, agent, n_step: int = 3, gamma: Optional[float] = Non
         nbuf.reset()
 
         for a in seq:
-            s = env.get_state()
-            s_next, r, done = env.step(a)
-            mover = -env.current_player
+            # Pre-move snapshot & mover (matches training loop semantics)
+            mover = int(env.current_player)        # +1 or -1, player about to move
+            s = env.get_state()                    # (4, 6, 7): [+1, -1, row, col]
 
-            if s.ndim == 2:
-                s = np.stack([(s == 1).astype(int), (s == -1).astype(int)])
-            if s_next.ndim == 2:
-                s_next = np.stack([(s_next == 1).astype(int), (s_next == -1).astype(int)])
+            # Apply move -> raw reward from env
+            s_next, r_raw, done = env.step(int(a))
 
-            s_aug = np.concatenate([s, row_plane[None], col_plane[None]], axis=0)
-            s_next_aug = np.concatenate([s_next, row_plane[None], col_plane[None]], axis=0)
+            # --- SCALE REWARD HERE ---
+            r_step = float(r_raw) * rs
+            raw_min = min(raw_min, float(r_raw)); raw_max = max(raw_max, float(r_raw))
+            sca_min = min(sca_min, r_step);       sca_max = max(sca_max, r_step)
 
-            nbuf.append(s_aug, a, float(r), s_next_aug.copy(), bool(done), player=int(mover))
+            # Store exactly like training (immediate reward, correct mover)
+            nbuf.append(s, int(a), r_step, s_next.copy(), bool(done), player=mover)
+
             if done:
                 break
 
@@ -200,8 +214,10 @@ def seed_from_dataframe(df, agent, n_step: int = 3, gamma: Optional[float] = Non
 
     if verbose:
         print(f"[seed] games={games_added}, steps={steps_added}, failed={failed}")
+        print(f"[seed] reward_scale={rs:.6f} | raw_min..max={raw_min:.3f}..{raw_max:.3f} | scaled_min..max={sca_min:.3f}..{sca_max:.3f}")
         if failed_labels:
-            print("  Failed game labels:", failed_labels)
+            print("  Failed game labels:", failed_labels[:10], "..." if len(failed_labels) > 10 else "")
 
     nbuf.reset()
     return nbuf
+
