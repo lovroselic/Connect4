@@ -27,44 +27,31 @@ env = Connect4Env()
 
 def encode_two_channel_agent_centric(state_np: np.ndarray, perspective: int) -> np.ndarray:
     """
-    Accepts:
-      - scalar board (6,7) in {-1,0,+1}
-      - 2-ch planes (2,6,7): [agent(+1), opp(-1)]
-      - 4-ch planes (4,6,7): [agent(+1), opp(-1), row, col]  <-- from env.get_state()
-
-    Returns two planes (2,6,7) float32:
-      [me, opp] from the agent's perspective (perspective=+1 for our agent, -1 for opponent).
+    Accepts any of:
+      (6,7) scalar board in {-1,0,+1}
+      (2,6,7) [me,opp] planes (0/1)
+      (4,6,7) [me,opp,row,col] from env.get_state()
+    Returns (2,6,7) float32 planes agent-centric for the given perspective.
     """
-    s = np.asarray(state_np)
+    x = np.asarray(state_np)
 
-    # Scalar board
-    if s.ndim == 2 and s.shape == (6, 7):
-        b = (s.astype(np.int8) * int(perspective))
-        me  = (b == +1).astype(np.float32)
-        opp = (b == -1).astype(np.float32)
-        return np.stack([me, opp], axis=0)
+    # --- reconstruct scalar board in {-1,0,+1} ---
+    if x.shape == (6, 7):
+        board = x.astype(np.int8)
+    elif x.shape == (2, 6, 7):
+        me, opp = x[0] > 0.5, x[1] > 0.5
+        board = me.astype(np.int8) - opp.astype(np.int8)
+    elif x.shape == (4, 6, 7):
+        me, opp = x[0] > 0.5, x[1] > 0.5
+        board = me.astype(np.int8) - opp.astype(np.int8)
+    else:
+        raise ValueError(f"Unsupported state shape {x.shape}; expected (6,7), (2,6,7) or (4,6,7).")
 
-    # Channel-first planes
-    if s.ndim == 3 and s.shape[1:] == (6, 7):
-        if s.shape[0] == 4:
-            # Use only the first two planes (agent, opp); ignore row/col
-            agent = (s[0] > 0.5).astype(np.float32)
-            opp   = (s[1] > 0.5).astype(np.float32)
-        elif s.shape[0] == 2:
-            # Already two planes (agent, opp) as 0/1
-            agent = s[0].astype(np.float32)
-            opp   = s[1].astype(np.float32)
-        else:
-            raise ValueError(f"Unexpected channel count: {s.shape[0]} (expected 2 or 4)")
-
-        if int(perspective) == +1:
-            return np.stack([agent, opp], axis=0)
-        else:
-            # role swap for opponent perspective
-            return np.stack([opp, agent], axis=0)
-
-    raise ValueError(f"Unexpected state shape {s.shape}; expected (6,7), (2,6,7) or (4,6,7)")
-
+    # --- agent-centric re-labeling ---
+    board = (board * int(perspective)).astype(np.int8)
+    me_plane  = (board == +1).astype(np.float32)
+    opp_plane = (board == -1).astype(np.float32)
+    return np.stack([me_plane, opp_plane], axis=0)
 
 
 def _cfg_fallback(cfg: PPOUpdateCfg, names: List[str], default):
@@ -102,14 +89,19 @@ def params_for_phase(name: str, cfg: PPOUpdateCfg):
 
 
 def legal_moves_from_board(board: np.ndarray) -> List[int]:
-    """
-    Return list of legal columns based on top row emptiness.
-    Accepts both (6,7) 2D board or (C,6,7) encoded input.
-    """
-    if board.ndim == 3:  # shape: (C, 6, 7)
-        board = board[0]  # first plane usually +1 tokens
-    _, cols = board.shape
-    return [c for c in range(cols) if board[0, c] == 0]
+    x = np.asarray(board)
+    if x.ndim == 3:
+        if x.shape[0] == 2:   # [me, opp]
+            me, opp = x[0] > 0.5, x[1] > 0.5
+            x = me.astype(np.int8) - opp.astype(np.int8)
+        elif x.shape[0] == 4: # [me, opp, row, col]
+            me, opp = x[0] > 0.5, x[1] > 0.5
+            x = me.astype(np.int8) - opp.astype(np.int8)
+        else:
+            raise ValueError(f"Unexpected encoded board shape {x.shape}")
+    # x is now (6,7) scalar board
+    return [c for c in range(x.shape[1]) if x[0, c] == 0]
+
 
 
 def select_opponent_action(
@@ -267,3 +259,15 @@ def display_phases_table(phases: dict):
     return end_ep, name
 
 
+def _key_from_lookahead(lk) -> str:
+    """
+    Map lookahead spec to a short opponent key used by the trainer:
+      None  -> "R"   (Random)
+      "self"-> "SP"  (Self-play)
+      int k -> "Lk"  (Lookahead-k)
+    """
+    if lk is None:
+        return "R"
+    if isinstance(lk, str) and lk.lower() == "self":
+        return "SP"
+    return f"L{int(lk)}"

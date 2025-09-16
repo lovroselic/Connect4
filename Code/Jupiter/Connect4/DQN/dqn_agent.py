@@ -59,6 +59,8 @@ class DQNAgent:
         self.lookahead = Connect4Lookahead()
         self.reward_scale = 0.01
         self.guard_prob = 0.3                       # controlled by phase
+        self.init_guard = 0.5                       # first N episodes
+        self.init_guard_ply = 4
         self.center_start = 0.3                     # controlled by phase
 
         self.td_hist = deque(maxlen=50_000)
@@ -207,13 +209,18 @@ class DQNAgent:
                 if self._center_col_is_empty(state):
                     self.center_forced_used = True
                     return 3 # start bottom center
+                
+        # fixed guard for first  self.init_guard_ply moves
+        guard_base = self.guard_prob
+        if ply is not None and ply <= self.init_guard_ply:
+            guard_base = max(guard_base, self.init_guard)
         
         
         assert len(valid_actions) > 0, f"ACT called with empty valid actions {valid_actions}"
         board = self.decode_board_from_state(state, player)
     
         # === Tactical Guard ===
-        guard_on = (random.random() < self.guard_prob)
+        guard_on = (random.random() < guard_base)
         must_play, safe_actions = self._tactical_guard(board, valid_actions, player)
     
         if guard_on:

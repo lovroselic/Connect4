@@ -9,11 +9,11 @@ class PrioritizedReplayMemory:
     def __init__(
         self,
         capacity: int,
-        alpha: float = 0.6, #0.7
-        eps: float = 1e-2 ,  #1e-3 #3e-2
-        init_boost_terminal: float = 1.3,
-        init_boost_oppmove: float = 1.0,
-        init_percentile: float = 90.0,   # was 98.0 — softer so seeds don’t dominate #85
+        alpha: float = 0.5, #0.6
+        eps: float = 0.02 ,  #5e-3
+        init_boost_terminal: float = 1.5,
+        init_boost_oppmove: float = 1.05,
+        init_percentile: float = 85.0,   # was 98.0 — softer so seeds don’t dominate #85
         init_boost_seed: float = 1.15,   # was 1.25 — softer initial seed priority #1.05
     ):
         self.capacity = int(capacity)
@@ -33,7 +33,7 @@ class PrioritizedReplayMemory:
         self.is_seed_n = np.zeros((self.capacity,), dtype=bool)
 
         self.seed_mode = False
-        self.beta = 0.45 #0.4 #0.5
+        self.beta = 0.55 
 
     # ----------------- helpers -----------------
     @staticmethod

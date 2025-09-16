@@ -4,6 +4,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 from copy import deepcopy
 from DQN.training_phases_config import TRAINING_PHASES
 from C4.connect4_env import Connect4Env
@@ -16,7 +17,7 @@ TAU_DEFAULT = 0.006  # global default polyak rate
 GUARD_DEFAULT = 0.30 
 CENTER_START = 0.30
 
-# after phase
+# after phase, thi sis redundatn
 evaluation_opponents = {
     "Random": 41,
     "Lookahead-1": 21,
@@ -28,9 +29,117 @@ evaluation_opponents = {
 EVAL_CFG = {
     "Random": 51, 
     "Lookahead-1": 31,
-    "Lookahead-2": 11,
-    "Lookahead-3": 9,
+    "Lookahead-2": 21,
+    "Lookahead-3": 5,
     } 
+
+class OpeningTracker:
+    def __init__(self, cols=7, log_every=25, ma_window=25, create_figure: bool = False):
+       self.cols = cols
+       self.center = cols // 2
+       self.log_every = int(log_every)
+       self.ma_window = int(ma_window)
+
+       self.kpis = init_opening_kpis(cols)
+       self.episodes, self.a_center_rates, self.o_center_rates = [], [], []
+
+       # Only create a separate figure if you explicitly want it
+       self.fig = None
+       if create_figure:
+           self.fig, (self.ax_hist, self.ax_rate) = plt.subplots(
+               2, 1, figsize=(7.5, 6.5), constrained_layout=True
+           )
+           self.fig.canvas.manager.set_window_title("Opening diagnostics")
+           self._init_hist_axes()
+           self._init_rate_axes()
+
+       self.phase_marks = []
+
+    # --- unchanged public API ---
+    def on_first_move(self, col:int, is_agent:bool):
+        record_first_move(self.kpis, col, "agent" if is_agent else "opp")
+    
+    def maybe_log(self, episode_idx:int):
+        if episode_idx % self.log_every != 0:
+            return
+        a_tot = max(1, self.kpis["agent_first_total"])
+        o_tot = max(1, self.kpis["opp_first_total"])
+        a_rate = self.kpis["agent_first_counts"][self.center] / a_tot
+        o_rate = self.kpis["opp_first_counts"][self.center] / o_tot
+        self.episodes.append(episode_idx)
+        self.a_center_rates.append(a_rate)
+        self.o_center_rates.append(o_rate)
+    
+        # If a standalone fig exists, refresh it; otherwise embedding will draw
+        if self.fig is not None:
+            self.redraw()
+
+    # ---------- plotting internals ----------
+    def _init_hist_axes(self):
+        self.ax_hist.set_title("First-move histogram (agent vs opponent)")
+        self.ax_hist.set_xlabel("Column")
+        self.ax_hist.set_ylabel("Rate")
+        self.ax_hist.set_xticks(range(self.cols))
+        # center highlight
+        self.ax_hist.axvline(self.center, color="k", linestyle="--", alpha=0.25)
+
+    def _init_rate_axes(self):
+        self.ax_rate.set_title("Agent center rate over time")
+        self.ax_rate.set_xlabel("Episode")
+        self.ax_rate.set_ylabel("Rate")
+        self.ax.grid(True, alpha=0.3)
+        self.ax_rate.set_ylim(0.0, 1.0)
+        self.a_line, = self.ax_rate.plot([], [], label="agent a0@center", lw=1.5)
+        self.o_line, = self.ax_rate.plot([], [], label="opp a0@center", lw=1.0, alpha=0.6)
+        self.a_ma_line, = self.ax_rate.plot([], [], linestyle="--", lw=2.0,
+                                            label=f"agent MA (w={self.ma_window})")
+        self.ax_rate.legend(loc="lower right")
+
+    def _moving_avg(self, y):
+        w = self.ma_window
+        if len(y) < max(2, w):
+            return [], []
+        # center the MA visually on the trailing point
+        ma = np.convolve(y, np.ones(w)/w, mode="valid")
+        x = self.episodes[len(self.episodes)-len(ma):]
+        return x, ma
+
+    def redraw(self):
+        # --- histogram (rates) ---
+        self.ax_hist.cla()
+        self._init_hist_axes()
+        a_tot = max(1, self.kpis["agent_first_total"])
+        o_tot = max(1, self.kpis["opp_first_total"])
+        a_rates = self.kpis["agent_first_counts"] / a_tot
+        o_rates = self.kpis["opp_first_counts"] / o_tot
+        xs = np.arange(self.cols)
+        w = 0.38
+        self.ax_hist.bar(xs - w/2, a_rates, width=w, label="Agent", alpha=0.9)
+        self.ax_hist.bar(xs + w/2, o_rates, width=w, label="Opponent", alpha=0.6)
+        self.ax_hist.legend(loc="upper right")
+        self.ax_hist.set_ylim(0, max(0.01, float(max(a_rates.max(), o_rates.max(), 0.3))))
+
+        # --- time series ---
+        self.a_line.set_data(self.episodes, self.a_center_rates)
+        self.o_line.set_data(self.episodes, self.o_center_rates)
+        x_ma, y_ma = self._moving_avg(self.a_center_rates)
+        self.a_ma_line.set_data(x_ma, y_ma)
+
+        # phase markers (optional)
+        for ep, lab in self.phase_marks:
+            self.ax_rate.axvline(ep, color="k", linestyle=":", alpha=0.2)
+            self.ax_rate.text(ep, 0.02, lab, rotation=90, va="bottom", ha="right", fontsize=8, alpha=0.6)
+
+        # autoscale x only
+        self.ax_rate.set_xlim(0 if not self.episodes else self.episodes[0],
+                              max(1, self.episodes[-1]))
+        self.ax_rate.figure.canvas.draw_idle()
+        self.ax_rate.figure.canvas.flush_events()
+
+    # optional helper if you want vertical lines at phase changes
+    def mark_phase(self, episode_idx:int, label:str):
+        self.phase_marks.append((episode_idx, label))
+
 
 def get_phase(episode):
     for phase_name, phase_data in TRAINING_PHASES.items():
@@ -126,149 +235,119 @@ def plot_moving_averages(ax, data, windows, colors=None, styles=None, labels=Non
                     linestyle=styles[i] if styles else None)
 
 
+
 def plot_live_training(
     episode, reward_history, win_history, epsilon_history, phase,
     win_count, loss_count, draw_count, title,
     epsilon_min_history, memory_prune_low_history,
     agent=None, save=False, path=None,
-    bench_history: dict | None = None, bench_smooth_k: int = 3,
+    bench_history=None, bench_smooth_k=3,
     tu_interval_history=None, tau_history=None, tu_mode_history=None,
-    guard_prob_history=None, center_prob_history = None
+    guard_prob_history=None, center_prob_history=None,
+    openings=None,
+    # --- new layout knobs ---
+    height_scale: float = 1.20,          # scale everything taller
+    hspace: float = 0.48,                 # more vertical breathing room
+    dpi: int = 120,
+    openings_ylim: tuple[float, float] | None = (0.70, 1.00)  # clamp a0 center plot
 ):
-    # === Episode-based metrics ===
-    fig_ep, ax_ep = plt.subplots(6, 1, figsize=(12, 28), sharex=True)
+    use_openings = openings is not None
+    nrows = 8 if use_openings else 6
 
-    # --- Reward ---
-    plot_moving_averages(
-        ax_ep[0], reward_history, windows=[25, 100, 500],
-        colors=['blue', '#666', '#000'],
-        styles=['-', '--', '--'],
-        labels=['25-ep', '100-ep', '500-ep']
-    )
-    ax_ep[0].plot(reward_history, label='Reward', alpha=0.4)
-    ax_ep[0].set_ylabel('Reward')
-    ax_ep[0].legend(loc='lower left', fontsize=8)
-    ax_ep[0].grid(True)
+    base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2] + ([2.6, 3.0] if use_openings else [])
+    heights = [h * height_scale for h in base_heights]
 
-    # --- Win Rate + Epsilon Overlay ---
-    plot_moving_averages(
-        ax_ep[1], win_history, windows=[25, 100, 250, 500],
-        colors=['green', 'red', '#11F', '#000'],
-        styles=['-', '-', '--', "--"],
-        labels=['25-ep', '100-ep', '250-ep', '500-ep']
-    )
+    fig_ep = plt.figure(figsize=(12.5, sum(heights) + 1.5), dpi=dpi)
+    gs = GridSpec(nrows, 1, height_ratios=heights, hspace=hspace)
 
-    # Overlay epsilon on same axis (scaled 0–1, same as win rate)
-    ax_ep[1].plot(epsilon_history, label='Epsilon', color='orange', linestyle='--', alpha=0.7)
-    
-    # Labeling
-    ax_ep[1].set_ylabel('Win Rate')
-    ax_ep[1].legend(loc='lower left', fontsize=8)
-    ax_ep[1].grid(True)
+    ax_reward = fig_ep.add_subplot(gs[0, 0])
+    ax_win    = fig_ep.add_subplot(gs[1, 0], sharex=ax_reward)
+    ax_eps    = fig_ep.add_subplot(gs[2, 0], sharex=ax_reward)
+    ax_mem    = fig_ep.add_subplot(gs[3, 0], sharex=ax_reward)
+    ax_tu     = fig_ep.add_subplot(gs[4, 0], sharex=ax_reward)
+    ax_bench  = fig_ep.add_subplot(gs[5, 0], sharex=ax_reward)
 
-    # --- Epsilon ---
-    ax_ep[2].plot(epsilon_history, label='Epsilon', color='orange')
-    ax_ep[2].plot(epsilon_min_history, label='Epsilon_min', color='black', linestyle='--')
-    if guard_prob_history:
-        ax_ep[2].plot(guard_prob_history, label='Guard Prob', color='green', linestyle=':')
-    if center_prob_history:
-        ax_ep[2].plot(center_prob_history, label='Center Prob', color='red', linestyle=':')
-    ax_ep[2].set_ylabel('Epsilon / Guard')
-    ax_ep[2].legend(loc='lower left', fontsize=8)
-    ax_ep[2].grid(True)
+    # Reward
+    plot_moving_averages(ax_reward, reward_history, [25, 100, 500],
+                         colors=['blue', '#666', '#000'], styles=['-', '--', '--'],
+                         labels=['25-ep', '100-ep', '500-ep'])
+    ax_reward.plot(reward_history, label='Reward', alpha=0.45)
+    ax_reward.set_ylabel('Reward'); ax_reward.legend(loc='lower left', fontsize=8); ax_reward.grid(True, alpha=0.35)
 
-    # --- Memory Prune ---
-    ax_ep[3].plot(memory_prune_low_history, label='Memory Prune', color='red')
-    ax_ep[3].set_ylabel('Mem Prune')
-    ax_ep[3].legend(loc='lower left', fontsize=8)
-    ax_ep[3].grid(True)
-    
-   # --- Target update policy (NEW) ---
-    _plot_tu_axis(ax_ep[4], tu_interval_history or [], tau_history or [], tu_mode_history or [])
-    ax_ep[4].set_ylabel("Target Update")
-    ax_ep[4].grid(True)
-    
-    # --- Benchmarks move to the last axis ---
-    _plot_bench_on_axis(
-        ax_ep[5],
-        bench_history,
-        smooth_k=bench_smooth_k,
-        training_phases=TRAINING_PHASES,
-        epsilon_history=epsilon_history,
-        epsilon_min_history=epsilon_min_history,
-    )
+    # Win rate + epsilon
+    plot_moving_averages(ax_win, win_history, [25, 100, 250, 500],
+                         colors=['green', 'red', '#11F', '#000'], styles=['-', '-', '--', '--'],
+                         labels=['25-ep', '100-ep', '250-ep', '500-ep'])
+    ax_win.plot(epsilon_history, label='Epsilon', color='orange', linestyle='--', alpha=0.8)
+    ax_win.set_ylabel('Win Rate'); ax_win.legend(loc='lower left', fontsize=8); ax_win.grid(True, alpha=0.35)
 
-    ax_ep[5].set_xlabel("Episode")
+    # Epsilon / guards
+    ax_eps.plot(epsilon_history, label='Epsilon', color='orange')
+    ax_eps.plot(epsilon_min_history, label='Epsilon_min', color='black', linestyle='--')
+    if guard_prob_history:  ax_eps.plot(guard_prob_history,  label='Guard Prob',  color='green', linestyle=':')
+    if center_prob_history: ax_eps.plot(center_prob_history, label='Center Prob', color='red',   linestyle=':')
+    ax_eps.set_ylabel('Epsilon / Guard'); ax_eps.legend(loc='lower left', fontsize=8); ax_eps.grid(True, alpha=0.35)
 
-    # --- Phase transition markers (bottom-left labels) ---
-    ep_pos = 0.01  # X offset
-    y_factor = 0.05  # fraction of y-range from bottom
+    # Memory prune
+    ax_mem.plot(memory_prune_low_history, label='Memory Prune', color='red')
+    ax_mem.set_ylabel('Mem Prune'); ax_mem.legend(loc='lower left', fontsize=8); ax_mem.grid(True, alpha=0.35)
 
+    # Target update
+    _plot_tu_axis(ax_tu, tu_interval_history or [], tau_history or [], tu_mode_history or [])
+    ax_tu.set_ylabel("Target Update"); ax_tu.grid(True, alpha=0.35)
+
+    # Benchmarks
+    _plot_bench_on_axis(ax_bench, bench_history, smooth_k=bench_smooth_k,
+                        training_phases=TRAINING_PHASES,
+                        epsilon_history=epsilon_history,
+                        epsilon_min_history=epsilon_min_history)
+    ax_bench.set_xlabel("Episode")
+
+    # Openings (hist + rate)
+    if use_openings:
+        ax_hist = fig_ep.add_subplot(gs[6, 0])                    # histogram has its own x
+        ax_rate = fig_ep.add_subplot(gs[7, 0], sharex=ax_reward)  # time series shares episode axis
+        _draw_openings_on_axes(ax_hist, ax_rate, openings,
+                               training_phases=TRAINING_PHASES,
+                               rate_ylim=openings_ylim)
+
+    # Phase markers everywhere (bench + openings included)
     for name, meta in TRAINING_PHASES.items():
-        transition_ep = meta.get("length", None)
-        if transition_ep is not None and transition_ep <= episode:
-            for axis in ax_ep:
-                axis.axvline(transition_ep, color='black', linestyle='dotted', linewidth=1)
+        ep = meta.get("length")
+        if ep is not None and ep <= episode:
+            for ax in [ax_reward, ax_win, ax_eps, ax_mem, ax_tu, ax_bench] + \
+                     ([ax_hist, ax_rate] if use_openings else []):
+                ax.axvline(ep, color='black', linestyle='dotted', linewidth=1, alpha=0.6)
 
-                ymin, ymax = axis.get_ylim()
-                y_pos = ymin + (ymax - ymin) * y_factor
-                axis.text(transition_ep + ep_pos, y_pos, name, rotation=90,
-                          va='bottom', ha='left', fontsize=8, color='black')
-
-    # --- Title ---
     fig_ep.suptitle(
-        f"{title} - Ep {episode} — Phase: {phase} | Wins: {win_count}, Losses: {loss_count}, Draws: {draw_count} | ε={epsilon_history[-1]:.3f}"
+        f"{title} - Ep {episode} — Phase: {phase} | Wins: {win_count}, "
+        f"Losses: {loss_count}, Draws: {draw_count} | ε={epsilon_history[-1]:.3f}"
     )
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.tight_layout(rect=[0, 0, 1, 0.965])
     display(fig_ep)
 
-    # === Step-based metrics (unshared x-axis) ===
+    # ---------- step-based metrics (unchanged) ----------
     if agent:
         plots = []
-        if hasattr(agent, "loss_hist") and agent.loss_hist:
-            plots.append(("Loss", agent.loss_hist, "purple"))
-        if hasattr(agent, "td_hist") and agent.td_hist:
-            plots.append(("TD Error", agent.td_hist, "gray"))
-        if hasattr(agent, "per_w_hist") and agent.per_w_hist:
-            plots.append(("IS Weights", agent.per_w_hist, "brown"))
-            
-        if hasattr(agent, "q_abs_hist") and agent.q_abs_hist:
-            plots.append(("Q |mean|", agent.q_abs_hist, "teal"))
-        if hasattr(agent, "q_max_hist") and agent.q_max_hist:
-            plots.append(("Q |max|", agent.q_max_hist, "navy"))
-        if hasattr(agent, "target_abs_hist") and agent.target_abs_hist:
-            plots.append(("|target| mean", agent.target_abs_hist, "darkgreen"))
+        if getattr(agent, "loss_hist", None):        plots.append(("Loss",          agent.loss_hist,        "purple"))
+        if getattr(agent, "td_hist", None):          plots.append(("TD Error",      agent.td_hist,          "gray"))
+        if getattr(agent, "per_w_hist", None):       plots.append(("IS Weights",    agent.per_w_hist,       "brown"))
+        if getattr(agent, "q_abs_hist", None):       plots.append(("Q |mean|",      agent.q_abs_hist,       "teal"))
+        if getattr(agent, "q_max_hist", None):       plots.append(("Q |max|",       agent.q_max_hist,       "navy"))
+        if getattr(agent, "target_abs_hist", None):  plots.append(("|target| mean", agent.target_abs_hist,  "darkgreen"))
 
-    
         if plots:
             fig_step, ax_step = plt.subplots(len(plots), 1, figsize=(12, 3 * len(plots)))
-            if len(plots) == 1:
-                ax_step = [ax_step]  # ensure iterable
-    
+            if len(plots) == 1: ax_step = [ax_step]
             for i, (label, data, color) in enumerate(plots):
-                ax = ax_step[i]
-                ax.plot(data, label=label, color=color, alpha=0.6)
-    
-                # Add moving average only for Loss
+                ax = ax_step[i]; ax.plot(data, label=label, color=color, alpha=0.6)
                 if label == "Loss" and len(data) >= 100:
-                    ma = np.convolve(data, np.ones(100) / 100, mode='valid')
+                    ma = np.convolve(data, np.ones(100)/100, mode='valid')
                     ax.plot(range(99, len(data)), ma, label='100-ep MA', color='black', linestyle='--')
-    
-                ax.set_ylabel(label)
-                ax.legend()
-                ax.grid(True)
-    
-            fig_step.suptitle("Step-based Metrics")
-            plt.tight_layout(rect=[0, 0, 1, 0.95])
-            display(fig_step)
-
-            if save and path is not None:
-                fig_ep.savefig(f"{path}{title}_episode_metrics.png")
-                fig_step.savefig(f"{path}{title}_step_metrics.png")
-                print(f"Plots saved to {path}")
+                ax.set_ylabel(label); ax.legend(); ax.grid(True)
+            fig_step.suptitle("Step-based Metrics"); plt.tight_layout(rect=[0,0,1,0.95]); display(fig_step)
 
     plt.close('all')
-
 
 # === FINAL SUMMARY PLOT ===
 def save_final_winrate_plot(win_history, training_phases, save_path, session_name="default_session"):
@@ -326,8 +405,6 @@ def log_summary_stats(
 
 
 # ----- benchmarking ----------------
-
-
 def update_benchmark_winrates(
     agent,
     env,
@@ -508,7 +585,6 @@ def summarize_opening_kpis(kpis):
         "o0_mode": o_mode,
     }
 
-
 def _plot_tu_axis(ax, tu_hist, tau_hist, mode_hist):
     """
     Plot target-update policy over episodes:
@@ -585,3 +661,57 @@ def display_dict_as_tab(DICT):
     DF = DF[cols]
     DF = DF.sort_values(by=['length'], ascending=True)
     display(HTML(DF.to_html()))
+    
+def _draw_openings_on_axes(ax_hist, ax_rate, openings, training_phases=None,
+                           rate_ylim: tuple[float, float] | None = (0.70, 1.00)):
+    if openings is None:
+        ax_hist.set_visible(False); ax_rate.set_visible(False); return
+
+    # --- Histogram ---
+    ax_hist.cla()
+    ax_hist.set_title("First-move histogram (agent vs opponent)")
+    ax_hist.set_xlabel("Column"); ax_hist.set_ylabel("Rate")
+    ax_hist.set_xticks(range(openings.cols)); ax_hist.set_xlim(-0.5, openings.cols - 0.5)
+    ax_hist.axvline(openings.center, color="k", ls="--", alpha=0.25)
+
+    a_tot = max(1, openings.kpis["agent_first_total"])
+    o_tot = max(1, openings.kpis["opp_first_total"])
+    a_rates = openings.kpis["agent_first_counts"] / a_tot
+    o_rates = openings.kpis["opp_first_counts"]  / o_tot
+    xs = np.arange(openings.cols); w = 0.38
+    ax_hist.bar(xs - w/2, a_rates, width=w, label="Agent",   alpha=0.9)
+    ax_hist.bar(xs + w/2, o_rates, width=w, label="Opponent", alpha=0.6)
+    ax_hist.legend(loc="upper left")
+    ax_hist.set_ylim(0.0, max(0.01, float(max(a_rates.max(initial=0), o_rates.max(initial=0), 0.3))))
+
+    # --- a0@center over time ---
+    ax_rate.cla()
+    ax_rate.set_title("a0@center over time")
+    ax_rate.set_xlabel("Episode"); ax_rate.set_ylabel("Rate")
+    if rate_ylim is not None:
+        ax_rate.set_ylim(*rate_ylim)       # <- clamp to [0.70, 1.00]
+    else:
+        ax_rate.set_ylim(0.0, 1.0)
+    ax_rate.margins(x=0.02)
+    
+    ax_rate.grid(True, alpha=0.3)
+
+    ax_rate.plot(openings.episodes, openings.a_center_rates, lw=1.6, label="agent a0 center")
+    ax_rate.plot(openings.episodes, openings.o_center_rates, lw=1.0, alpha=0.8, label="opp a0 center")
+
+    w = openings.ma_window
+    if len(openings.a_center_rates) >= max(2, w):
+        ma = np.convolve(openings.a_center_rates, np.ones(w)/w, mode="valid")
+        ax_rate.plot(openings.episodes[-len(ma):], ma, ls="--", lw=2.0, label=f"agent MA (w={w})")
+
+    # Phase markers on the openings rate
+    if training_phases:
+        for name, meta in training_phases.items():
+            ep = meta.get("length")
+            if ep is not None and (not openings.episodes or ep <= openings.episodes[-1]):
+                ax_rate.axvline(ep, color="k", ls=":", alpha=0.25)
+                ax_rate.text(ep, (rate_ylim[0] if rate_ylim else 0.02),
+                             name, rotation=90, va="bottom", ha="right",
+                             fontsize=8, alpha=0.6)
+
+    ax_rate.legend(loc="lower left", ncol=1, fontsize=8)
