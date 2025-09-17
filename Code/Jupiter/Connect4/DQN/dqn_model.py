@@ -1,13 +1,8 @@
-#dqn_modl.py
+#dqn_model.py
 import torch
 import torch.nn as nn
 
 class DQN(nn.Module):
-    """
-    Dueling DQN with multi-scale convs, MaxPool, GAP, and dueling heads.
-    Input:  (B, 2, 6, 7)  -> augmented internally to (B, 4, 6, 7)
-    Output: (B, 7)
-    """
     def __init__(self, input_shape=(6, 7), output_size=7):
         super().__init__()
         self.H, self.W = input_shape
