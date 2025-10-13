@@ -1,6 +1,5 @@
 # dqn_utilities.py
 
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,27 +10,91 @@ from C4.connect4_env import Connect4Env
 from DQN.eval_utilities import evaluate_agent_model
 import os
 from IPython.display import display, HTML
+import torch
 
 
-TAU_DEFAULT = 0.006  # global default polyak rate
-GUARD_DEFAULT = 0.30 
-CENTER_START = 0.30
-
-# after phase, thi sis redundatn
-evaluation_opponents = {
-    "Random": 41,
-    "Lookahead-1": 21,
-    "Lookahead-2": 11,
-    #"Lookahead-3": 11,
-}
+TAU_DEFAULT = 0.006                         # phase controlled
+GUARD_DEFAULT = 0.30                        # phase controlled
+CENTER_START = 0.30                         # phase controlled
 
 # benchmarks
 EVAL_CFG = {
-    "Random": 51, 
-    "Lookahead-1": 31,
-    "Lookahead-2": 21,
-    "Lookahead-3": 5,
+    "Random": 101, 
+    "Lookahead-1": 73,
+    "Lookahead-2": 51,
+    "Lookahead-3": 13,
+    #"Lookahead-4": 2,
     } 
+
+
+@torch.no_grad()
+def _flatten_params(module: torch.nn.Module) -> torch.Tensor:
+    """Concatenate all trainable parameters into a single 1-D tensor (cpu, detached)."""
+    if module is None:
+        return None
+    parts = []
+    for p in module.parameters():
+        if p.requires_grad:
+            parts.append(p.detach().reshape(-1).cpu())
+    return torch.cat(parts) if parts else torch.tensor([], dtype=torch.float32)
+
+@torch.no_grad()
+def compute_target_lag(agent, eps: float = 1e-12) -> float | None:
+    """
+    Return ||θ - θ̄|| / ||θ|| for the agent's online vs target networks.
+    If unavailable, returns None.
+    """
+    if not hasattr(agent, "model") or not hasattr(agent, "target_model"):
+        return None
+    w  = _flatten_params(agent.model)
+    wt = _flatten_params(agent.target_model)
+    if w.numel() == 0 or wt.numel() == 0 or w.numel() != wt.numel():
+        return None
+    num = torch.linalg.norm(w - wt, ord=2)
+    den = torch.linalg.norm(w,     ord=2).clamp(min=eps)
+    return float((num / den).item())
+
+def maybe_log_target_lag(agent) -> float | None:
+    """
+    Compute lag and append to agent.target_lag_hist.
+    """
+    val = compute_target_lag(agent)
+    if val is not None:
+        if not hasattr(agent, "target_lag_hist"):
+            agent.target_lag_hist = []
+        agent.target_lag_hist.append(val)
+    return val
+
+# ---- Phase boundary helpers (episode-indexed) ----
+def _phase_boundaries(training_phases: dict, up_to: int | None = None):
+    """Return [(name, end_ep), ...] sorted by end_ep and clipped to up_to."""
+    pairs = [
+        (name, int(meta["length"]))
+        for name, meta in training_phases.items()
+        if meta.get("length") is not None
+    ]
+    pairs.sort(key=lambda p: p[1])
+    if up_to is not None:
+        pairs = [p for p in pairs if p[1] <= up_to]
+    return pairs
+
+def draw_phase_vlines(
+    ax, training_phases: dict, up_to: int | None = None,
+    label: bool = True, color: str = "k", ls: str = ":", lw: float = 1.0, alpha: float = 0.6,
+    label_y: float | None = None, fontsize: int = 8, ha: str = "left", va: str = "top"
+):
+    """Draw vertical lines (and labels) at phase boundaries on an episode axis."""
+    bounds = _phase_boundaries(training_phases, up_to)
+    if not bounds:
+        return
+    # choose a y for labels after plots set their y-limits
+    ymin, ymax = ax.get_ylim()
+    ytxt = (ymax * 0.95) if label_y is None else label_y
+    for name, ep in bounds:
+        ax.axvline(ep, color=color, linestyle=ls, linewidth=lw, alpha=alpha)
+        if label:
+            ax.text(ep, ytxt, name, rotation=90, ha=ha, va=va, fontsize=fontsize, alpha=alpha)
+
 
 class OpeningTracker:
     def __init__(self, cols=7, log_every=25, ma_window=25, create_figure: bool = False):
@@ -87,7 +150,7 @@ class OpeningTracker:
         self.ax_rate.set_title("Agent center rate over time")
         self.ax_rate.set_xlabel("Episode")
         self.ax_rate.set_ylabel("Rate")
-        self.ax.grid(True, alpha=0.3)
+        self.ax_rate.grid(True, alpha=0.3)
         self.ax_rate.set_ylim(0.0, 1.0)
         self.a_line, = self.ax_rate.plot([], [], label="agent a0@center", lw=1.5)
         self.o_line, = self.ax_rate.plot([], [], label="opp a0@center", lw=1.0, alpha=0.6)
@@ -245,11 +308,11 @@ def plot_live_training(
     tu_interval_history=None, tau_history=None, tu_mode_history=None,
     guard_prob_history=None, center_prob_history=None,
     openings=None,
-    # --- new layout knobs ---
-    height_scale: float = 1.20,          # scale everything taller
-    hspace: float = 0.48,                 # more vertical breathing room
+    height_scale: float = 1.20,             # scale everything taller
+    hspace: float = 0.48,                   # more vertical room
     dpi: int = 120,
-    openings_ylim: tuple[float, float] | None = (0.70, 1.00)  # clamp a0 center plot
+    openings_ylim: tuple[float, float] | None = (0.70, 1.00),  # clamp a0 center plot
+    return_figs=False
 ):
     use_openings = openings is not None
     nrows = 8 if use_openings else 6
@@ -268,9 +331,9 @@ def plot_live_training(
     ax_bench  = fig_ep.add_subplot(gs[5, 0], sharex=ax_reward)
 
     # Reward
-    plot_moving_averages(ax_reward, reward_history, [25, 100, 500],
-                         colors=['blue', '#666', '#000'], styles=['-', '--', '--'],
-                         labels=['25-ep', '100-ep', '500-ep'])
+    plot_moving_averages(ax_reward, reward_history, [10, 25, 100, 500],
+                         colors=['red','blue', '#666', '#000'], styles=['-','-', '--', '--'],
+                         labels=['10-ep','25-ep', '100-ep', '500-ep'])
     ax_reward.plot(reward_history, label='Reward', alpha=0.45)
     ax_reward.set_ylabel('Reward'); ax_reward.legend(loc='lower left', fontsize=8); ax_reward.grid(True, alpha=0.35)
 
@@ -298,33 +361,36 @@ def plot_live_training(
 
     # Benchmarks
     _plot_bench_on_axis(ax_bench, bench_history, smooth_k=bench_smooth_k,
-                        training_phases=TRAINING_PHASES,
+                        training_phases=None,
                         epsilon_history=epsilon_history,
                         epsilon_min_history=epsilon_min_history)
     ax_bench.set_xlabel("Episode")
 
     # Openings (hist + rate)
     if use_openings:
-        ax_hist = fig_ep.add_subplot(gs[6, 0])                    # histogram has its own x
-        ax_rate = fig_ep.add_subplot(gs[7, 0], sharex=ax_reward)  # time series shares episode axis
+        ax_hist = fig_ep.add_subplot(gs[6, 0])                      # histogram has its own x
+        ax_rate = fig_ep.add_subplot(gs[7, 0], sharex=ax_reward)    # time series shares episode axis
+        
         _draw_openings_on_axes(ax_hist, ax_rate, openings,
                                training_phases=TRAINING_PHASES,
                                rate_ylim=openings_ylim)
 
+
     # Phase markers everywhere (bench + openings included)
-    for name, meta in TRAINING_PHASES.items():
-        ep = meta.get("length")
-        if ep is not None and ep <= episode:
-            for ax in [ax_reward, ax_win, ax_eps, ax_mem, ax_tu, ax_bench] + \
-                     ([ax_hist, ax_rate] if use_openings else []):
-                ax.axvline(ep, color='black', linestyle='dotted', linewidth=1, alpha=0.6)
+    axes = [ax_reward, ax_win, ax_eps, ax_mem, ax_tu, ax_bench]
+    if use_openings:
+        axes += [ax_rate]  
+    for ax in axes:
+        draw_phase_vlines(ax, TRAINING_PHASES, up_to=episode, label=True)
+
 
     fig_ep.suptitle(
         f"{title} - Ep {episode} — Phase: {phase} | Wins: {win_count}, "
-        f"Losses: {loss_count}, Draws: {draw_count} | ε={epsilon_history[-1]:.3f}"
+        f"Losses: {loss_count}, Draws: {draw_count} | ε={epsilon_history[-1]:.3f}",
+        y=0.995
     )
-    plt.tight_layout(rect=[0, 0, 1, 0.965])
-    display(fig_ep)
+    #plt.tight_layout(rect=[0, 0, 1, 0.965])
+
 
     # ---------- step-based metrics (unchanged) ----------
     if agent:
@@ -335,6 +401,7 @@ def plot_live_training(
         if getattr(agent, "q_abs_hist", None):       plots.append(("Q |mean|",      agent.q_abs_hist,       "teal"))
         if getattr(agent, "q_max_hist", None):       plots.append(("Q |max|",       agent.q_max_hist,       "navy"))
         if getattr(agent, "target_abs_hist", None):  plots.append(("|target| mean", agent.target_abs_hist,  "darkgreen"))
+        if getattr(agent, "target_lag_hist", None):  plots.append(("Target Lag",    agent.target_lag_hist,  "orange"))
 
         if plots:
             fig_step, ax_step = plt.subplots(len(plots), 1, figsize=(12, 3 * len(plots)))
@@ -344,10 +411,15 @@ def plot_live_training(
                 if label == "Loss" and len(data) >= 100:
                     ma = np.convolve(data, np.ones(100)/100, mode='valid')
                     ax.plot(range(99, len(data)), ma, label='100-ep MA', color='black', linestyle='--')
-                ax.set_ylabel(label); ax.legend(); ax.grid(True)
-            fig_step.suptitle("Step-based Metrics"); plt.tight_layout(rect=[0,0,1,0.95]); display(fig_step)
+                ax.set_ylabel(label) 
+                ax.legend() 
+                ax.grid(True)
+            fig_step.suptitle("Step-based Metrics", y=0.98) 
+            #plt.tight_layout(rect=[0,0,1,0.95]) 
 
-    plt.close('all')
+
+    if return_figs:
+        return fig_ep, (fig_step if agent else None)
 
 # === FINAL SUMMARY PLOT ===
 def save_final_winrate_plot(win_history, training_phases, save_path, session_name="default_session"):
@@ -364,13 +436,7 @@ def save_final_winrate_plot(win_history, training_phases, save_path, session_nam
     ax.set_ylabel("Win Rate")
     ax.grid(True)
     ax.legend()
-
-    for name, meta in training_phases.items():
-        transition_ep = meta["length"]
-        if transition_ep is not None and transition_ep <= len(win_history):
-            ax.axvline(transition_ep, color='black', linestyle='dotted', linewidth=1)
-            ax.text(transition_ep + 2, ax.get_ylim()[1] * 0.95, name, rotation=90, va='top', ha='left', fontsize=8)
-
+    draw_phase_vlines(ax, training_phases, up_to=len(win_history), label=True)
     full_path = f"{save_path}DQN-{session_name}_final_winrate.png"
     fig.savefig(full_path)
     plt.close(fig)
@@ -415,25 +481,6 @@ def update_benchmark_winrates(
     save: str | None = None,
     opponents_cfg: dict = EVAL_CFG,
 ):
-    """
-    Run a small evaluation vs fixed opponents and append to history.
-
-    Args
-    ----
-    agent, env, device, Lookahead : as in your codebase
-    episode : current training episode (x-axis)
-    history : dict returned by previous calls (or None to initialize)
-    opponents_cfg : {"Random": 40, "Lookahead-1": 20, ...}
-    save_csv : optional path to append a row with the results
-
-    Returns
-    -------
-    history : {
-        "episode": [ ... ],
-        "by_opponent": {"Random": [...], "Lookahead-1": [...], ...}
-    }
-    """
-
 
     if history is None:
         history = {"episode": [], "by_opponent": {k: [] for k in opponents_cfg}}
@@ -534,22 +581,14 @@ def _plot_bench_on_axis(
             label="ε_min"
         )
 
-    # Optional phase markers
-    if training_phases is not None and x_all.size > 0:
-        y_top = ax.get_ylim()[1] if ax.lines or ax.collections else 1.0
-        for name, meta in training_phases.items():
-            ep = meta.get("length")
-            if ep is not None and (x_all.min() <= ep <= x_all.max()):
-                ax.axvline(ep, color="#888", lw=1, ls="dotted")
-                ax.text(
-                    ep + 2, y_top * 0.95, name, rotation=90,
-                    va="top", ha="left", fontsize=8, color="#666"
-                )
+
+    # Optional phase markers (use axis limits to place labels nicely)
+    if training_phases: draw_phase_vlines(ax, training_phases, up_to=int(x_all.max()), label=True)
 
     ax.set_ylabel("Bench WR")
     ax.set_ylim(0.0, 1.0)
     ax.grid(True, alpha=0.3)
-    ax.legend(loc="lower left", ncol=1, fontsize=8)
+    ax.legend(loc="upper center", ncol=1, fontsize=8)
     
 # first move tracking
 
@@ -656,14 +695,14 @@ def display_dict_as_tab(DICT):
         "epsilon", "epsilon_min",
         "memory_prune_low",
         "sumWeights", "sumOppo",
-        "TU", "TU_mode", "tau", "guard_prob"
+        "TU", "TU_mode", "tau", "guard_prob", "center_start",
     ]
     DF = DF[cols]
     DF = DF.sort_values(by=['length'], ascending=True)
     display(HTML(DF.to_html()))
     
 def _draw_openings_on_axes(ax_hist, ax_rate, openings, training_phases=None,
-                           rate_ylim: tuple[float, float] | None = (0.70, 1.00)):
+                           rate_ylim: tuple[float, float] | None = (0.50, 1.00)):
     if openings is None:
         ax_hist.set_visible(False); ax_rate.set_visible(False); return
 
@@ -706,12 +745,6 @@ def _draw_openings_on_axes(ax_hist, ax_rate, openings, training_phases=None,
 
     # Phase markers on the openings rate
     if training_phases:
-        for name, meta in training_phases.items():
-            ep = meta.get("length")
-            if ep is not None and (not openings.episodes or ep <= openings.episodes[-1]):
-                ax_rate.axvline(ep, color="k", ls=":", alpha=0.25)
-                ax_rate.text(ep, (rate_ylim[0] if rate_ylim else 0.02),
-                             name, rotation=90, va="bottom", ha="right",
-                             fontsize=8, alpha=0.6)
-
+        last_ep = openings.episodes[-1] if openings.episodes else None
+        draw_phase_vlines(ax_rate, training_phases, up_to=last_ep, label=True)
     ax_rate.legend(loc="lower left", ncol=1, fontsize=8)

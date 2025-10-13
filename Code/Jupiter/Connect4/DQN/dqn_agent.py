@@ -17,20 +17,21 @@ class DQNAgent:
 
     def __init__(
         self,
-        lr=0.0003, #0.001
+        lr=2e-4, #3e-4
         gamma=0.97,
         epsilon=0.08,
         epsilon_min=0.02,
         epsilon_decay=0.995,
         device=None,
         memory_capacity=500_000,
-        per_alpha=0.50, #0.55
-        per_eps=3e-2, #1e-2
+        per_alpha=0.55, #0.55
+        per_eps=1e-2, #1e-2 #3e-2
         per_beta_start=0.5,
-        per_beta_end=0.9, #0.9
-        per_beta_steps=300_000, #150_000
-        per_mix_1step=0.6,
-        target_update_interval=500, target_update_mode="hard", tau=0.005 #defaults, overwritten by phase change
+        per_beta_end=0.98, #0.9
+        per_beta_steps=75_000, #150_000
+        per_mix_1step=0.65, #0.5
+        target_update_interval=500, target_update_mode="hard", tau=0.005, #defaults, overwritten by phase change
+
     ):
         self.device = device if device else torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
@@ -78,6 +79,20 @@ class DQNAgent:
         self.target_abs_hist = deque(maxlen=100_000)
         
         self.center_forced_used = False
+        
+        # --- policy symmetry + tie-breaking knobs ---
+        self.use_symmetry_policy = True    # avg original + horizontally flipped Qs
+        self.tie_tol = 1e-3                # moves within tol of the max are considered ties
+        self.prefer_center = True          # bias ties toward the center column
+        self._center_tie_w = np.array([1.0, 1.0, 1.2, 1.6, 1.2, 1.0, 1.0], dtype=np.float32)
+        
+        self.max_seed_frac = 0.95
+        
+        self.target_lag_hist = deque(maxlen=50_000)  # ||θ-θ̄||/||θ||
+        self.lag_log_interval = 250                  # log every N env steps (tune)
+        self._last_lag_log_step = 0                  # last env step we logged at
+        self.target_lag_hist.append(0.0)
+
 
     # ------------------------- helper encodings -------------------------
 
@@ -186,11 +201,14 @@ class DQNAgent:
     
     @staticmethod
     def _center_col_is_empty(state) -> bool:
-        # adjust index/order to your board tensor:
-        #   - if state shape is (rows, cols): state[:, 3]
-        #   - if it’s (channels, rows, cols): state[0 or player-plane, :, 3]
-        col = state[:, 3] if state.ndim == 2 else state[0, :, 3]
-        return (col == 0).all()
+        """
+        state: (4, 6, 7) [agent, opp, row, col]
+        Return True iff column 3 has no stones from either player.
+        """
+        assert state.ndim == 3 and state.shape[0] == 4, f"Expected (4,6,7), got {state.shape}"
+        col_occ = state[0, :, 3] + state[1, :, 3]
+        return (col_occ == 0).all()
+
 
 
     def board_to_state(self, board: np.ndarray, player: int) -> np.ndarray:
@@ -250,19 +268,16 @@ class DQNAgent:
         if must_play is not None:
             return must_play
     
-        # === DQN Inference ===
+        # === DQN Inference (symmetry-averaged + robust tie-breaking) ===
         assert state.shape == (4, 6, 7), f"[act] Expected (4,6,7), got {state.shape}"
-        x = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
-    
-        with torch.no_grad():
-            q_values = self.model(x).cpu().numpy()[0]
-    
-        # Mask illegal actions
-        masked = np.full_like(q_values, -np.inf)
-        for a in valid_actions:
-            masked[a] = q_values[a]
-    
-        action = int(np.argmax(masked))
+        
+        if self.use_symmetry_policy:
+            q_values = self._symmetry_avg_q(state)   # [7]
+        else:
+            q_values = self._q_values_np(state)      # [7]
+        
+        action = self._argmax_legal_with_tiebreak(q_values, valid_actions)
+
     
         if action not in valid_actions:
             print(f"❌ [act] DQN chose ILLEGAL action: {action} — valid: {valid_actions}")
@@ -300,13 +315,8 @@ class DQNAgent:
     def replay(self, batch_size, mix_1step=0.7):
         if (len(self.memory.bank_1) + len(self.memory.bank_n)) < batch_size:
             return
-
-        (batch_1, batch_n), (idx_1, idx_n), (w_1, w_n) = self.memory.sample_mixed(
-            batch_size, mix=mix_1step, beta=self.per_beta
-        )
         
-        # (batch_1, batch_n), (idx_1, idx_n), (w_1, w_n) = \
-        #     self.memory.sample_mixed_seedaware(batch_size, mix=mix_1step, beta=self.per_beta, max_seed_frac=0.10)
+        (batch_1, batch_n), (idx_1, idx_n), (w_1, w_n) = self.memory.sample_mixed_seedaware(batch_size, mix=mix_1step, beta=self.per_beta, max_seed_frac=self.max_seed_frac)
     
         batch_all = list(batch_1) + list(batch_n)
         n1 = len(batch_1)
@@ -385,7 +395,7 @@ class DQNAgent:
         per_sample_loss = F.smooth_l1_loss(q_sa, target, reduction="none")
         loss = (isw_t * per_sample_loss).mean() if self.per_beta > 0 else per_sample_loss.mean()
         
-        q_reg_coeff = 1e-7   # start tiny; you can tune 1e-7 ... 5e-6
+        q_reg_coeff = 1e-6   # 1e-7 
         q_reg = q_reg_coeff * (q_all.pow(2).mean())
         loss = loss + q_reg
 
@@ -457,8 +467,147 @@ class DQNAgent:
     
     def maybe_update_target(self, global_env_step: int):
         if self.target_update_mode == "soft":
-            self.soft_update_target()  # call every step
+            self.soft_update_target()  # apply Polyak every step
+            self._maybe_log_target_lag_(global_env_step)
         else:  # hard update
             if global_env_step - self._last_target_update_step >= self.target_update_interval:
                 self.update_target_model()
                 self._last_target_update_step = global_env_step
+                self._maybe_log_target_lag_(global_env_step, force=True)
+
+    @torch.no_grad()
+    def _flatten_params_(self, module: torch.nn.Module) -> torch.Tensor:
+        """Concatenate all trainable parameters into a single 1-D cpu tensor."""
+        parts = []
+        for p in module.parameters():
+            if p.requires_grad:
+                parts.append(p.detach().reshape(-1).cpu())
+        return torch.cat(parts) if parts else torch.tensor([], dtype=torch.float32)
+
+    @torch.no_grad()
+    def _compute_target_lag_(self, eps: float = 1e-12) -> float | None:
+        """Return ||θ-θ̄||/||θ|| for online vs target nets, or None if not available."""
+        w  = self._flatten_params_(self.model)
+        wt = self._flatten_params_(self.target_model)
+        if w.numel() == 0 or wt.numel() == 0 or w.numel() != wt.numel():
+            return None
+        num = torch.linalg.norm(w - wt, ord=2)
+        den = torch.linalg.norm(w,     ord=2).clamp(min=eps)
+        return float((num / den).item())
+
+    def _maybe_log_target_lag_(self, global_env_step: int, force: bool = False):
+        """Log target lag occasionally, or exactly at a hard update."""
+        if not force and (global_env_step - self._last_lag_log_step) < self.lag_log_interval:
+            return
+        val = self._compute_target_lag_()
+        if val is not None:
+            self.target_lag_hist.append(val)
+            self._last_lag_log_step = global_env_step
+
+    # ------------------------- symmetry helpers -------------------------
+
+    @torch.no_grad()
+    def _q_values_np(self, state) -> np.ndarray:
+        """
+        Q(s,·) from the online net as numpy.
+        Accepts:
+          - np.ndarray with shape (4,6,7)
+          - torch.Tensor with shape (4,6,7) or (1,4,6,7)
+        Returns: np.ndarray with shape (7,)
+        """
+        if isinstance(state, torch.Tensor):
+            x = state.to(self.device, dtype=torch.float32)
+            if x.ndim == 3:                # (4,6,7) -> (1,4,6,7)
+                x = x.unsqueeze(0)
+            elif x.ndim != 4:
+                raise ValueError(f"_q_values_np: bad tensor shape {tuple(x.shape)}")
+        else:
+            x = torch.tensor(state, dtype=torch.float32, device=self.device)
+            if x.ndim == 3:
+                x = x.unsqueeze(0)
+            elif x.ndim != 4:
+                raise ValueError(f"_q_values_np: bad ndarray shape {np.shape(state)}")
+
+        q = self.model(x).squeeze(0).detach().cpu().numpy()  # [7]
+        return q
+
+    @torch.no_grad()
+    def _symmetry_avg_q(self, state) -> np.ndarray:
+        """
+        Symmetry-averaged Q(s,·):
+        Accepts same inputs as _q_values_np.
+        Returns: np.ndarray with shape (7,)
+        """
+        # Normalize input to (1,4,6,7) float32 on device
+        if isinstance(state, torch.Tensor):
+            x = state.to(self.device, dtype=torch.float32)
+            if x.ndim == 3:
+                x = x.unsqueeze(0)
+            elif x.ndim != 4:
+                raise ValueError(f"_symmetry_avg_q: bad tensor shape {tuple(x.shape)}")
+        else:
+            x = torch.tensor(state, dtype=torch.float32, device=self.device)
+            if x.ndim == 3:
+                x = x.unsqueeze(0)
+            elif x.ndim != 4:
+                raise ValueError(f"_symmetry_avg_q: bad ndarray shape {np.shape(state)}")
+
+        q = self.model(x).squeeze(0).detach().cpu().numpy()  # [7]
+
+        # horizontally flipped state (flip last dim W=7)
+        x_m = torch.flip(x, dims=(-1,))
+        q_m = self.model(x_m).squeeze(0).detach().cpu().numpy()  # [7] in mirrored frame
+        q_m_unflip = q_m[::-1]                                   # map back to canonical
+
+        return 0.5 * (q + q_m_unflip)
+
+    def _argmax_legal_with_tiebreak(self, q, valid_actions) -> int:
+        """
+        Choose argmax among LEGAL actions. If several actions are within tie_tol
+        of the max, sample among them (optionally center-biased).
+
+        q: array-like of shape [7]
+        valid_actions: iterable of legal column indices
+        """
+        import numpy as _np
+        import random as _rnd
+
+        va = _np.asarray(list(valid_actions), dtype=int)
+        if va.size == 0:
+            raise ValueError("[_argmax_legal_with_tiebreak] no valid actions")
+
+        q = _np.asarray(q, dtype=_np.float64)
+        if q.shape[0] != 7:
+            raise ValueError(f"expected q shape (7,), got {q.shape}")
+
+        # mask illegal moves
+        masked = _np.full_like(q, -_np.inf, dtype=float)
+        masked[va] = q[va]
+
+        qmax = float(_np.max(masked))
+        tol = getattr(self, "tie_tol", 1e-3)
+        tied = va[masked[va] >= (qmax - tol)]
+
+        if tied.size == 0:
+            # Shouldn’t happen if va non-empty, but be safe.
+            return int(_rnd.choice(list(valid_actions)))
+        if tied.size == 1:
+            return int(tied[0])
+
+        # Optional center bias
+        prefer_center = getattr(self, "prefer_center", True)
+        if not prefer_center:
+            return int(_rnd.choice(tied))
+
+        center_w = getattr(self, "_center_tie_w", _np.array([1.0,1.0,1.2,1.6,1.2,1.0,1.0], dtype=_np.float64))
+        # Guard in case someone changed board width or weights
+        if center_w.shape[0] != 7:
+            center_w = _np.array([1.0,1.0,1.2,1.6,1.2,1.0,1.0], dtype=_np.float64)
+
+        w = center_w[tied].astype(_np.float64)
+        w_sum = w.sum()
+        if not _np.isfinite(w_sum) or w_sum <= 0:
+            return int(_rnd.choice(tied))
+        w /= w_sum
+        return int(_np.random.choice(tied, p=w))
+

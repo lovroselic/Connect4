@@ -1,6 +1,6 @@
 # agent_eval.py
 # DQN.agent_eval (corrected for player perspective + mean CI)
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import os, random, numpy as np, torch
 from DQN.dqn_agent import DQNAgent
 from C4.connect4_env import Connect4Env
@@ -133,22 +133,39 @@ def play_game(agentA, agentB, A_color:int=+1, opening_noise_k:int=0, seed:int=0)
 
 def head_to_head(ckptA:str, ckptB:str, n_games:int=200, device=None,
                  epsilon=0.0, guard_prob=0.0, opening_noise_k:int=0, seed:int=123,
-                 progress: bool = True):
+                 progress: bool = True, center_start: float = 0.0,
+                 disable_init_guard: bool = True):
     """
     Evaluates A vs B. We alternate A's color (+1 then -1) to balance first-move advantage.
     By default we do not inject random opening noise (opening_noise_k=0).
+    center_start is forced to 0.0 by default (no forced a0=center).
+    If disable_init_guard=True, the early-plies guard is disabled as well.
     """
     A = load_agent_from_ckpt(ckptA, device=device, epsilon=epsilon, guard_prob=guard_prob)
     B = load_agent_from_ckpt(ckptB, device=device, epsilon=epsilon, guard_prob=guard_prob)
 
+    # --- ensure eval is purely policy-driven ---
+    for ag in (A, B):
+        ag.epsilon = 0.0
+        ag.epsilon_min = 0.0
+        ag.guard_prob = float(guard_prob)
+        ag.center_start = float(center_start)   # <<< disable forced center
+        if disable_init_guard:
+            ag.init_guard = 0.0               # <<< otherwise it stays 0.5 for first 4 plies
+            ag.init_guard_ply = 0
+
     rng = random.Random(seed)
-    colors = ([+1, -1] * ((n_games + 1)//2))[:n_games]  # A plays +1, then -1, repeat
+    colors = ([+1, -1] * ((n_games + 1)//2))[:n_games]
     iterable = tqdm(colors, total=n_games, desc=f"{os.path.basename(ckptA)} vs {os.path.basename(ckptB)}") if progress else colors
 
     timeline = []
     wins = draws = losses = 0
 
     for A_color in iterable:
+        # reset per-game flag to be extra safe
+        A.center_forced_used = False
+        B.center_forced_used = False
+
         res = play_game(A, B, A_color=A_color, opening_noise_k=opening_noise_k, seed=rng.randint(0,10**9))
         timeline.append(res)
         if res == 1.0: wins += 1
@@ -163,13 +180,10 @@ def head_to_head(ckptA:str, ckptB:str, n_games:int=200, device=None,
     n = len(timeline)
     score = (wins + 0.5*draws) / n
     ci = mean_ci(timeline, z=1.96)
+    return {"A_path": ckptA, "B_path": ckptB, "games": n,
+            "A_wins": wins, "draws": draws, "A_losses": losses,
+            "A_score_rate": score, "A_score_CI95": ci}
 
-    return {
-        "A_path": ckptA, "B_path": ckptB, "games": n,
-        "A_wins": wins, "draws": draws, "A_losses": losses,
-        "A_score_rate": score, "A_score_CI95": ci,
-        # "timeline": timeline,
-    }
 
 
 # ----------------------------- Plotting -----------------------------

@@ -1,6 +1,6 @@
 #opponent_action.py
 import random
-from C4.connect4_lookahead import Connect4Lookahead
+from C4.fast_connect4_lookahead import Connect4Lookahead
 from DQN.training_phases_config import TRAINING_PHASES
 
 Lookahead = Connect4Lookahead()

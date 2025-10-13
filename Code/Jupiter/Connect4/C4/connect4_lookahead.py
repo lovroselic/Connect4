@@ -10,11 +10,12 @@ class Connect4Lookahead:
     fork_w = 150
 
     def __init__(self, weights=None):
-        # Default heuristic weights for 2-in-a-row, 3-in-a-row, 4-in-a-row
         self.weights = weights if weights else {2: 10, 3: 100, 4: 1000}
 
     def get_legal_moves(self, board):
-        return [c for c in range(self.COLS) if board[0][c] == 0]
+        order = [3,4,2,5,1,6,0]
+        return [c for c in order if board[0][c] == 0]
+
 
     def drop_piece(self, board, col, player):
         new_board = board.copy()
@@ -90,10 +91,9 @@ class Connect4Lookahead:
                 np.all(board != 0))
 
     def minimax(self, board, depth, maximizing, player, alpha, beta):
-        if depth == 0 or self.is_terminal(board):
-            return self.get_heuristic(board, player)
-
+        if depth == 0 or self.is_terminal(board): return self.get_heuristic(board, player)
         valid_moves = self.get_legal_moves(board)
+        
         if maximizing:
             value = -np.inf
             for col in valid_moves:

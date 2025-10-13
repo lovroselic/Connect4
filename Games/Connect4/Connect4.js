@@ -24,11 +24,11 @@ engine changes:
 const DEBUG = {
     SETTING: true,
     FPS: false,
-    VERBOSE: false,
+    VERBOSE: true,
     max17: false,
     keys: false,
     simulation: false,
-    drawToConsole:false,
+    drawToConsole: false,
 
     board: [
         0, 2, 1, 2, 2, 2, 0,
@@ -57,10 +57,11 @@ const INI = {
     IMMEDIATE_WIN: 500,
     FORK_BONUS: 150,
     DEFENSIVE_FACTOR: 1.5,
+    FLOATING_FACTOR: 0.25,
 };
 
 const PRG = {
-    VERSION: "1.2.9",
+    VERSION: "1.3.0",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -425,7 +426,78 @@ const BOARD = {
 
         // Bottom border
         console.log('   +' + '---+'.repeat(cols));
-    }
+    },
+
+    // --- fast, precomputed 4-in-a-row windows + value helper ---
+    _ALL_WINDOWS: null,
+    _ensureAllWindows() {
+        if (BOARD._ALL_WINDOWS) return;
+
+        const W = [];
+        // horizontals
+        for (let y = 0; y < INI.ROWS; y++) {
+            for (let x = 0; x <= INI.COLS - INI.INROW; x++) {
+                W.push([[x, y], [x + 1, y], [x + 2, y], [x + 3, y]]);
+            }
+        }
+        // verticals
+        for (let x = 0; x < INI.COLS; x++) {
+            for (let y = 0; y <= INI.ROWS - INI.INROW; y++) {
+                W.push([[x, y], [x, y + 1], [x, y + 2], [x, y + 3]]);
+            }
+        }
+        // diag up-right (/ from bottom-left to top-right)
+        for (let x = 0; x <= INI.COLS - INI.INROW; x++) {
+            for (let y = 0; y <= INI.ROWS - INI.INROW; y++) {
+                W.push([[x, y], [x + 1, y + 1], [x + 2, y + 2], [x + 3, y + 3]]);
+            }
+        }
+        // diag up-left (\ from bottom-right to top-left)
+        for (let x = INI.INROW - 1; x < INI.COLS; x++) {
+            for (let y = 0; y <= INI.ROWS - INI.INROW; y++) {
+                W.push([[x, y], [x - 1, y + 1], [x - 2, y + 2], [x - 3, y + 3]]);
+            }
+        }
+
+        BOARD._ALL_WINDOWS = W;
+    },
+    // value at (x,y) using bottom-based y=0 on the floor
+    _val(GA, x, y) {
+        return GA.map[GA.gridToIndex(new Grid(x, y))];
+    },
+    findFourIndices(GA, player) {
+        BOARD._ensureAllWindows();
+        const out = [];
+        for (let i = 0; i < BOARD._ALL_WINDOWS.length; i++) {
+            const w = BOARD._ALL_WINDOWS[i];
+            let ok = true;
+            for (let k = 0; k < 4; k++) {
+                const [x, y] = w[k];
+                if (BOARD._val(GA, x, y) !== player) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) out.push(i);
+        }
+        return out;
+    },
+    countPure(GA, player, n) {
+        BOARD._ensureAllWindows();
+        let cnt = 0;
+        for (const w of BOARD._ALL_WINDOWS) {
+            let p = 0, o = 0;
+            for (let k = 0; k < 4; k++) {
+                const v = BOARD._val(GA, w[k][0], w[k][1]);
+                if (v === player) {
+                    p++;
+                } else if (v !== 0) o++;
+            }
+            if (o === 0 && p === n) cnt++;
+        }
+        return cnt;
+    },
+
 };
 
 const AGENT = {
@@ -493,11 +565,15 @@ const AGENT_MANAGER = {
 
         return selectedMove;
     },
-    scoreMove(grid, move, playerIndex, N) {
+    /*scoreMove(grid, move, playerIndex, N) {
         let nextGrid_GA = this.dropPiece(grid, move, playerIndex);                                                          //GA! - cloned
         const patterns = BOARD.boardToPatterns([1, 2], nextGrid_GA)[0];
         let score = this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity, patterns);
         return score;
+    },*/
+    scoreMove(grid, move, playerIndex, N) {
+        const nextGrid_GA = this.dropPiece(grid, move, playerIndex);
+        return this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity);
     },
     dropPiece(grid, move, playerIndex) {
         let nextGrid = grid.clone();                                                                                        //this is GA!
@@ -506,7 +582,7 @@ const AGENT_MANAGER = {
         if (DEBUG.drawToConsole) BOARD.printBoardToConsole(nextGrid);
         return nextGrid;
     },
-    minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
+    /*minimax(GA, depth, maximizingPlayer, playerIndex, A, B, patterns) {
         if (depth === 0 || this.isTerminalNode(patterns, GA)) return this.getHeuristic(playerIndex, patterns, GA);
         const validMoves = this.getLegalCentreOrderedMoves(GA);
 
@@ -534,8 +610,92 @@ const AGENT_MANAGER = {
             }
             return value;
         }
+    },*/
+    minimax(GA, depth, maximizingPlayer, playerIndex, A, B) {
+        if (depth === 0 || this.isTerminalNode(GA)) {
+            return this.getHeuristic(playerIndex, undefined, GA); // signature preserved
+        }
+        const validMoves = this.getLegalCentreOrderedMoves(GA);
+
+        if (maximizingPlayer) {
+            let value = -Infinity;
+            for (const col of validMoves) {
+                const childGA = this.dropPiece(GA, col, playerIndex);
+                const newValue = this.minimax(childGA, depth - 1, false, playerIndex, A, B);
+                value = Math.max(value, newValue);
+                if (value >= B) break;
+                A = Math.max(A, value);
+            }
+            return value;
+        } else {
+            let value = Infinity;
+            const opponent = (playerIndex % 2) + 1;
+            for (const col of validMoves) {
+                const childGA = this.dropPiece(GA, col, opponent);
+                const newValue = this.minimax(childGA, depth - 1, true, playerIndex, A, B);
+                value = Math.min(value, newValue);
+                if (value <= A) break;
+                B = Math.min(B, value);
+            }
+            return value;
+        }
     },
+    // gravity-aware heuristic with soft discount for floaters ---
     getHeuristic(playerIndex, patterns, currentBoard) {
+        BOARD._ensureAllWindows();
+
+        const GA = currentBoard;
+        const DEF = INI.DEFENSIVE_FACTOR;
+        const FLOAT = INI.FLOATING_FACTOR;
+        const opp = (playerIndex % 2) + 1;
+
+        // weights like Python: w[2], w[3], w[4]
+        const w = [0.0, 0.0, Number(INI.INROW2), Number(INI.INROW3), Number(INI.INROW4)];
+
+        let score = 0.0;
+
+        for (const win of BOARD._ALL_WINDOWS) {
+            let p = 0, o = 0;
+            let supported = true;
+
+            for (let k = 0; k < 4; k++) {
+                const x = win[k][0], y = win[k][1];
+                const v = BOARD._val(GA, x, y);
+
+                if (v === 0) {
+                    // empty is unsupported if not on floor AND cell below is empty
+                    if (y > 0 && BOARD._val(GA, x, y - 1) === 0) {
+                        supported = false;          // mark floating, but don't skip
+                    }
+                } else if (v === playerIndex) {
+                    p++;
+                } else if (v === opp) {
+                    o++;
+                }
+            }
+
+            const mul = supported ? 1.0 : FLOAT;
+
+            if (o === 0) {
+                score += mul * w[p];                 // pure-us window
+            } else if (p === 0) {
+                score -= mul * DEF * w[o];           // pure-them window
+            }
+            // mixed windows ignored, same as Python
+        }
+
+        // Immediate wins & forks (leaf bonus), mirroring Python structure
+        const myImm = this.countImmediateWins(GA, playerIndex).length;
+        const oppImm = this.countImmediateWins(GA, opp).length;
+
+        score += INI.IMMEDIATE_WIN * (myImm - DEF * oppImm);
+        if (myImm >= 2) score += INI.FORK_BONUS * (myImm - 1);
+        if (oppImm >= 2) score -= DEF * (INI.FORK_BONUS * (oppImm - 1));
+
+        return Math.ceil(score);
+    },
+
+    /*getHeuristic(playerIndex, patterns, currentBoard) {
         const pieces = [2, 3, 4];
         const oppoPlayer = playerIndex % 2 + 1;
         const player = pieces.map(p => BOARD.countWindowsInPattern(patterns, p, playerIndex));
@@ -556,10 +716,25 @@ const AGENT_MANAGER = {
         }
 
         return Math.ceil(score);
-    },
-    hasFour(board, playerIndex) {
+    },*/
+    /*hasFour(board, playerIndex) {
         const patterns = BOARD.boardToPatterns([playerIndex], board)[0];
         return BOARD.countWindowsInPattern(patterns, 4, playerIndex).count > 0;
+    },*/
+    hasFour(board, playerIndex) {
+        BOARD._ensureAllWindows();
+        for (const win of BOARD._ALL_WINDOWS) {
+            let ok = true;
+            for (let k = 0; k < 4; k++) {
+                const [x, y] = win[k];
+                if (BOARD._val(board, x, y) !== playerIndex) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) return true;
+        }
+        return false;
     },
     countImmediateWins(board, playerIndex) {
         const wins = [];
@@ -572,11 +747,15 @@ const AGENT_MANAGER = {
         }
         return wins;
     },
-    isTerminalNode(patterns, GA) {
+    isTerminalNode(GA) {
+        if (this.hasFour(GA, 1) || this.hasFour(GA, 2)) return true;
+        return this.getLegalMoves(GA).length === 0;
+    },
+    /*isTerminalNode(patterns, GA) {
         const FourInARow = BOARD.countWindowsInPattern(patterns, 4, 1).count + BOARD.countWindowsInPattern(patterns, 4, 2).count;
         if (FourInARow > 0) return true;
         return this.getLegalMoves(GA).length === 0; // draw
-    },
+    },*/
     innermost(arr) {
         const mid = (INI.COLS - 1) / 2;
         let bestMoves = [];
@@ -769,6 +948,29 @@ const TURN_MANAGER = {
     applyDestination(destination, player) {
         this.turn_completed = true;
         this.token = null;
+
+        // place the token and redraw
+        GAME.map.setToken(destination, player);
+        BOARD.drawContent();
+
+        // win check (window-based)
+        const pid = this.playerPieces[player];                // 1 or 2
+        const winIdx = BOARD.findFourIndices(GAME.map, pid);  // [] or [indices...]
+        if (winIdx.length) return this.gameCompleted(winIdx, player);
+
+        // score (pure 2- and 3-in-a-rows)
+        const inrow2 = BOARD.countPure(GAME.map, pid, 2);
+        const inrow3 = BOARD.countPure(GAME.map, pid, 3);
+        TURN_MANAGER.score[player] = inrow2 * INI.INROW2 + inrow3 * INI.INROW3;
+        TITLE.score();
+
+        // UI
+        BOARD.drawColLabels(ENGINE.INI.GRIDPIX, destination.x, player);
+    },
+
+    /*applyDestination(destination, player) {
+        this.turn_completed = true;
+        this.token = null;
         GAME.map.setToken(destination, player);
         BOARD.drawContent();
 
@@ -787,7 +989,7 @@ const TURN_MANAGER = {
         TITLE.score();
 
         BOARD.drawColLabels(ENGINE.INI.GRIDPIX, destination.x, player);
-    },
+    },*/
     manage(lapsedTime) {
         if (this.turn_completed) return this.nextPlayer();
         if (this.token) this.token.manage(lapsedTime);
@@ -810,6 +1012,30 @@ const TURN_MANAGER = {
         CTX.restore();
     },
     gameCompleted(indices, player) {
+        BOARD._ensureAllWindows();                  // safety
+
+        const off = ENGINE.INI.GRIDPIX / 2;
+        const CTX = LAYER.strike;
+        CTX.lineWidth = 5;
+        CTX.strokeStyle = player;
+
+        for (const i of indices) {
+            const win = BOARD._ALL_WINDOWS[i];      // [[x,y], [x,y], [x,y], [x,y]]
+            // windows were generated in-order (left→right, bottom→top, or diag direction),
+            // so first and last cells are valid endpoints for the strike line
+            const [x1, y1] = BOARD.gridToCoord(new Grid(win[0][0], win[0][1]), off);
+            const [x2, y2] = BOARD.gridToCoord(new Grid(win[3][0], win[3][1]), off);
+
+            CTX.beginPath();
+            CTX.moveTo(x1, y1);
+            CTX.lineTo(x2, y2);
+            CTX.stroke();
+        }
+
+        GAME.completed = true;
+        this.winner = player;
+    },
+    /*gameCompleted(indices, player) {
         const off = ENGINE.INI.GRIDPIX / 2;
         const CTX = LAYER.strike;
         CTX.lineWidth = 5;
@@ -825,7 +1051,7 @@ const TURN_MANAGER = {
         }
         GAME.completed = true;
         this.winner = player;
-    },
+    },*/
     getInput(allowed = null) {
         this.awaitingInput = true;
         this.lastInput = null;

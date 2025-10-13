@@ -4,9 +4,16 @@ import time
 import random
 import numpy as np
 import torch
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import os
 import pandas as pd
+
+
+def _argmax_tie(q: np.ndarray, valid_actions) -> int:
+    va = np.asarray(sorted(valid_actions), dtype=int)
+    best = np.max(q[va])
+    tied = va[np.isclose(q[va], best, atol=1e-9)]
+    return int(tied[len(tied)//2])
 
 def _valid_actions_of(env):
     return env.available_actions()
@@ -58,8 +65,11 @@ def play_single_game(agent, env, device, Lookahead, opponent_label, game_index):
         if current == AGENT_SIDE:
             with torch.no_grad():
                 x = build_input(agent, state, player=AGENT_SIDE, device=device)
-                q = agent.model(x).squeeze(0).cpu().numpy()
-            action = _mask_argmax(q, valid_actions)
+                #q = agent.model(x).squeeze(0).cpu().numpy()
+                q = agent._symmetry_avg_q(x)  
+            #action = _mask_argmax(q, valid_actions)
+            #action = _mask_argmax(q, valid_actions)
+            action = _argmax_tie(q, valid_actions)
 
         else:
             if opponent_label == "Random":
@@ -106,12 +116,11 @@ def evaluate_agent_model(agent, env, evaluation_opponents, device, Lookahead):
     agent.epsilon = 0.0
     agent.epsilon_min = 0.0
 
-    start_time = time.time()
 
     for label, num_games in evaluation_opponents.items():
         wins = losses = draws = 0
 
-        with tqdm(total=num_games, desc=f"Opponent: {label}") as pbar:
+        with tqdm(total=num_games, desc=f"Opponent: {label}", position=1, leave=False) as pbar:
             for game_index in range(num_games):
                 outcome, _ = play_single_game(agent, env, device, Lookahead, label, game_index)
                 if outcome == 1:
@@ -121,6 +130,7 @@ def evaluate_agent_model(agent, env, evaluation_opponents, device, Lookahead):
                 else:
                     draws += 1
                 pbar.update(1)
+            pbar.clear()
 
         results[label] = {
             "wins": wins,
@@ -130,6 +140,7 @@ def evaluate_agent_model(agent, env, evaluation_opponents, device, Lookahead):
             "loss_rate": round(losses / num_games, 3),
             "draw_rate": round(draws / num_games, 3),
         }
+      
 
     # Restore agent state
     agent.model.train(model_mode)
@@ -137,8 +148,6 @@ def evaluate_agent_model(agent, env, evaluation_opponents, device, Lookahead):
     agent.epsilon = _eps
     agent.epsilon_min = _epsmin
 
-    elapsed = time.time() - start_time
-    print(f"✅ Evaluation completed in {elapsed/60:.1f} minutes")
 
     return results
 
