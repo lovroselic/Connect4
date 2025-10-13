@@ -1,5 +1,5 @@
-   <!-- copy start-->
-   <div id="preload" class="hidden"></div>
+<!-- copy start-->
+    <div id="preload" class="hidden"></div>
     <div class="container my-5 p-5 cool_page">
         <div>
             <div id="load"></div>
@@ -22,10 +22,10 @@
                     one. But it beats Random player all the time. What a surprise.</p>
                 <p><span class="fw-bold">Smarty:</span> 5-step lookahead algorithm. This feels like a real human (if
                     slightly drunk)
-                    opponent. It beats Silly in 82% of cases, the rest were ties.</p>
+                    opponent. It beats Silly in 60% of cases, the rest were mostly ties.</p>
                 <p><span class="fw-bold">Prophet:</span> 7-step lookahead algorithm. It's the maximum javascript can
-                    take before blocking the thread. It takes 0.5-2 seconds to calculate the move. It beats Smarty in
-                    74% of cases.</p>
+                    take before blocking the thread. It takes 0.5-1.5 seconds to calculate the move in the early stage
+                    of the match. It beats Smarty and Silly in 100% of cases. She is a nasty player.</p>
 
                 <hr class="crimson-hr">
 

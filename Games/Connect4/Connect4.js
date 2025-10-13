@@ -57,11 +57,12 @@ const INI = {
     IMMEDIATE_WIN: 500,
     FORK_BONUS: 150,
     DEFENSIVE_FACTOR: 1.5,
-    FLOATING_FACTOR: 0.25,
+    FLOATING_NEAR: 0.50, //0.50
+    FLOATING_FAR: 0.25, //0.25
 };
 
 const PRG = {
-    VERSION: "1.3.1",
+    VERSION: "1.3.2",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -603,29 +604,39 @@ const AGENT_MANAGER = {
             return value;
         }
     },
-    // gravity-aware heuristic with soft discount for floaters ---
+    // gravity-aware heuristic with soft discount for floating windows (no gravity support)
     getHeuristic(playerIndex, currentBoard) {
         const GA = currentBoard;
         const DEF = INI.DEFENSIVE_FACTOR;
-        const FLOAT = INI.FLOATING_FACTOR;
+        const NEAR = INI.FLOATING_NEAR;
+        const FAR = INI.FLOATING_FAR;
         const opp = (playerIndex % 2) + 1;
 
         const w = [0.0, 0.0, Number(INI.INROW2), Number(INI.INROW3), Number(INI.INROW4)];
+
+        // column heights (bottom-based y: 0..5). Fast and enough for 7x6.
+        const heights = new Array(7);
+        for (let x = 0; x < 7; x++) {
+            let h = 0;
+            while (h < 6 && BOARD._val(GA, x, h) !== 0) h++;
+            heights[x] = h; // number of filled cells in column x
+        }
 
         let score = 0.0;
 
         for (const win of BOARD._ALL_WINDOWS) {
             let p = 0, o = 0;
-            let supported = true;
+            let need = 0; // total fillers required across empties to make all playable
 
             for (let k = 0; k < 4; k++) {
                 const x = win[k][0], y = win[k][1];
                 const v = BOARD._val(GA, x, y);
 
                 if (v === 0) {
-                    // empty is unsupported if not on floor AND cell below is empty
-                    if (y > 0 && BOARD._val(GA, x, y - 1) === 0) {
-                        supported = false;         
+                                                                // if y>0, cell is playable only if y-1 < heights[x]
+                    if (y > 0) {
+                        const deficit = y - heights[x];         // how many tokens must be dropped first
+                        if (deficit > 0) need += deficit;
                     }
                 } else if (v === playerIndex) {
                     p++;
@@ -634,16 +645,16 @@ const AGENT_MANAGER = {
                 }
             }
 
-            const mul = supported ? 1.0 : FLOAT;
+            const mul = (need === 0) ? 1.0 : (need === 1 ? NEAR : FAR);
 
             if (o === 0) {
-                score += mul * w[p];                 // pure-us window
+                score += mul * w[p];                // pure-us window
             } else if (p === 0) {
-                score -= mul * DEF * w[o];           // pure-them window
+                score -= mul * DEF * w[o];          // pure-them window
             }
         }
 
-        // Immediate wins & forks (leaf bonus)
+        // Immediate wins & forks (exact via simulated drops)
         const myImm = this.countImmediateWins(GA, playerIndex).length;
         const oppImm = this.countImmediateWins(GA, opp).length;
 
@@ -763,7 +774,7 @@ const TURN_MANAGER = {
         blue: 0,
     },
     init() {
-        BOARD._ensureAllWindows();  
+        BOARD._ensureAllWindows();
         const next = $("#select_player_start")[0].value;
         switch (next) {
             case "red":

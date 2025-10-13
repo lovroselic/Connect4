@@ -14,7 +14,8 @@ class Connect4Lookahead:
     immediate_w = 250
     fork_w = 150
     DEFENSIVE = 1.5
-    FLOATING_FACTOR = 0.25
+    FLOATING_NEAR = 0.50   # needs exactly 1 filler to be supported
+    FLOATING_FAR  = 0.25   # needs 2+ fillers
 
     def __init__(self, weights=None):
         self.weights = weights if weights else {2: 10, 3: 100, 4: 1000}
@@ -243,36 +244,34 @@ class Connect4Lookahead:
     
 
     def _evaluate_leaf(self, pov: int) -> float:
-         # gravity-aware with soft discount for floating windows
-         B = self._board
-         DEF = self.DEFENSIVE
-         FLOAT = self.FLOATING_FACTOR  # multiplier for windows with any unsupported empty
-         w = (0.0, 0.0, float(self.weights[2]), float(self.weights[3]), float(self.weights[4]))
-     
-         score = 0.0
-         for window in self._windows:
-             p = o = 0
-             supported = True
-             for (r, c) in window:
-                 v = B[r][c]
-                 if v == 0:
-                     if r > 0 and B[r - 1][c] == 0:
-                         supported = False
-                 elif v == pov:
-                     p += 1
-                 else:
-                     o += 1
-     
-             mul = 1.0 if supported else FLOAT
-             if o == 0: score += mul * w[p]
-             elif p == 0: score -= mul * DEF * w[o]
-     
-         my_imm  = self._count_immediate_wins(pov)
-         opp_imm = self._count_immediate_wins(-pov)
-         score += self.immediate_w * (my_imm - DEF * opp_imm)
-         if my_imm >= 2: score += self.fork_w * (my_imm - 1)
-         if opp_imm >= 2: score -= DEF * (self.fork_w * (opp_imm - 1))
-         return score
+        B = self._board
+        DEF = self.DEFENSIVE
+        w = (0.0, 0.0, float(self.weights[2]), float(self.weights[3]), float(self.weights[4]))
+    
+        score = 0.0
+        for window in self._windows:
+            p = o = 0
+            need = 0  # total fillers needed under empty cells
+            for (r, c) in window:
+                v = B[r][c]
+                if v == 0:
+                    if r > 0 and B[r - 1][c] == 0:
+                        # how many tokens must be dropped in this column before this cell is playable?
+                        need += (r - self._heights[c])
+                elif v == pov: p += 1
+                else: o += 1
+    
+            mul = 1.0 if need == 0 else (self.FLOATING_NEAR if need == 1 else self.FLOATING_FAR)
+            if o == 0: score += mul * w[p]
+            elif p == 0: score -= mul * DEF * w[o]
+    
+        my_imm  = self._count_immediate_wins(pov)
+        opp_imm = self._count_immediate_wins(-pov)
+        score += self.immediate_w * (my_imm - DEF * opp_imm)
+        if my_imm >= 2: score += self.fork_w * (my_imm - 1)
+        if opp_imm >= 2: score -= DEF * (self.fork_w * (opp_imm - 1))
+        return score
+
 
     # ----------------------- in-place board ops/checks -----------------------
 

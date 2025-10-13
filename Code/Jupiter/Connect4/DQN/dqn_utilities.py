@@ -22,7 +22,7 @@ EVAL_CFG = {
     "Random": 101, 
     "Lookahead-1": 73,
     "Lookahead-2": 51,
-    "Lookahead-3": 13,
+    #"Lookahead-3": 13,
     #"Lookahead-4": 2,
     } 
 
