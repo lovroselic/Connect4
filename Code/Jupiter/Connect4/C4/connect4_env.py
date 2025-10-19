@@ -7,6 +7,7 @@ class Connect4Env:
     ROWS = 6
     COLS = 7
     
+    #reward constants
     THREAT2_VALUE = 10  
     THREAT3_VALUE = 20   
     BLOCK2_VALUE = 12   
@@ -23,6 +24,7 @@ class Connect4Env:
     STEP_PENALTY = 1
     CENTER_WEIGHTS = [0.25, 0, 0.5, 1.0, 0.5, 0, 0.25]
     OPENING_DECAY_STEPS = 6  
+    
 
     def __init__(self):
         self.reset()
@@ -52,8 +54,7 @@ class Connect4Env:
         return [c for c in range(self.COLS) if self.board[0][c] == 0]
 
     def step(self, action):
-        if self.done:
-            return self.get_state(), 0.0, True
+        if self.done: return self.get_state(), 0.0, True
         
         if self.board[0][action] != 0:
             print("ILLEGAL MOVE DETECTED!")
@@ -61,9 +62,7 @@ class Connect4Env:
             print(f"Attempted action: {action}")
             print(f"Winner before return: {self.winner}")
             raise ValueError("ILLEGAL MOVE DETECTED!")
-            #return self.get_state(), self.LOSS_PENALTY, True
-            
-        
+
         # Save board state BEFORE move for threat detection
         board_before = self.board.copy()
         opponent_before = -self.current_player
@@ -87,41 +86,25 @@ class Connect4Env:
         
         if not self.done:
             # Get patterns for current board
-            patterns_current = self.lookahead.board_to_patterns(
-                self.board, [self.current_player, opponent_before]
-            )
-            patterns_before = self.lookahead.board_to_patterns(
-                board_before, [self.current_player, opponent_before]
-            )
+            patterns_current = self.lookahead.board_to_patterns(self.board, [self.current_player, opponent_before])
+            patterns_before = self.lookahead.board_to_patterns(board_before, [self.current_player, opponent_before])
             
             # COUNT THREATS
-            threat2_count = self.lookahead.count_windows(
-                patterns_current, 2, self.current_player
-            )
-            threat3_count = self.lookahead.count_windows(
-                patterns_current, 3, self.current_player
-            )
+            threat2_count = self.lookahead.count_windows(patterns_current, 2, self.current_player)
+            threat3_count = self.lookahead.count_windows(patterns_current, 3, self.current_player)
             
             # COUNT BLOCKS
-            opp2_before = self.lookahead.count_windows(
-                patterns_before, 2, opponent_before
-            )
-            opp2_after = self.lookahead.count_windows(
-                patterns_current, 2, opponent_before
-            )
+            opp2_before = self.lookahead.count_windows(patterns_before, 2, opponent_before)
+            opp2_after = self.lookahead.count_windows(patterns_current, 2, opponent_before)
             block2_count = max(0, opp2_before - opp2_after)
             
-            opp3_before = self.lookahead.count_windows(
-                patterns_before, 3, opponent_before
-            )
-            opp3_after = self.lookahead.count_windows(
-                patterns_current, 3, opponent_before
-            )
+            opp3_before = self.lookahead.count_windows(patterns_before, 3, opponent_before)
+            opp3_after = self.lookahead.count_windows(patterns_current, 3, opponent_before)
             block3_count = max(0, opp3_before - opp3_after)
             
             center_reward = self.CENTER_REWARD * self.CENTER_WEIGHTS[action]
             
-            # Extra if it is **bottom-center** specifically
+            # Extra if it is **bottom-center** 
             opening_decay = np.exp(-self.ply / self.OPENING_DECAY_STEPS)
             if action == 3 and placed_row == self.ROWS - 1:
                 opening_decay = np.exp(-self.ply / self.OPENING_DECAY_STEPS)
@@ -151,19 +134,17 @@ class Connect4Env:
                 + center_reward
                 - immediate_loss_penalty        
             )
+            
             reward = np.clip(reward, -self.MAX_REWARD, self.MAX_REWARD)
             reward -= self.STEP_PENALTY
             
-            self.current_player *= -1  # Switch turns, used for evaluation! KEEP! but only for none terminal
+            self.current_player *= -1   # Switch turns, used for evaluation! KEEP! but only for none terminal this is already redundant for training loops which uses hard assignation
             self.ply += 1
 
         else:  # Terminal rewards
-            if self.winner == self.current_player:
-                reward = self.WIN_REWARD
-            elif self.winner == 0:
-                reward = self.DRAW_REWARD
-            else:
-                reward = self.LOSS_PENALTY
+            if self.winner == self.current_player:  reward = self.WIN_REWARD
+            elif self.winner == 0:                  reward = self.DRAW_REWARD
+            else:                                   reward = self.LOSS_PENALTY
                 
             
         return self.get_state(), reward, self.done

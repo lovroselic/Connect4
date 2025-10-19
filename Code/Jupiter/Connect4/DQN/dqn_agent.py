@@ -5,7 +5,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-#import torch.nn.functional as F
 from collections import deque
 from collections import defaultdict
 
@@ -26,9 +25,9 @@ class DQNAgent:
         memory_capacity=500_000,
         per_alpha=0.55, #0.55
         per_eps=1e-2, #1e-2 
-        per_beta_start=0.55, #0.5
-        per_beta_end=0.92, #0.9
-        per_beta_steps=75_000, #75_000
+        per_beta_start=0.45, #0.5
+        per_beta_end=0.98, #0.9
+        per_beta_steps=200_000, #75_000
         per_mix_1step=0.70, #0.65
         target_update_interval=500, target_update_mode="hard", tau=0.005, #defaults, overwritten by phase change
     ):
@@ -52,9 +51,9 @@ class DQNAgent:
         self.epsilon_decay = epsilon_decay
         self.lookahead = Connect4Lookahead()
         self.reward_scale = 0.01
-        self.guard_prob = 0.3                       # controlled by phase
-        self.init_guard = 0.5                       # first N episodes
-        self.init_guard_ply = 3                     #4
+        self.guard_prob = 0.0                       # controlled by phase
+        self.guard_boost_start = 6
+        self.guard_boost_end   = 16
         self.center_start = 0.3                     # controlled by phase
 
         self.td_hist = deque(maxlen=50_000)
@@ -119,8 +118,6 @@ class DQNAgent:
         col_plane   = board[3]
         return np.stack([agent_plane, opp_plane, row_plane, col_plane])
 
-
-
     def update_target_model(self):
         self.target_model.load_state_dict(self.model.state_dict())
 
@@ -128,8 +125,8 @@ class DQNAgent:
 
     @staticmethod
     def _drop_piece(board: np.ndarray, col: int, player: int):
-        if board[0, col] != 0:
-            return None, None
+        if board[0, col] != 0: return None, None
+        
         b = board.copy()
         for r in range(b.shape[0] - 1, -1, -1):
             if b[r, col] == 0:
@@ -164,7 +161,7 @@ class DQNAgent:
 
     def _tactical_guard(self, oriented_board: np.ndarray, valid_actions):
      """
-         Board is already oriented so that 'us' == +1, opponent == -1.
+         Board is already oriented so that agent == +1, opponent == -1.
          Returns: (must_play: int|None, safe_actions: list[int])
      """
      must_play = None
@@ -185,17 +182,14 @@ class DQNAgent:
          opp_threat = False
          for oa in valid_actions:
              b2, _ = self._drop_piece(b1, oa, -1)          # opp = -1
-             if b2 is None:
-                 continue
+             if b2 is None: continue
              if self.lookahead.check_win(b2, -1):
                  opp_threat = True
                  break
  
-         if not opp_threat:
-             safe_actions.append(a)
+         if not opp_threat: safe_actions.append(a)
  
      return must_play, safe_actions
-
 
 
     # ------------------------- action selection -------------------------
@@ -233,10 +227,18 @@ class DQNAgent:
         col_plane = np.tile(np.linspace(-1, 1, board.shape[1])[None, :], (board.shape[0], 1))
         return np.stack([agent_plane, opp_plane, row_plane, col_plane])
 
-    def act(self, state: np.ndarray, valid_actions, player: int, depth: int, strategy_weights=None, ply = None):
+    def act(self, state: np.ndarray, valid_actions, depth: int, strategy_weights=None, ply = None):
         self._act_stats_total += 1
+        assert len(valid_actions) > 0, f"ACT called with empty valid actions {valid_actions}"
+        board = self.decode_board_from_state(state, +1)                         # Reconstruct board in 'player' POV (+1 = us/agent, -1 = opp)
         
-        # === Center Guard ===
+        # === immediate win  ===
+        win_now, win_a = self.had_one_ply_win(board, valid_actions)
+        if win_now:
+            self._bump_stat("win_now")
+            return int(win_a)
+        
+        # === CENTER START ===
         if not self.center_forced_used and ply is not None and ply <= 1:
             center_start_on = (random.random() < self.center_start)
             if center_start_on and 3 in valid_actions: 
@@ -245,31 +247,27 @@ class DQNAgent:
                     self._bump_stat("center")
                     return 3 # start bottom center
                 
-        # fixed guard for first  self.init_guard_ply moves
-        guard_base = self.guard_prob
-        if ply is not None and ply <= self.init_guard_ply:
-            guard_base = max(guard_base, self.init_guard)
+        # === TACTICAL GUARD WINDOW ===
+        guard_on = False
+        if ply is not None and (self.guard_boost_start <= ply <= self.guard_boost_end):
+           guard_on = (random.random() < float(self.guard_prob))
         
-        
-        assert len(valid_actions) > 0, f"ACT called with empty valid actions {valid_actions}"
-        board = self.decode_board_from_state(state, player)
-    
-        # === Tactical Guard ===
-        guard_on = (random.random() < guard_base)
-        must_play, safe_actions = self._tactical_guard(board, valid_actions)
-    
+        safe_actions = None
         if guard_on:
+            orig_n = len(valid_actions)
+            must_play, safe_actions = self._tactical_guard(board, valid_actions)
             if must_play is not None:
                 self._bump_stat("guard")
                 return must_play
-            if safe_actions: valid_actions = safe_actions
+            if safe_actions: 
+                if len(safe_actions) < orig_n:
+                    self._bump_stat("guard")
+                valid_actions = safe_actions
     
         # === ε-greedy Exploration ===
         if random.random() < self.epsilon:
             self._bump_stat("epsilon")
-            if strategy_weights is None:
-                strategy_weights = [1, 0, 0, 0, 0, 0, 0, 0]
-    
+            if strategy_weights is None: strategy_weights = [1, 0, 0, 0, 0, 0, 0, 0]
             assert len(strategy_weights) == 8, f"Expected 8 strategy weights, got {len(strategy_weights)}: {strategy_weights}"
             choice = random.choices(range(8), weights=strategy_weights)[0]
     
@@ -278,39 +276,25 @@ class DQNAgent:
                 self._bump_stat("rand")
                 return action
             else:
-                a = self.lookahead.n_step_lookahead(board, player=player, depth=choice)
+                a = self.lookahead.n_step_lookahead(board, player=+1, depth=choice)                 # this is agents perspective
                 self._bump_stat(f"L{choice}")
                 if a not in valid_actions:
-                    # action was not safe, it would result in a blunder
                     a = random.choice(valid_actions)
                 return a
     
-        # === If guard forced move (again, in exploitation phase) ===
-        if must_play is not None:
-            self._bump_stat("guard")
-            return must_play
     
-        # === DQN Inference (symmetry-averaged + robust tie-breaking) ===
-        #assert state.shape == (4, 6, 7), f"[act] Expected (4,6,7), got {state.shape}"
+        # === Exploitation ===
         
-        if self.use_symmetry_policy:
-            q_values = self._symmetry_avg_q(state)   # [7]
-        else:
-            q_values = self._q_values_np(state)      # [7]
-        
+        q_values = self._symmetry_avg_q(state) if self.use_symmetry_policy else self._q_values_np(state)
         action = self._argmax_legal_with_tiebreak(q_values, valid_actions)
         self._bump_stat("exploit")
-
     
-        if action not in valid_actions:
-            print(f"❌ [act] DQN chose ILLEGAL action: {action} — valid: {valid_actions}")
-            raise ValueError(f"[act] DQN chose illegal action: {action} — valid: {valid_actions}")
+        if action not in valid_actions: raise ValueError(f"[act] DQN chose illegal action: {action} — valid: {valid_actions}")
     
         return action
 
     
-    def remember(self, s, p, a, r, s2, p2, done,
-             add_mirror=True, add_colorswap=True, add_mirror_colorswap=True):
+    def remember(self, s, p, a, r, s2, p2, done, add_mirror=True, add_colorswap=True, add_mirror_colorswap=True):
         # base
         self.memory.push_1step(s, a, r, s2, done, p)
     
@@ -349,8 +333,6 @@ class DQNAgent:
         n1 = len(batch_1)
 
         is_w_all = (np.concatenate([w_1, w_n]) if (w_1.size or w_n.size) else np.ones((len(batch_all),), dtype=np.float32))
-        #is_w_all = is_w_all / (is_w_all.max() + 1e-8)
-        #np.clip(is_w_all, 0.10, 1.0, out=is_w_all)
 
         states, next_states = [], []
         s_players, ns_players = [], []

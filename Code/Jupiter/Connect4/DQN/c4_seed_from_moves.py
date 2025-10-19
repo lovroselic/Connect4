@@ -94,16 +94,14 @@ def seed_from_dataframe_moves(
     multiplied by `reward_scale` (default: agent.reward_scale, else 1.0).
     Returns the NStepBuffer used for seeding (already flushed/reset per game).
     """
-    if gamma is None:
-        gamma = float(agent.gamma)
+    if gamma is None: gamma = float(agent.gamma)
 
     # Determine reward scaling (prefer explicit arg, else agent.reward_scale, else 1.0)
     rs = float(reward_scale if reward_scale is not None else getattr(agent, "reward_scale", 1.0))
 
     required = {"label", "reward", "game", "ply"} | set(BOARD_COLS)
     missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"DataFrame missing required columns: {missing}")
+    if missing: raise ValueError(f"DataFrame missing required columns: {missing}")
 
     # Sort and deduplicate on the board snapshot (ignore reward) to avoid
     # "cannot infer unique action" caused by identical boards with different rewards.
@@ -122,9 +120,7 @@ def seed_from_dataframe_moves(
     raw_min, raw_max = float("inf"), float("-inf")
     sca_min, sca_max = float("inf"), float("-inf")
 
-    for (label, game_idx), gdf in tqdm(
-        df_sorted.groupby(["label", "game"]), desc="Seeding", disable=not verbose
-    ):
+    for (label, game_idx), gdf in tqdm(df_sorted.groupby(["label", "game"]), desc="Seeding", disable=not verbose):
         prev_board = np.zeros((ROWS, COLS), dtype=np.int32)
         max_ply = int(gdf["ply"].max())
 
@@ -165,8 +161,7 @@ def seed_from_dataframe_moves(
 
             prev_board = cur_board  # advance
 
-            if done:
-                break
+            if done: break
 
         if valid_game:
             nbuf.flush()
@@ -176,9 +171,8 @@ def seed_from_dataframe_moves(
 
     if verbose:
         print(f"[seed] games_added={games_added}, steps_added={steps_added}, failed_games={len(failed_games)}")
-        print(f"[seed] reward_scale={rs:.6f} | raw_min..max={raw_min:.3f}..{raw_max:.3f} | scaled_min..max={sca_min:.3f}..{sca_max:.3f}")
-        if failed_games:
-            print("  Failed:", failed_games[:10], ("..." if len(failed_games) > 10 else ""))
+        print(f"[seed] reward_scale={rs:.6f} | raw_min..max={raw_min:.3f}..{raw_max:.3f} | scaled_min...max={sca_min:.3f}...{sca_max:.3f}")
+        if failed_games: print("  Failed:", failed_games[:10], ("..." if len(failed_games) > 10 else ""))
 
     nbuf.reset()
     return nbuf

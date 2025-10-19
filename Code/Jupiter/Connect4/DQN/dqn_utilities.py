@@ -12,6 +12,7 @@ import os
 from IPython.display import display, HTML
 import torch
 from PPO.ppo_eval import evaluate_actor_critic_model
+from C4.eval_oppo_dict import EVAL_CFG
 
 
 TAU_DEFAULT     = 0.006                         # phase controlled
@@ -19,16 +20,6 @@ GUARD_DEFAULT   = 0.30                          # phase controlled
 CENTER_START    = 0.30                          # phase controlled
 SEED_FRACTION   = 0.90                          # phase controlled
 LR              = 2e-4                          # phase controlled
-
-# benchmarks
-EVAL_CFG = {
-    "Random": 101, 
-    "Lookahead-1": 73,
-    "Lookahead-2": 51,
-    "Lookahead-3": 49,
-    "Lookahead-4": 29,
-    } 
-
 
 @torch.no_grad()
 def _flatten_params(module: torch.nn.Module) -> torch.Tensor:
@@ -628,7 +619,7 @@ def _plot_action_mix_triplet(ax_explore, ax_guard, ax_epsdetail, agent, pad: flo
     """
     Draw three bar charts from agent.act_stats:
       1) Explore vs Exploit
-      2) Center / Guard / None
+      2) Center / Guard / Win_now / None
       3) ε-branch detail: rand, L1..Lx (only keys present are plotted)
     """
     if agent is None or not hasattr(agent, "act_stats_summary"):
@@ -636,50 +627,53 @@ def _plot_action_mix_triplet(ax_explore, ax_guard, ax_epsdetail, agent, pad: flo
             ax.axis("off")
         return
 
-    s = agent.act_stats_summary(normalize=True)  # fractions in [0,1]
+    s = agent.act_stats_summary(normalize=True)  # fractions of total decisions
 
-    # 1) Explore vs Exploit
-    explore = s.get("epsilon", 0.0)
-    exploit = s.get("exploit", 0.0)
+    # --- 1) Explore vs Exploit ---
+    explore = float(s.get("epsilon", 0.0))
+    exploit = float(s.get("exploit", 0.0))
     ax_explore.bar(["Exploit", "Explore (ε)"], [exploit, explore])
-    ax_explore.set_ylim(0, 1)
+    ax_explore.set_ylim(0.0, 1.0)
     ax_explore.set_ylabel("Rate")
     ax_explore.set_title("Action Mix: Explore vs Exploit", fontsize=10)
     for i, v in enumerate([exploit, explore]):
-        ax_explore.text(i, v + 0.02, f"{100*v:.1f}%", ha="center", va="bottom", fontsize=8)
+        ax_explore.text(i, min(0.98, v + 0.02), f"{100*v:.1f}%", ha="center", va="bottom", fontsize=8)
     ax_explore.grid(True, axis="y", alpha=0.3)
 
-    # 2) Center / Guard / None
-    center = s.get("center", 0.0)
-    guard  = s.get("guard",  0.0)
-    none   = max(0.0, 1.0 - center - guard)
-    ax_guard.bar(["Center", "Guard", "None"], [center, guard, none])
-    ax_guard.set_ylim(0, 1)
+    # --- 2) Center / Guard / Win_now / None ---
+    center   = float(s.get("center", 0.0))
+    guard    = float(s.get("guard",  0.0))
+    win_now  = float(s.get("win_now", 0.0))  
+    none     = max(0.0, 1.0 - (center + guard + win_now))
+
+    labels2 = ["Center", "Guard", "Win_now", "None"]
+    vals2   = [center,   guard,   win_now,   none]
+    ax_guard.bar(labels2, vals2)
+    ax_guard.set_ylim(0.0, 1.0)
     ax_guard.set_ylabel("Rate")
-    ax_guard.set_title("Special Moves: Center / Guard / None", fontsize=10)
-    for i, v in enumerate([center, guard, none]):
-        ax_guard.text(i, v + 0.02, f"{100*v:.1f}%", ha="center", va="bottom", fontsize=8)
+    ax_guard.set_title("Special Moves: Center / Guard / Win_now / None", fontsize=10)
+    for i, v in enumerate(vals2):
+        ax_guard.text(i, min(0.98, v + 0.02), f"{100*v:.1f}%", ha="center", va="bottom", fontsize=8)
     ax_guard.grid(True, axis="y", alpha=0.3)
 
-    # 3) ε-branch detail (rand + L1..Lx present in stats)
-    items = [("rand", s.get("rand", 0.0))]
-    for k, v in s.items():
-        if k.startswith("L") and k[1:].isdigit():
-            items.append((k, v))
-    items = [items[0]] + sorted(items[1:], key=lambda kv: int(kv[0][1:])) if len(items) > 1 else items
+    # --- 3) ε-branch detail: rand + Lk present in stats ---
+    items = [("rand", float(s.get("rand", 0.0)))]
+    items += [(k, float(v)) for k, v in s.items() if k.startswith("L") and k[1:].isdigit()]
+    if len(items) > 1:
+        items = [items[0]] + sorted(items[1:], key=lambda kv: int(kv[0][1:]))
 
-    labels = [k for k, _ in items]
-    values = [v for _, v in items]
-    ax_epsdetail.bar(labels, values)
+    labels3 = [k for k, _ in items]
+    vals3   = [v for _, v in items]
+    ax_epsdetail.bar(labels3, vals3)
 
-    ymax = max(values) if values else 0.0
+    ymax = max(vals3) if vals3 else 0.0
     ax_epsdetail.set_ylim(0.0, max(0.05, min(1.0, ymax + pad)))
-
     ax_epsdetail.set_ylabel("Rate")
     ax_epsdetail.set_title("ε-Branch Breakdown", fontsize=10)
-    for i, v in enumerate(values):
+    for i, v in enumerate(vals3):
         ax_epsdetail.text(i, v + 0.02, f"{100*v:.1f}%", ha="center", va="bottom", fontsize=8)
     ax_epsdetail.grid(True, axis="y", alpha=0.3)
+
 
 
 def _plot_opp_epsdetail(ax, agent):
