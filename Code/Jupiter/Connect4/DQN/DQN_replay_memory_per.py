@@ -13,8 +13,8 @@ class PrioritizedReplayMemory:
         eps: float = 0.02 ,  #5e-3 2e-2
         init_boost_terminal: float = 1.75, #1,5
         init_boost_oppmove: float = 1.075, #1.05
-        init_percentile: float = 90.0,   # was 98.0 — softer so seeds don’t dominate #85
-        init_boost_seed: float = 1.15,   # was 1.25 — softer initial seed priority #1.05
+        init_percentile: float = 85.0,   #85
+        init_boost_seed: float = 1.00,   #95
     ):
         self.capacity = int(capacity)
         self.alpha = float(alpha)
@@ -97,17 +97,34 @@ class PrioritizedReplayMemory:
         self.pos_n = self._push_to_bank(self.bank_n, self.prio_n, self.pos_n, self.is_seed_n, t, init_p)
 
 
+    # def _apply_transform(self, state, action, player, mirror: bool, colorswap: bool):
+    #     s = state
+    #     a = int(action)
+    #     p = int(player)
+    #     if mirror:
+    #         s = np.flip(s, axis=-1).copy()
+    #         a = 6 - a
+    #     if colorswap:
+    #         s = -s
+    #         p = -p
+    #     return s, a, p
+    
     def _apply_transform(self, state, action, player, mirror: bool, colorswap: bool):
-        s = state
+        s = state.copy()
         a = int(action)
         p = int(player)
+    
         if mirror:
             s = np.flip(s, axis=-1).copy()
             a = 6 - a
+    
         if colorswap:
-            s = -s
-            p = -p
+            s[[0, 1]] = s[[1, 0]]   # swap agent/opp planes only
+            p = -p                  # flip player flag
+    
         return s, a, p
+
+
     
     def push_1step_aug(self, s, a, r, s2, done, player,
                        add_mirror=True, add_colorswap=True, add_mirror_colorswap=True):
@@ -181,7 +198,7 @@ class PrioritizedReplayMemory:
         sn, in_, wn = self._draw(self.bank_n, self.prio_n, bn, beta)
         return (s1, sn), (i1, in_), (w1, wn)
 
-    #not used
+  
     def sample_mixed_seedaware(self, batch_size, mix=0.5, beta=0.4, max_seed_frac=0.10):
         """Seed-aware sampler: caps seeds to at most max_seed_frac of each sub-batch."""
         b1 = int(batch_size * mix)
@@ -215,22 +232,45 @@ class PrioritizedReplayMemory:
                     prios[int(i)] = min(abs(float(e)), PRIO_CLIP) + self.eps
 
     # ----------------- pruning -----------------
-    def _prune_low(self, bank, prio, is_seed_flags, fraction):
+    # def _prune_low(self, bank, prio, is_seed_flags, fraction):
+    #     n = len(bank)
+    #     if n == 0: return bank, prio, is_seed_flags
+    #     cand_idx = np.arange(n)[~is_seed_flags[:n]]  # do not prune seeds
+    #     if cand_idx.size == 0: return bank, prio, is_seed_flags
+    #     k = min(int(n * fraction), cand_idx.size)
+    #     drop = set(cand_idx[np.argsort(prio[cand_idx])[:k]])
+    #     keep_idx = [i for i in range(n) if i not in drop]
+    #     new_bank = [bank[i] for i in keep_idx]
+    #     new_prio = np.zeros_like(prio)
+    #     new_seed = np.zeros_like(is_seed_flags)
+    #     new_prio[:len(new_bank)] = prio[keep_idx]
+    #     new_seed[:len(new_bank)] = is_seed_flags[keep_idx]
+    #     return new_bank, new_prio, new_seed
+    
+    def _prune_low(self, bank, prio, is_seed_flags, fraction: float):
+
         n = len(bank)
-        if n == 0:
-            return bank, prio, is_seed_flags
-        cand_idx = np.arange(n)[~is_seed_flags[:n]]  # do not prune seeds
-        if cand_idx.size == 0:
-            return bank, prio, is_seed_flags
-        k = min(int(n * fraction), cand_idx.size)
-        drop = set(cand_idx[np.argsort(prio[cand_idx])[:k]])
-        keep_idx = [i for i in range(n) if i not in drop]
+        if n == 0 or fraction <= 0.0: return bank, prio, is_seed_flags
+    
+        k = int(np.floor(n * float(fraction)))
+        
+        if k <= 0: return bank, prio, is_seed_flags
+        if k >= n: return [], np.zeros_like(prio), np.zeros_like(is_seed_flags)
+    
+        # indices of the k lowest priorities among the first n elements
+        low_k = np.argpartition(prio[:n], k - 1)[:k]
+        drop = set(low_k.tolist())
+    
+        keep_idx = [i for i in range(n) if i not in drop]  # stable
         new_bank = [bank[i] for i in keep_idx]
+    
+        new_len = len(new_bank)
         new_prio = np.zeros_like(prio)
         new_seed = np.zeros_like(is_seed_flags)
-        new_prio[:len(new_bank)] = prio[keep_idx]
-        new_seed[:len(new_bank)] = is_seed_flags[keep_idx]
+        new_prio[:new_len] = prio[keep_idx]
+        new_seed[:new_len] = is_seed_flags[keep_idx]
         return new_bank, new_prio, new_seed
+
 
     def prune(self, fraction, mode="low_priority"):
         if mode != "low_priority":

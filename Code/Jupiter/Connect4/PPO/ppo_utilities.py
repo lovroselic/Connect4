@@ -15,7 +15,7 @@ import pandas as pd
 from IPython.display import HTML, display
 import torch
 import numpy as np
-from C4.connect4_lookahead import Connect4Lookahead
+from C4.fast_connect4_lookahead import Connect4Lookahead
 from C4.connect4_env import Connect4Env
 from PPO.ppo_training_phases_config import TRAINING_PHASES
 from PPO.ppo_update import PPOUpdateCfg

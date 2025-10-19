@@ -5,19 +5,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
+#import torch.nn.functional as F
 from collections import deque
+from collections import defaultdict
 
 from DQN.DQN_replay_memory_per import PrioritizedReplayMemory
 from DQN.dqn_model import DQN
-from C4.connect4_lookahead import Connect4Lookahead
+from C4.fast_connect4_lookahead import Connect4Lookahead
 
 
 class DQNAgent:
-
     def __init__(
         self,
-        lr=2e-4, #3e-4
+        lr=2e-4, 
         gamma=0.97,
         epsilon=0.08,
         epsilon_min=0.02,
@@ -25,25 +25,18 @@ class DQNAgent:
         device=None,
         memory_capacity=500_000,
         per_alpha=0.55, #0.55
-        per_eps=1e-2, #1e-2 #3e-2
-        per_beta_start=0.5,
-        per_beta_end=0.98, #0.9
-        per_beta_steps=75_000, #150_000
-        per_mix_1step=0.65, #0.5
+        per_eps=1e-2, #1e-2 
+        per_beta_start=0.55, #0.5
+        per_beta_end=0.92, #0.9
+        per_beta_steps=75_000, #75_000
+        per_mix_1step=0.70, #0.65
         target_update_interval=500, target_update_mode="hard", tau=0.005, #defaults, overwritten by phase change
-
     ):
-        self.device = device if device else torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-
+        self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = DQN().to(self.device)
         self.target_model = DQN().to(self.device)
         self.update_target_model()
-
-        self.memory = PrioritizedReplayMemory(
-            capacity=memory_capacity, alpha=per_alpha, eps=per_eps
-        )
+        self.memory = PrioritizedReplayMemory(capacity=memory_capacity, alpha=per_alpha, eps=per_eps)
 
         # PER β schedule
         self.per_beta = float(per_beta_start)
@@ -61,7 +54,7 @@ class DQNAgent:
         self.reward_scale = 0.01
         self.guard_prob = 0.3                       # controlled by phase
         self.init_guard = 0.5                       # first N episodes
-        self.init_guard_ply = 4
+        self.init_guard_ply = 3                     #4
         self.center_start = 0.3                     # controlled by phase
 
         self.td_hist = deque(maxlen=50_000)
@@ -81,17 +74,40 @@ class DQNAgent:
         self.center_forced_used = False
         
         # --- policy symmetry + tie-breaking knobs ---
-        self.use_symmetry_policy = True    # avg original + horizontally flipped Qs
-        self.tie_tol = 1e-3                # moves within tol of the max are considered ties
-        self.prefer_center = True          # bias ties toward the center column
+        self.use_symmetry_policy = True             # avg original + horizontally flipped Qs
+        self.tie_tol = 1e-3                         # moves within tol of the max are considered ties
+        self.prefer_center = True                   # bias ties toward the center column
         self._center_tie_w = np.array([1.0, 1.0, 1.2, 1.6, 1.2, 1.0, 1.0], dtype=np.float32)
         
-        self.max_seed_frac = 0.95
+        self.max_seed_frac = 0.90                   # 0.95
         
         self.target_lag_hist = deque(maxlen=50_000)  # ||θ-θ̄||/||θ||
         self.lag_log_interval = 250                  # log every N env steps (tune)
         self._last_lag_log_step = 0                  # last env step we logged at
         self.target_lag_hist.append(0.0)
+        
+        self.act_stats = defaultdict(int)   # counts
+        self._act_stats_total = 0 
+        
+        self.opp_act_stats = defaultdict(int)
+        self._opp_act_total = 0
+        
+    def _bump_stat(self, key: str):
+        self.act_stats[key] += 1
+        
+    def act_stats_summary(self, normalize=True):
+        total = max(1, self._act_stats_total)
+        if not normalize: return dict(self.act_stats)
+        return {k: v / total for k, v in self.act_stats.items()}
+    
+    def _bump_opp(self, key: str):
+        self.opp_act_stats[key] += 1
+ 
+    def opp_act_stats_summary(self, normalize: bool = True):
+        total = max(1, self._opp_act_total)
+        if not normalize:
+            return dict(self.opp_act_stats)
+        return {k: v / total for k, v in self.opp_act_stats.items()}
 
 
     # ------------------------- helper encodings -------------------------
@@ -146,11 +162,10 @@ class DQNAgent:
                     return int(np.sign(s))
         return 0
 
-    def _tactical_guard(self, oriented_board: np.ndarray, valid_actions, player: int):
+    def _tactical_guard(self, oriented_board: np.ndarray, valid_actions):
      """
-     player: obsolete
-     Board is already oriented so that 'us' == +1, opponent == -1.
-     Returns: (must_play: int|None, safe_actions: list[int])
+         Board is already oriented so that 'us' == +1, opponent == -1.
+         Returns: (must_play: int|None, safe_actions: list[int])
      """
      must_play = None
      safe_actions = []
@@ -185,8 +200,8 @@ class DQNAgent:
 
     # ------------------------- action selection -------------------------
     
-    def state_to_board(self, state: np.ndarray) -> np.ndarray:
-        return self.decode_board_from_state(state)
+    def state_to_board(self, state: np.ndarray, player) -> np.ndarray:
+        return self.decode_board_from_state(state, player)
 
     def decode_board_from_state(self, state, player):
         """
@@ -219,6 +234,7 @@ class DQNAgent:
         return np.stack([agent_plane, opp_plane, row_plane, col_plane])
 
     def act(self, state: np.ndarray, valid_actions, player: int, depth: int, strategy_weights=None, ply = None):
+        self._act_stats_total += 1
         
         # === Center Guard ===
         if not self.center_forced_used and ply is not None and ply <= 1:
@@ -226,6 +242,7 @@ class DQNAgent:
             if center_start_on and 3 in valid_actions: 
                 if self._center_col_is_empty(state):
                     self.center_forced_used = True
+                    self._bump_stat("center")
                     return 3 # start bottom center
                 
         # fixed guard for first  self.init_guard_ply moves
@@ -239,15 +256,17 @@ class DQNAgent:
     
         # === Tactical Guard ===
         guard_on = (random.random() < guard_base)
-        must_play, safe_actions = self._tactical_guard(board, valid_actions, player)
+        must_play, safe_actions = self._tactical_guard(board, valid_actions)
     
         if guard_on:
             if must_play is not None:
+                self._bump_stat("guard")
                 return must_play
             if safe_actions: valid_actions = safe_actions
     
         # === ε-greedy Exploration ===
         if random.random() < self.epsilon:
+            self._bump_stat("epsilon")
             if strategy_weights is None:
                 strategy_weights = [1, 0, 0, 0, 0, 0, 0, 0]
     
@@ -256,9 +275,11 @@ class DQNAgent:
     
             if choice == 0:
                 action = random.choice(valid_actions)
+                self._bump_stat("rand")
                 return action
             else:
                 a = self.lookahead.n_step_lookahead(board, player=player, depth=choice)
+                self._bump_stat(f"L{choice}")
                 if a not in valid_actions:
                     # action was not safe, it would result in a blunder
                     a = random.choice(valid_actions)
@@ -266,10 +287,11 @@ class DQNAgent:
     
         # === If guard forced move (again, in exploitation phase) ===
         if must_play is not None:
+            self._bump_stat("guard")
             return must_play
     
         # === DQN Inference (symmetry-averaged + robust tie-breaking) ===
-        assert state.shape == (4, 6, 7), f"[act] Expected (4,6,7), got {state.shape}"
+        #assert state.shape == (4, 6, 7), f"[act] Expected (4,6,7), got {state.shape}"
         
         if self.use_symmetry_policy:
             q_values = self._symmetry_avg_q(state)   # [7]
@@ -277,6 +299,7 @@ class DQNAgent:
             q_values = self._q_values_np(state)      # [7]
         
         action = self._argmax_legal_with_tiebreak(q_values, valid_actions)
+        self._bump_stat("exploit")
 
     
         if action not in valid_actions:
@@ -313,19 +336,21 @@ class DQNAgent:
 
 
     def replay(self, batch_size, mix_1step=0.7):
-        if (len(self.memory.bank_1) + len(self.memory.bank_n)) < batch_size:
-            return
+        
+        def pack_many(boards, players):
+            planes = [self._agent_planes(b, p) for b, p in zip(boards, players)]
+            return torch.tensor(np.asarray(planes), dtype=torch.float32, device=self.device)
+        
+        if (len(self.memory.bank_1) + len(self.memory.bank_n)) < batch_size: return
         
         (batch_1, batch_n), (idx_1, idx_n), (w_1, w_n) = self.memory.sample_mixed_seedaware(batch_size, mix=mix_1step, beta=self.per_beta, max_seed_frac=self.max_seed_frac)
     
         batch_all = list(batch_1) + list(batch_n)
         n1 = len(batch_1)
 
-        is_w_all = (
-            np.concatenate([w_1, w_n]) if (w_1.size or w_n.size) else np.ones((len(batch_all),), dtype=np.float32)
-        )
-        is_w_all = is_w_all / (is_w_all.max() + 1e-8)
-        np.clip(is_w_all, 0.10, 1.0, out=is_w_all)
+        is_w_all = (np.concatenate([w_1, w_n]) if (w_1.size or w_n.size) else np.ones((len(batch_all),), dtype=np.float32))
+        #is_w_all = is_w_all / (is_w_all.max() + 1e-8)
+        #np.clip(is_w_all, 0.10, 1.0, out=is_w_all)
 
         states, next_states = [], []
         s_players, ns_players = [], []
@@ -355,9 +380,7 @@ class DQNAgent:
                 dones.append(bool(d))
                 gammas_n.append(self.gamma)
 
-        def pack_many(boards, players):
-            planes = [self._agent_planes(b, p) for b, p in zip(boards, players)]
-            return torch.tensor(np.asarray(planes), dtype=torch.float32, device=self.device)
+        
 
         X = pack_many(states, s_players)
         X_next = pack_many(next_states, ns_players)
@@ -366,8 +389,6 @@ class DQNAgent:
         rewards_t = torch.tensor(rewards, dtype=torch.float32, device=self.device)
         dones_t = torch.tensor(dones, dtype=torch.bool, device=self.device)
         gpow_t = torch.tensor(gammas_n, dtype=torch.float32, device=self.device)
-        isw_t = torch.tensor(is_w_all, dtype=torch.float32, device=self.device)
-        isw_t = isw_t / (isw_t.mean() + 1e-8)
 
         q_all = self.model(X)
         q_sa = q_all.gather(1, actions_t).squeeze(1)
@@ -392,8 +413,15 @@ class DQNAgent:
             self.target_abs_hist.append(float(target.abs().mean().item()))
 
 
-        per_sample_loss = F.smooth_l1_loss(q_sa, target, reduction="none")
-        loss = (isw_t * per_sample_loss).mean() if self.per_beta > 0 else per_sample_loss.mean()
+        per_sample_loss = self.loss_fn(q_sa, target)
+        if self.per_beta > 0:
+            isw_t = torch.as_tensor(is_w_all, device=self.device, dtype=per_sample_loss.dtype)
+            isw_t = isw_t / (isw_t.mean() + 1e-8)   # mean≈1
+            isw_t = torch.clamp(isw_t, 0.5, 3.0)    # gentle symmetric cap
+            loss = (isw_t * per_sample_loss).mean()
+        else:
+            loss = per_sample_loss.mean()
+
         
         q_reg_coeff = 1e-6   # 1e-7 
         q_reg = q_reg_coeff * (q_all.pow(2).mean())
@@ -496,9 +524,7 @@ class DQNAgent:
         return float((num / den).item())
 
     def _maybe_log_target_lag_(self, global_env_step: int, force: bool = False):
-        """Log target lag occasionally, or exactly at a hard update."""
-        if not force and (global_env_step - self._last_lag_log_step) < self.lag_log_interval:
-            return
+        if not force and (global_env_step - self._last_lag_log_step) < self.lag_log_interval: return
         val = self._compute_target_lag_()
         if val is not None:
             self.target_lag_hist.append(val)

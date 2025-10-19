@@ -4,7 +4,7 @@ from typing import List, Optional
 import numpy as np
 import torch
 
-from C4.connect4_lookahead import Connect4Lookahead  # only for type hints
+from C4.fast_connect4_lookahead import Connect4Lookahead  # only for type hints
 from DQN.dqn_model import DQN
 
 ROWS, COLS = 6, 7

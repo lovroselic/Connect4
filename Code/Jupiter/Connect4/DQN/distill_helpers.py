@@ -17,14 +17,81 @@ from tqdm.auto import tqdm
 from torch.utils.data import Dataset, DataLoader
 from collections import OrderedDict
 
+import os, json, hashlib
+from pathlib import Path
+
 _ORACLE_LA = None
 _ORACLE_CACHE = OrderedDict()
 _ORACLE_CACHE_MAX = 200_000  # tune to RAM
 
-_ORACLE_DEPTH = 2
-_ORACLE_TAU = 0.33
-_ORACLE_FRACTION = 0.10
-_CONFIDENCE_TRESHOLD= 1.0
+_ORACLE_DEPTH = 4                   #2
+_ORACLE_TAU = 0.35                  #0.33
+_ORACLE_FRACTION = 0.20             #0.1
+_CONFIDENCE_TRESHOLD= 1.2           #1.0
+
+def _fingerprint_payload(payload: dict) -> str:
+    """Stable short fingerprint for caching."""
+    s = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()[:10]
+
+@torch.no_grad()
+def collect_states_cached(
+    total: int,
+    split: Dict[str, float],
+    *,
+    cache_path: str | os.PathLike,
+    overwrite: bool = False,
+    device: Optional[torch.device] = None,
+    shuffle: bool = True,
+    max_plies_per_game: Optional[int] = None,
+    enable_cache: bool = True,
+    phase_split=(0.35, 0.45, 0.20),
+    cache_filename: str | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, dict]:
+    """
+    Wrapper around collect_states that caches to disk.
+    Returns: (states_cpu, mask_cpu, meta)
+    """
+    cache_dir = Path(cache_path)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build a fingerprint so different settings don't collide
+    meta = {
+        "version": "c4-distill-cache-v1",
+        "total": int(total),
+        "split": split,
+        "shuffle": bool(shuffle),
+        "max_plies_per_game": None if max_plies_per_game is None else int(max_plies_per_game),
+        "enable_cache": bool(enable_cache),
+        "phase_split": tuple(float(x) for x in phase_split),
+    }
+    fp = _fingerprint_payload(meta)
+    fname = cache_filename or f"states_{total}_{fp}.pt"
+    fpath = cache_dir / fname
+
+    if fpath.exists() and not overwrite:
+        blob = torch.load(fpath, map_location="cpu")
+        states_cpu: torch.Tensor = blob["states"]  # (N,4,6,7) float32 on CPU
+        mask_cpu: torch.Tensor   = blob["mask"]    # (N,7) bool on CPU
+        cached_meta: dict        = blob.get("meta", {})
+        tqdm.write(f"[cache] loaded {states_cpu.shape[0]:,} states from {str(fpath)}")
+        return states_cpu, mask_cpu, cached_meta
+
+    # Generate fresh
+    states = collect_states(
+        total, split,
+        device=None,                 # keep on CPU to avoid big device copies
+        shuffle=shuffle,
+        max_plies_per_game=max_plies_per_game,
+        enable_cache=enable_cache,
+        phase_split=phase_split
+    )  # (N,4,6,7) float32 CPU
+    mask = legal_mask_from_states(states)  # (N,7) bool
+
+    blob = {"states": states.cpu(), "mask": mask.cpu(), "meta": meta}
+    torch.save(blob, fpath)
+    tqdm.write(f"[cache] saved {states.shape[0]:,} states to {str(fpath)}")
+    return blob["states"], blob["mask"], meta
 
 def _oracle_cache_get(board_bytes, player, depth):
     key = (board_bytes, int(player), int(depth))

@@ -34,7 +34,7 @@ from __future__ import annotations
 from typing import Optional, List, Tuple
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from DQN.nstep_buffer import NStepBuffer
 
 ROWS, COLS = 6, 7

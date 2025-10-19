@@ -4,9 +4,9 @@ from typing import Dict, List, Optional
 import random
 import numpy as np
 from C4.connect4_env import Connect4Env
-from C4.connect4_lookahead import Connect4Lookahead
+from C4.fast_connect4_lookahead import Connect4Lookahead
 from DQN.teacher_policy import GreedyDQNPolicy
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 
 ROWS, COLS = 6, 7

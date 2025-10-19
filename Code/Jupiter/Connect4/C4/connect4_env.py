@@ -1,6 +1,6 @@
 # connect4_env.py
 import numpy as np
-from C4.connect4_lookahead import Connect4Lookahead
+from C4.fast_connect4_lookahead import Connect4Lookahead
 
 class Connect4Env:
     # reward is for the mower, from mower's perspective

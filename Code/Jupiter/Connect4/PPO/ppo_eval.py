@@ -8,7 +8,7 @@ import random
 import numpy as np
 import torch
 from C4.connect4_env import Connect4Env
-from C4.connect4_lookahead import Connect4Lookahead
+from C4.fast_connect4_lookahead import Connect4Lookahead
 from PPO.ppo_utilities import encode_two_channel_agent_centric
 
 @torch.inference_mode()

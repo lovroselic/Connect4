@@ -2,10 +2,10 @@
 from __future__ import annotations
 from typing import  List, Dict, Tuple, Optional
 import random, numpy as np
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from C4.connect4_env import Connect4Env
-from C4.connect4_lookahead import Connect4Lookahead
+from C4.fast_connect4_lookahead import Connect4Lookahead
 
 ROWS, COLS = 6, 7
 BOARD_COLS = [f"{r}-{c}" for r in range(ROWS) for c in range(COLS)]

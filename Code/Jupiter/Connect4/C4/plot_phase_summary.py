@@ -1,17 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Aug  6 20:18:59 2025
-
-@author: Lovro
-"""
+# plot_phase_summary.py
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-#from DQN.training_phases_config import TRAINING_PHASES
 
-
-# plot_phase_summary.py
 
 def plot_phase_summary(summary_stats, TRAINING_PHASES):
     if not summary_stats:

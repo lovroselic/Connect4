@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from C4.connect4_env import Connect4Env  
-from C4.connect4_lookahead import Connect4Lookahead  
+from C4.fast_connect4_lookahead import Connect4Lookahead  
 
 def _play_one_game_rows(lookA: int, lookB: int, label: str, game_index: int,
                         seed: Optional[int] = None) -> List[Dict[str, float]]:
