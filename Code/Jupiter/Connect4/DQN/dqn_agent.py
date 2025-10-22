@@ -23,13 +23,19 @@ class DQNAgent:
         epsilon_decay=0.995,
         device=None,
         memory_capacity=500_000,
+        
+        #per
         per_alpha=0.55, #0.55
         per_eps=1e-2, #1e-2 
         per_beta_start=0.45, #0.5
         per_beta_end=0.98, #0.9
         per_beta_steps=200_000, #75_000
         per_mix_1step=0.70, #0.65
-        target_update_interval=500, target_update_mode="hard", tau=0.005, #defaults, overwritten by phase change
+        
+        #defaults, overwritten by phase change
+        target_update_interval=500, 
+        target_update_mode="hard", 
+        tau=0.005,
     ):
         self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = DQN().to(self.device)
@@ -53,7 +59,7 @@ class DQNAgent:
         self.reward_scale = 0.01
         self.guard_prob = 0.0                       # controlled by phase
         self.guard_boost_start = 6
-        self.guard_boost_end   = 16
+        self.guard_boost_end   = 17
         self.center_start = 0.3                     # controlled by phase
 
         self.td_hist = deque(maxlen=50_000)

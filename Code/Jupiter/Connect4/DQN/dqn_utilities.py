@@ -731,27 +731,31 @@ def plot_live_training(
 ):
     use_openings = openings is not None
 
+    # +1 row for the new MA-15 panel
     if use_openings:
-        # add two more rows after the bench row
-        nrows = 14
-        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 2.1, 2.1, 2.1, 2.1, 2.6, 3.0]
+        nrows = 15
+        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 3.2, 2.1, 2.1, 2.1, 2.1, 2.6, 3.0]
+        # rows:   0    1    2    3    4    5     6     7     8     9    10   11   12   13   14
     else:
-        nrows = 12
-        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 2.1, 2.1, 2.1, 2.1]
+        nrows = 13
+        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 3.2, 2.1, 2.1, 2.1, 2.1]
+        # rows:   0    1    2    3    4    5     6     7     8     9    10   11   12
+
     heights = [h * height_scale for h in base_heights]
 
     fig_ep = plt.figure(figsize=(12.5, sum(heights) + 1.5), dpi=dpi)
     gs = GridSpec(nrows, 1, height_ratios=heights, hspace=hspace)
 
-    # main time-series
-    ax_reward = fig_ep.add_subplot(gs[0, 0])
-    ax_win    = fig_ep.add_subplot(gs[1, 0], sharex=ax_reward)
-    ax_eps    = fig_ep.add_subplot(gs[2, 0], sharex=ax_reward)
-    ax_mem    = fig_ep.add_subplot(gs[3, 0], sharex=ax_reward)
-    ax_tu     = fig_ep.add_subplot(gs[4, 0], sharex=ax_reward)
-    ax_bench  = fig_ep.add_subplot(gs[5, 0], sharex=ax_reward)
-    ax_bench_s35 = fig_ep.add_subplot(gs[6, 0], sharex=ax_reward)
-    ax_bench_s57 = fig_ep.add_subplot(gs[7, 0], sharex=ax_reward)
+    # --- time-series axes ---
+    ax_reward     = fig_ep.add_subplot(gs[0, 0])
+    ax_win        = fig_ep.add_subplot(gs[1, 0], sharex=ax_reward)
+    ax_eps        = fig_ep.add_subplot(gs[2, 0], sharex=ax_reward)
+    ax_mem        = fig_ep.add_subplot(gs[3, 0], sharex=ax_reward)
+    ax_tu         = fig_ep.add_subplot(gs[4, 0], sharex=ax_reward)
+    ax_bench      = fig_ep.add_subplot(gs[5, 0], sharex=ax_reward)
+    ax_bench_s35  = fig_ep.add_subplot(gs[6, 0], sharex=ax_reward)
+    ax_bench_s57  = fig_ep.add_subplot(gs[7, 0], sharex=ax_reward)
+    ax_bench_s15  = fig_ep.add_subplot(gs[8, 0], sharex=ax_reward)  # NEW MA-15 panel
 
     # Reward
     plot_moving_averages(ax_reward, reward_history, [10, 25, 100, 500],
@@ -760,7 +764,7 @@ def plot_live_training(
     ax_reward.plot(reward_history, label='Reward', alpha=0.45)
     ax_reward.set_ylabel('Reward'); ax_reward.legend(loc='lower left', fontsize=8); ax_reward.grid(True, alpha=0.35)
 
-    # Win rate + epsilon
+    # Win rate + epsilon overlay
     plot_moving_averages(ax_win, win_history, [25, 100, 250, 500],
                          colors=['green', 'red', '#11F', '#000'], styles=['-', '-', '--', '--'],
                          labels=['25-ep', '100-ep', '250-ep', '500-ep'])
@@ -782,47 +786,51 @@ def plot_live_training(
     _plot_tu_axis(ax_tu, tu_interval_history or [], tau_history or [], tu_mode_history or [])
     ax_tu.set_ylabel("Target Update"); ax_tu.grid(True, alpha=0.35)
 
-    # Benchmarks (raw only)
+    # Benchmarks (raw)
     _plot_bench_on_axis(
         ax_bench, bench_history, smooth_k=0,
         training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
     )
-    ax_bench.set_xlabel("Episode")
-    ax_bench.set_title("Benchmarks (raw)", fontsize=10)
+    ax_bench.set_xlabel("Episode"); ax_bench.set_title("Benchmarks (raw)", fontsize=10)
 
-    # Benchmarks smoothed: 
+    # Benchmarks (MA 3)
     _plot_bench_on_axis(
         ax_bench_s35, bench_history, smooth_k=3,
         training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
     )
-    ax_bench_s35.set_xlabel("Episode")
-    ax_bench_s35.set_title("Benchmarks (MA 3)", fontsize=10)
+    ax_bench_s35.set_xlabel("Episode"); ax_bench_s35.set_title("Benchmarks (MA 3)", fontsize=10)
 
-    # Benchmarks smoothed:
+    # Benchmarks (MA 7)
     _plot_bench_on_axis(
         ax_bench_s57, bench_history, smooth_k=7,
         training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
     )
-    ax_bench_s57.set_xlabel("Episode")
-    ax_bench_s57.set_title("Benchmarks (MA7)", fontsize=10)
+    ax_bench_s57.set_xlabel("Episode"); ax_bench_s57.set_title("Benchmarks (MA 7)", fontsize=10)
 
-    # Action-mix triplet + opponent ε-branch
-    ax_mix_explore = fig_ep.add_subplot(gs[8, 0])
-    ax_mix_guard   = fig_ep.add_subplot(gs[9, 0])
-    ax_mix_eps     = fig_ep.add_subplot(gs[10, 0])
-    ax_opp_eps     = fig_ep.add_subplot(gs[11, 0])
+    # Benchmarks (MA 15) — NEW
+    _plot_bench_on_axis(
+        ax_bench_s15, bench_history, smooth_k=15,
+        training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
+    )
+    ax_bench_s15.set_xlabel("Episode"); ax_bench_s15.set_title("Benchmarks (MA 15)", fontsize=10)
+
+    # Action-mix triplet + opponent ε-branch (shifted down by one row)
+    ax_mix_explore = fig_ep.add_subplot(gs[9, 0])
+    ax_mix_guard   = fig_ep.add_subplot(gs[10, 0])
+    ax_mix_eps     = fig_ep.add_subplot(gs[11, 0])
+    ax_opp_eps     = fig_ep.add_subplot(gs[12, 0])
 
     _plot_action_mix_triplet(ax_mix_explore, ax_mix_guard, ax_mix_eps, agent)
     _plot_opp_epsdetail(ax_opp_eps, agent)
 
     # Openings (hist + rate)
     if use_openings:
-        ax_hist = fig_ep.add_subplot(gs[12, 0])
-        ax_rate = fig_ep.add_subplot(gs[13, 0], sharex=ax_reward)
+        ax_hist = fig_ep.add_subplot(gs[13, 0])
+        ax_rate = fig_ep.add_subplot(gs[14, 0], sharex=ax_reward)
         _draw_openings_on_axes(ax_hist, ax_rate, openings, training_phases=TRAINING_PHASES, rate_ylim=openings_ylim)
 
-    # Phase markers (time-series axes only)
-    axes = [ax_reward, ax_win, ax_eps, ax_mem, ax_tu, ax_bench, ax_bench_s35, ax_bench_s57]
+    # Phase markers on time-series axes (include new MA-15 axis)
+    axes = [ax_reward, ax_win, ax_eps, ax_mem, ax_tu, ax_bench, ax_bench_s35, ax_bench_s57, ax_bench_s15]
     if use_openings:
         axes += [ax_rate]
     for ax in axes:
@@ -835,6 +843,7 @@ def plot_live_training(
     )
 
     # ---------- step-based metrics ----------
+    fig_step = None
     if agent:
         plots = []
         if getattr(agent, "loss_hist", None):        plots.append(("Loss",          agent.loss_hist,        "purple"))
@@ -853,18 +862,14 @@ def plot_live_training(
                 if label == "Loss" and len(data) >= 100:
                     ma = np.convolve(data, np.ones(100)/100, mode='valid')
                     ax.plot(range(99, len(data)), ma, label='100-ep MA', color='black', linestyle='--')
-                ax.set_ylabel(label)
-                ax.legend()
-                ax.grid(True)
+                ax.set_ylabel(label); ax.legend(); ax.grid(True)
             fig_step.suptitle("Step-based Metrics", y=0.98)
 
-    # save
     if save:
         out_png = os.path.join(path, f"{title}_training_report.png")
         fig_ep.savefig(out_png, dpi=dpi, bbox_inches="tight")
-        if not return_figs:
-            try:
-                plt.close(fig_step)
-            except Exception: pass
+        if not return_figs and fig_step is not None:
+            plt.close(fig_step)
 
-    if return_figs: return fig_ep, (fig_step if agent else None)
+    if return_figs:
+        return fig_ep, fig_step

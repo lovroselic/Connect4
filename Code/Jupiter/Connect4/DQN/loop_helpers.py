@@ -55,7 +55,7 @@ def maybe_opponent_opening(env, agent, episode, state, *, phase, frozen_opp, loo
             openings=openings, env_steps=env_steps
         )
     
-    return state, ply_idx, env_steps
+    return state, env.done, ply_idx, env_steps
 
 def finalize_if_done(env):
     """Returns (is_done, final_result, total_reward)."""

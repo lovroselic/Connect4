@@ -3,18 +3,18 @@
 
 #final evaluation
 EVALUATION_OPPONENTS = {
-    "Random": 203,
-    "Lookahead-1": 101,
-    "Lookahead-2": 53,
-    "Lookahead-3": 49,
-    "Lookahead-4": 37,
+    "Random": 200,
+    "Lookahead-1": 100,
+    "Lookahead-2": 50,
+    "Lookahead-3": 50,
+    "Lookahead-4": 30,
 }
 
 #online training evals
 EVAL_CFG = {
-    "Random": 101, 
-    "Lookahead-1": 73,
-    "Lookahead-2": 51,
-    "Lookahead-3": 49,
-    "Lookahead-4": 29,
+    "Random": 100, 
+    "Lookahead-1": 50,
+    "Lookahead-2": 40,
+    "Lookahead-3": 30,
+    "Lookahead-4": 20,
     } 

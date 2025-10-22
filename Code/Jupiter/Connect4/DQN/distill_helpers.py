@@ -24,10 +24,10 @@ _ORACLE_LA = None
 _ORACLE_CACHE = OrderedDict()
 _ORACLE_CACHE_MAX = 200_000  # tune to RAM
 
-_ORACLE_DEPTH = 4                   #2
-_ORACLE_TAU = 0.35                  #0.33
-_ORACLE_FRACTION = 0.20             #0.1
-_CONFIDENCE_TRESHOLD= 1.2           #1.0
+_ORACLE_DEPTH = 4                   #2->4
+_ORACLE_TAU = 0.35                  #0.33 -->0.35
+_ORACLE_FRACTION = 0.25             #0.1 --> 0.2
+_CONFIDENCE_TRESHOLD= 1.3           #1.0 --> 1.2
 
 def _fingerprint_payload(payload: dict) -> str:
     """Stable short fingerprint for caching."""
