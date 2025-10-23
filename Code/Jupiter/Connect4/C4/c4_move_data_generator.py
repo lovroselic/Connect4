@@ -1,7 +1,7 @@
 # c4_move_data_generator.py
 from __future__ import annotations
 
-from typing import Dict, List, Iterable, Optional
+from typing import Dict, List, Iterable, Any
 import random
 import numpy as np
 import pandas as pd
@@ -9,8 +9,7 @@ import pandas as pd
 from C4.connect4_env import Connect4Env  
 from C4.fast_connect4_lookahead import Connect4Lookahead  
 
-def _play_one_game_rows(lookA: int, lookB: int, label: str, game_index: int,
-                        seed: Optional[int] = None) -> List[Dict[str, float]]:
+def _play_one_game_rows(lookA: int, lookB: int, label: str, game_index: int, seed: int = 666, CFG: Dict[str, Any] = None) -> List[Dict[str, Any]]:
     """
     Play ONE game; return a list of ROWS, one per MOVE, each row containing:
       {"label": label, "reward": immediate_step_reward, "game": game_index, "ply": ply(1-based), "0-0": ..., ..., "5-6": ...}
@@ -27,11 +26,20 @@ def _play_one_game_rows(lookA: int, lookB: int, label: str, game_index: int,
     done = False
     ply = 1  # 1-based as before
     rows: List[Dict[str, float]] = []
+    
+    noiseA = CFG.get("noiseA", 0.0)
+    noiseB = CFG.get("noiseB", 0.0)
+    FL = CFG.get("forceLoss", 0.0)
 
     while not done:
         player = env.current_player
         depth  = lookA if player == 1 else lookB
-        action = la.n_step_lookahead(env.board, player, depth=depth)
+        p_mist = noiseA if player == 1 else noiseB
+        
+        if p_mist > 0:
+            action = choose_move_noisy(env, la, player, depth, p_mistake=p_mist, FL=FL)
+        # normal action
+        else: action = la.n_step_lookahead(env.board, player, depth=depth)
 
         _, reward, done = env.step(action)  # immediate mover-centric reward
 
@@ -52,7 +60,7 @@ def _play_one_game_rows(lookA: int, lookB: int, label: str, game_index: int,
 
 
 
-def generate_dataset(plays: Dict[str, Dict[str, int]], seed: Optional[int] = None) -> List[Dict[str, float]]:
+def generate_dataset(plays: Dict[str, Dict[str, int]], seed: int = 666, CFG: Dict[str, Any] = None) -> List[Dict[str, float]]:
     """
     Given a PLAYS dict like {"L3L1":{"A":3,"B":1,"games":N}, "L2":{"A":2,"B":2,"games":M}},
     return a FLAT list of PER-MOVE rows across all requested games.
@@ -65,7 +73,7 @@ def generate_dataset(plays: Dict[str, Dict[str, int]], seed: Optional[int] = Non
         n      = int(cfg.get("games", 1))
         for g in range(n):
             s = None if seed is None else rng.randint(0, 2**31 - 1)
-            all_rows.extend(_play_one_game_rows(depthA, depthB, label, game_index=g, seed=s))
+            all_rows.extend(_play_one_game_rows(depthA, depthB, label, game_index=g, seed=s, CFG=CFG))
     return all_rows
 
 
@@ -104,3 +112,37 @@ def upsert_excel(df_new: pd.DataFrame, path: str) -> pd.DataFrame:
     df_all = df_all.drop_duplicates().reset_index(drop=True)
     df_all.to_excel(path, index=False)
     return df_all
+
+
+# --- add to c4_move_data_generator.py ---
+def _safe_alternatives(env, la, player, FL):
+    legal = la.get_legal_moves(env.board)           # center-first order OK
+    opp = 2 if player == 1 else 1
+    safe, unsafe = [], []
+    for c in legal:
+        after = la.drop_piece(env.board, c, player)  # simulate
+        # forbid giving opponent an immediate win or easy fork
+        opp_wins = la.count_immediate_wins(after, opp)
+        fork = la.compute_fork_signals(env.board, after, mover=player)
+        
+        if len(opp_wins) == 0 and fork["opp_after"] < 2: safe.append(c)
+        else: unsafe.append(c)
+        
+    if random.random() <= FL and len(unsafe) > 0: return [random.choice(unsafe)]
+    return safe
+
+def choose_move_noisy(env, la, player, depth, p_mistake=0.15, prefer_offcenter=True, FL = 0):
+    # clean best
+    best = la.n_step_lookahead(env.board, player, depth=depth)
+    if random.random() >= p_mistake: return best
+
+    # safe alternatives (excluding best)
+    alts = [c for c in _safe_alternatives(env, la, player, FL) if c != best]
+    if not alts: return best  # fall back if no safe alternative
+
+    if prefer_offcenter:
+        # bias away from center to de-bias the dataset
+        center = la.CENTER_COL
+        alts.sort(key=lambda c: abs(center - c), reverse=True)
+        alts = alts[:min(2, len(alts))]  # pick among the farthest 1–2
+    return random.choice(alts)

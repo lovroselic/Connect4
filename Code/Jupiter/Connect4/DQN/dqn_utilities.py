@@ -15,11 +15,12 @@ from PPO.ppo_eval import evaluate_actor_critic_model
 from C4.eval_oppo_dict import EVAL_CFG
 
 
-TAU_DEFAULT     = 0.006                         # phase controlled
-GUARD_DEFAULT   = 0.30                          # phase controlled
-CENTER_START    = 0.30                          # phase controlled
-SEED_FRACTION   = 0.90                          # phase controlled
-LR              = 2e-4                          # phase controlled
+TAU_DEFAULT         = 0.006                         # phase controlled
+GUARD_DEFAULT       = 0.30                          # phase controlled
+CENTER_START        = 0.30                          # phase controlled
+MIN_SEED_FRACTION   = 0.0                           # phase controlled
+MAX_SEED_FRACTION   = 1.0                           # phase controlled
+LR                  = 2e-4                          # phase controlled
 
 @torch.no_grad()
 def _flatten_params(module: torch.nn.Module) -> torch.Tensor:
@@ -201,7 +202,8 @@ def get_phase(episode):
                 phase_data.get("tau", TAU_DEFAULT),
                 phase_data.get("guard_prob", GUARD_DEFAULT),
                 phase_data.get("center_start", CENTER_START),
-                phase_data.get("seed_fraction", SEED_FRACTION),
+                phase_data.get("min_seed_fraction", MIN_SEED_FRACTION),
+                phase_data.get("max_seed_fraction", MAX_SEED_FRACTION),
                 phase_data.get("lr", LR),
             )
 
@@ -213,7 +215,8 @@ def handle_phase_change(
         prev_frozen_opp, 
         env, episode, device, 
         Lookahead, training_session, 
-        guard_prob, center_start, seed_fraction,
+        guard_prob, center_start, 
+        min_seed_fraction,max_seed_fraction,
         lr
         ):
     
@@ -235,7 +238,8 @@ def handle_phase_change(
         agent.epsilon = epsilon
         agent.epsilon_min = epsilon_min
         agent.guard_prob = guard_prob
-        agent.max_seed_frac = seed_fraction
+        agent.min_seed_frac = min_seed_fraction
+        agent.max_seed_frac = max_seed_fraction
         agent.memory.prune(memory_prune_low, mode="low_priority")
         for g in agent.optimizer.param_groups: g["lr"] = lr
         agent.lr = lr
@@ -559,7 +563,8 @@ def display_dict_as_tab(DICT):
         "epsilon", "epsilon_min",
         "memory_prune_low",
         "sumWeights", "sumOppo",
-        "TU_mode", "tau", "guard_prob", "center_start", "seed_fraction",
+        "TU_mode", "tau", "guard_prob", "center_start", 
+        "min_seed_fraction", "max_seed_fraction",
         "lr"
     ]
     

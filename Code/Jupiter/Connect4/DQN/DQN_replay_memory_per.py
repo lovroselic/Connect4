@@ -1,6 +1,7 @@
 # DQN_replay_memory_per.py
 import numpy as np
 from collections import namedtuple
+import math
 
 Transition      = namedtuple("Transition",      ["state", "action", "reward",   "next_state",   "done",   "player"])
 NStepTransition = namedtuple("NStepTransition", ["state", "action", "reward_n", "next_state_n", "done_n", "player", "n_steps"])
@@ -186,27 +187,54 @@ class PrioritizedReplayMemory:
         return (s1, sn), (i1, in_), (w1, wn)
 
   
-    def sample_mixed_seedaware(self, batch_size, mix=0.5, beta=0.4, max_seed_frac=0.10):
-        """Seed-aware sampler: caps seeds to at most max_seed_frac of each sub-batch."""
-        b1 = int(batch_size * mix)
-        bn = batch_size - b1
-
+    def sample_mixed_seedaware(self, batch_size, mix=0.5, beta=0.4, max_seed_frac=0.10, min_seed_frac=0.03):
+        """Seed-aware sampler: keeps seeds within [min_seed_frac, max_seed_frac] of each sub-batch."""
+    
         def draw_seedaware(bank, prio, is_seed, count):
-            if count <= 0 or not bank:
-                return [], np.empty((0,), np.int64), np.ones((0,), np.float32)
-            k_seed = min(int(round(count * max_seed_frac)), int(is_seed[:len(bank)].sum()))
+            if count <= 0 or not bank: return [], np.empty((0,), np.int64), np.ones((0,), np.float32)
+    
+            n_items       = len(bank)
+            n_seed_avail  = int(is_seed[:n_items].sum())
+            n_main_avail  = n_items - n_seed_avail
+    
+            # targets for this sub-batch
+            lo = int(math.ceil(count * min_seed_frac))
+            hi = int(math.floor(count * max_seed_frac))
+            hi = min(hi, count)    
+            if hi < lo: hi = lo             
+    
+            # pick seed count with availability-aware clamping
+            k_seed = min(max(lo, 0), hi)        # start within [lo, hi]
+            k_seed = min(k_seed, n_seed_avail)  # cannot exceed what we have
+    
+            # ensure we can still fill the batch if main is scarce
             k_main = count - k_seed
+            if k_main > n_main_avail:
+                deficit = k_main - n_main_avail
+                k_main  = n_main_avail
+                # break-glass fallback: allow a temporary hi breach if needed to fill the batch
+                k_seed  = min(n_seed_avail, k_seed + deficit)
+    
+            # final safety
+            k_seed = min(max(k_seed, 0), count)
+            k_main = count - k_seed
+    
             s_seed = self._draw(bank, prio, k_seed, beta, mask=is_seed)[0:3]
             s_main = self._draw(bank, prio, k_main, beta, mask=~is_seed)[0:3]
-            # merge
-            items  = (s_seed[0] + s_main[0])
-            idx    = np.concatenate([s_seed[1], s_main[1]]) if s_seed[1].size or s_main[1].size else np.empty((0,), np.int64)
-            weights= np.concatenate([s_seed[2], s_main[2]]) if s_seed[2].size or s_main[2].size else np.ones((0,), np.float32)
+    
+            items   = (s_seed[0] + s_main[0])
+            idx     = (np.concatenate([s_seed[1], s_main[1]]) if s_seed[1].size or s_main[1].size else np.empty((0,), np.int64))
+            weights = (np.concatenate([s_seed[2], s_main[2]]) if s_seed[2].size or s_main[2].size else np.ones((0,), np.float32))
             return items, idx, weights
-
+        
+        
+        b1 = int(batch_size * mix)
+        bn = batch_size - b1
+    
         s1, i1, w1 = draw_seedaware(self.bank_1, self.prio_1, self.is_seed_1, b1)
         sn, in_, wn = draw_seedaware(self.bank_n, self.prio_n, self.is_seed_n, bn)
         return (s1, sn), (i1, in_), (w1, wn)
+
 
     def sample(self, batch_size, beta=0.4):
         return self.sample_mixed(batch_size, mix=1.0, beta=beta)[0]

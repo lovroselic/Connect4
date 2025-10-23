@@ -1,6 +1,5 @@
 # fast_connect4_lookahead.py
 
-
 import random
 import numpy as np
 from typing import List, Tuple
@@ -28,6 +27,11 @@ class Connect4Lookahead:
         # CHANGE: precompute windows; center-first order
         self._windows: List[List[Tuple[int, int]]] = self._precompute_windows()
         self._CENTER_ORDER = [3, 4, 2, 5, 1, 6, 0]
+
+        # === CHANGED: add a SOFT_MATE score tied to your scale (not astronomical)
+        # This is large enough to dominate evaluate_leaf noise, but stays in the same ballpark.
+        # Default: weights[4]=1000 -> SOFT_MATE = 100_000
+        self.SOFT_MATE: 100.0 *float(self.weights[4])
 
     # ------------------------ original helpers (kept) ------------------------
 
@@ -125,13 +129,23 @@ class Connect4Lookahead:
             wins_now.sort(key=lambda x: abs(self.CENTER_COL - x))
             return wins_now[0]
 
+        # === CHANGED: must-block opponent's win-in-1 at root (keeps training sane)
+        opp_wins_now = []
+        for c in legal:
+            r = self._make_move(c, -player)
+            if self._is_win_from(r, c, -player):
+                opp_wins_now.append(c)
+            self._unmake_move(c)
+        if opp_wins_now:
+            opp_wins_now.sort(key=lambda x: abs(self.CENTER_COL - x))
+            return opp_wins_now[0]
+
         best_score = -float("inf")
         best_moves = []
 
         for col in self._ordered_moves(legal):
             r = self._make_move(col, player)
-            if self._is_win_from(r, col, player):
-                score = self._evaluate_leaf(self._root_player)
+            if self._is_win_from(r, col, player): score = self.SOFT_MATE
             else:
                 score = self._ab_minimax(depth - 1, -player, -float("inf"), float("inf"))
             self._unmake_move(col)
@@ -142,6 +156,7 @@ class Connect4Lookahead:
             elif score == best_score:
                 best_moves.append(col)
 
+        # Keep diversity for training (same behavior as before)
         best_moves.sort(key=lambda x: abs(self.CENTER_COL - x))
         K = min(3, len(best_moves))
         return random.choice(best_moves[:K])
@@ -196,23 +211,20 @@ class Connect4Lookahead:
 
         maximizing = (to_move == self._root_player)
 
-        # Early mate-in-1 cut: if the side-to-move can win immediately,
-        # return the child's real heuristic in root POV.
         for c in legal:
             r = self._make_move(c, to_move)
             win = self._is_win_from(r, c, to_move)
-            if win:
-                score = self._evaluate_leaf(self._root_player)
-                self._unmake_move(c)
-                return score
             self._unmake_move(c)
+            if win:
+                return self.SOFT_MATE if to_move == self._root_player else -self.SOFT_MATE
 
         if maximizing:
             value = -float("inf")
             for col in self._ordered_moves(legal):
                 r = self._make_move(col, to_move)
+                
                 if self._is_win_from(r, col, to_move):
-                    child_val = self._evaluate_leaf(self._root_player)
+                    child_val = self.SOFT_MATE if to_move == self._root_player else -self.SOFT_MATE
                 else:
                     child_val = self._ab_minimax(depth - 1, -to_move, alpha, beta)
                 self._unmake_move(col)
@@ -228,7 +240,7 @@ class Connect4Lookahead:
             for col in self._ordered_moves(legal):
                 r = self._make_move(col, to_move)
                 if self._is_win_from(r, col, to_move):
-                    child_val = self._evaluate_leaf(self._root_player)
+                    child_val = self.SOFT_MATE if to_move == self._root_player else -self.SOFT_MATE
                 else:
                     child_val = self._ab_minimax(depth - 1, -to_move, alpha, beta)
                 self._unmake_move(col)
@@ -241,7 +253,6 @@ class Connect4Lookahead:
             return value
 
     # --------------------------- fast evaluation ----------------------------
-    
 
     def _evaluate_leaf(self, pov: int) -> float:
         B = self._board
@@ -271,7 +282,6 @@ class Connect4Lookahead:
         if my_imm >= 2: score += self.fork_w * (my_imm - 1)
         if opp_imm >= 2: score -= DEF * (self.fork_w * (opp_imm - 1))
         return score
-
 
     # ----------------------- in-place board ops/checks -----------------------
 

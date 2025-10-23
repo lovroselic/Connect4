@@ -85,6 +85,7 @@ class DQNAgent:
         self._center_tie_w = np.array([1.0, 1.0, 1.2, 1.6, 1.2, 1.0, 1.0], dtype=np.float32)
         
         self.max_seed_frac = 0.90                   # 0.95
+        self.min_seed_frac = 0.10                   # 0.15
         
         self.target_lag_hist = deque(maxlen=50_000)  # ||θ-θ̄||/||θ||
         self.lag_log_interval = 250                  # log every N env steps (tune)
@@ -333,7 +334,8 @@ class DQNAgent:
         
         if (len(self.memory.bank_1) + len(self.memory.bank_n)) < batch_size: return
         
-        (batch_1, batch_n), (idx_1, idx_n), (w_1, w_n) = self.memory.sample_mixed_seedaware(batch_size, mix=mix_1step, beta=self.per_beta, max_seed_frac=self.max_seed_frac)
+        (batch_1, batch_n), (idx_1, idx_n), (w_1, w_n) = self.memory.sample_mixed_seedaware(batch_size, mix=mix_1step, beta=self.per_beta, 
+                                                                                            max_seed_frac=self.max_seed_frac, min_seed_frac=self.min_seed_frac)
     
         batch_all = list(batch_1) + list(batch_n)
         n1 = len(batch_1)
