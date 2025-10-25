@@ -10,12 +10,12 @@ class PrioritizedReplayMemory:
     def __init__(
         self,
         capacity: int,
-        alpha: float = 0.6, ##0.5
-        eps: float = 0.02 ,  #5e-3 2e-2
-        init_boost_terminal: float = 1.75, #1,5
-        init_boost_oppmove: float = 1.075, #1.05
-        init_percentile: float = 85.0,   #85
-        init_boost_seed: float = 1.00,   #95
+        alpha: float = 0.6,                     #0.6
+        eps: float = 0.02 ,                     #0.02
+        init_boost_terminal: float = 1.75,      #1.75
+        init_boost_oppmove: float = 1.075,      #1.075
+        init_percentile: float = 85.0,          #85
+        init_boost_seed: float = 1.01,          #1.00
     ):
         self.capacity = int(capacity)
         self.alpha = float(alpha)

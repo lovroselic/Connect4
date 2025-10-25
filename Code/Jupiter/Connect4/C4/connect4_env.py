@@ -85,27 +85,16 @@ class Connect4Env:
         self.done, self.winner = self.check_game_over()
         
         if not self.done:
-            # Get patterns for current board
-            patterns_current = self.lookahead.board_to_patterns(self.board, [self.current_player, opponent_before])
-            patterns_before = self.lookahead.board_to_patterns(board_before, [self.current_player, opponent_before])
             
-            # COUNT THREATS
-            threat2_count = self.lookahead.count_windows(patterns_current, 2, self.current_player)
-            threat3_count = self.lookahead.count_windows(patterns_current, 3, self.current_player)
-            
-            # COUNT BLOCKS
-            opp2_before = self.lookahead.count_windows(patterns_before, 2, opponent_before)
-            opp2_after = self.lookahead.count_windows(patterns_current, 2, opponent_before)
-            block2_count = max(0, opp2_before - opp2_after)
-            
-            opp3_before = self.lookahead.count_windows(patterns_before, 3, opponent_before)
-            opp3_after = self.lookahead.count_windows(patterns_current, 3, opponent_before)
-            block3_count = max(0, opp3_before - opp3_after)
+            # Fast counts via precomputed windows
+            threat2_count = self.lookahead.count_pure(self.board, self.current_player, 2)
+            threat3_count = self.lookahead.count_pure(self.board, self.current_player, 3)
+            block2_count  = self.lookahead.count_pure_block_delta(board_before, self.board, opponent_before, 2)
+            block3_count  = self.lookahead.count_pure_block_delta(board_before, self.board, opponent_before, 3)
             
             center_reward = self.CENTER_REWARD * self.CENTER_WEIGHTS[action]
             
             # Extra if it is **bottom-center** 
-            opening_decay = np.exp(-self.ply / self.OPENING_DECAY_STEPS)
             if action == 3 and placed_row == self.ROWS - 1:
                 opening_decay = np.exp(-self.ply / self.OPENING_DECAY_STEPS)
                 bonus = self.CENTER_REWARD_BOTTOM * (2.0 if self.ply == 0 else opening_decay)

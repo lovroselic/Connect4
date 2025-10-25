@@ -13,7 +13,8 @@ warnings.filterwarnings("ignore", message="You are using `torch.load`.*weights_o
 # ----------------------------- Eval helpers -----------------------------
 
 def set_eval_mode(agent, epsilon=0.0, guard_prob=0.0):
-    agent.model.eval(); agent.target_model.eval()
+    agent.model.eval() 
+    agent.target_model.eval()
     agent.epsilon = float(epsilon)
     agent.epsilon_min = float(epsilon)
     agent.guard_prob = float(guard_prob)
@@ -75,26 +76,22 @@ def mean_ci(scores, z=1.96):
 
 def q_act_pure(agent, state_abs, valid_actions, player):
     """
-    Pure Q evaluation (no epsilon, no guard).
-    'state_abs' is absolute planes: [ +1 plane, -1 plane, row, col ].
-    We re-orient to agent-first planes using the true mover 'player' (+1/-1).
+    Pure Q evaluation with symmetry averaging + legal-aware tie-break,
+    oriented to the true mover 'player' (+1/-1).
     """
     assert state_abs.shape == (4, 6, 7), f"state shape {state_abs.shape} unexpected"
     assert len(valid_actions) > 0, "no valid actions"
 
-    # Orient to agent-first channels (what the net expects)
+    # Re-orient absolute planes so channel 0 is the *current mover*
     oriented = agent._agent_planes(state_abs, player)   # (4,6,7)
 
-    x = torch.tensor(oriented, dtype=torch.float32, device=agent.device).unsqueeze(0)
+    # Symmetry-averaged Q to match training exploitation
     with torch.no_grad():
-        q = agent.model(x).detach().cpu().numpy()[0]    # (7,)
+        q = agent._symmetry_avg_q(oriented)  # returns np.ndarray shape (7,)
 
-    # Mask illegal moves
-    masked = np.full_like(q, -np.inf)
-    for a in valid_actions:
-        masked[a] = q[a]
-    action = int(np.argmax(masked))
-    return action
+    # Same legal & tie behavior as in training
+    return agent._argmax_legal_with_tiebreak(q, valid_actions)
+
 
 
 # ----------------------------- Game loop -----------------------------

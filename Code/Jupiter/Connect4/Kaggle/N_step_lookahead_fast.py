@@ -2,7 +2,7 @@
 
 def N_step_lookahead_fast(obs, config):
     """
-    ConnectX agent with fast in-place alpha–beta lookahead and gravity-aware heuristic.
+    ConnectX agent with fast in-place alpha–beta minimax lookahead and gravity-aware heuristic.
     Converted from my Connect-4 game in JavaScript: https://www.laughingskull.org/Games/Connect4/Connect4.php
     Source: https://github.com/lovroselic/Connect4
     """
@@ -164,7 +164,7 @@ def N_step_lookahead_fast(obs, config):
     fork_w = 150.0
     DEFENSIVE = 1.5
     FLOATING_NEAR = 0.50   # needs exactly 1 filler to become supported
-    FLOATING_FAR  = 0.25   # needs 2+ fillers
+    FLOATING_FAR  = 0.25   # needs 2+ fillers, still counts but less
 
     # Pattern weights for counts in a 4-window; unused indices default to 0
     _weights_dict = {2: 10.0, 3: 100.0, 4: 1000.0}
@@ -199,7 +199,7 @@ def N_step_lookahead_fast(obs, config):
 
     # -------------------------- load observation ----------------------------
     # Convert flat top-based board (0,1,2) to bottom-based lists with 2 -> -1.
-    # my js game was not Kaggle compatible
+    # my js game does not have Kaggle competition compatible data sctructure
     
     grid = np.asarray(obs.board, dtype=int).reshape(ROWS, COLS)
     for r_np in range(ROWS):
@@ -220,32 +220,22 @@ def N_step_lookahead_fast(obs, config):
     # Root player's POV: 1 for mark==1, -1 for mark==2
     ROOT = 1 if int(obs.mark) == 1 else -1
 
-    
-
-    # ------------------------------ policy ----------------------------------
+    # ------------------------------ Main ----------------------------------
     
     legal = legal_moves()
 
     # Immediate winning move now? 
-    wins_now = []
     for c in legal:
         r = make_move(c, ROOT)
-        if is_win_from(r, c, ROOT): wins_now.append(c)
+        won = is_win_from(r, c, ROOT)
         unmake_move(c)
-        
-    if wins_now:
-        wins_now.sort(key=lambda x: abs(CENTER_COL - x))
-        return int(wins_now[0])
+        if won: return c
     
-    opp_wins_now = []
     for c in legal:
         r = make_move(c, -ROOT)
-        if is_win_from(r, c, -ROOT): opp_wins_now.append(c)
+        won = is_win_from(r, c, -ROOT)
         unmake_move(c)
-    
-    if opp_wins_now:
-        opp_wins_now.sort(key=lambda x: abs(CENTER_COL - x))
-        return int(opp_wins_now[0])
+        if won: return c
 
     # Lookahead
     best_score = -float("inf")

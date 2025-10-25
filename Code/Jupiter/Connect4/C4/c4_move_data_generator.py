@@ -114,22 +114,27 @@ def upsert_excel(df_new: pd.DataFrame, path: str) -> pd.DataFrame:
     return df_all
 
 
-# --- add to c4_move_data_generator.py ---
 def _safe_alternatives(env, la, player, FL):
-    legal = la.get_legal_moves(env.board)           # center-first order OK
-    opp = 2 if player == 1 else 1
+
+    p = -1 if player in (-1, 2) else 1
+    opp = -p
+
+    la._load_from_numpy(env.board) # Load the top-based NumPy board ONCE into lookahead's internal state
+
     safe, unsafe = [], []
-    for c in legal:
-        after = la.drop_piece(env.board, c, player)  # simulate
-        # forbid giving opponent an immediate win or easy fork
-        opp_wins = la.count_immediate_wins(after, opp)
-        fork = la.compute_fork_signals(env.board, after, mover=player)
-        
-        if len(opp_wins) == 0 and fork["opp_after"] < 2: safe.append(c)
+
+    for c in la._legal_moves():
+        la._make_move(c, p)
+
+        opp_immediate = la._count_immediate_wins(opp)
+        if opp_immediate == 0: safe.append(c)
         else: unsafe.append(c)
-        
-    if random.random() <= FL and len(unsafe) > 0: return [random.choice(unsafe)]
+
+        la._unmake_move(c)
+
+    if unsafe and random.random() <= FL: return [random.choice(unsafe)]
     return safe
+
 
 def choose_move_noisy(env, la, player, depth, p_mistake=0.15, prefer_offcenter=True, FL = 0):
     # clean best

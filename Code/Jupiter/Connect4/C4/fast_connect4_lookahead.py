@@ -1,7 +1,7 @@
 # fast_connect4_lookahead.py
 
 import random
-import numpy as np
+#import numpy as np
 from typing import List, Tuple
 
 
@@ -14,26 +14,23 @@ class Connect4Lookahead:
     fork_w = 150
     DEFENSIVE = 1.5
     FLOATING_NEAR = 0.50   # needs exactly 1 filler to be supported
-    FLOATING_FAR  = 0.25   # needs 2+ fillers
+    FLOATING_FAR  = 0.25   # needs 2+ fillers, still counts but less
 
     def __init__(self, weights=None):
         self.weights = weights if weights else {2: 10, 3: 100, 4: 1000}
 
-        # CHANGE: internal fast state (bottom-based rows)
+        # internal fast state (bottom-based rows)
         self._board: List[List[int]] = [[0] * self.COLS for _ in range(self.ROWS)]
         self._heights: List[int] = [0] * self.COLS
         self._root_player: int = 1
 
-        # CHANGE: precompute windows; center-first order
+        # precompute windows; center-first order
         self._windows: List[List[Tuple[int, int]]] = self._precompute_windows()
         self._CENTER_ORDER = [3, 4, 2, 5, 1, 6, 0]
-
-        # === CHANGED: add a SOFT_MATE score tied to your scale (not astronomical)
-        # This is large enough to dominate evaluate_leaf noise, but stays in the same ballpark.
-        # Default: weights[4]=1000 -> SOFT_MATE = 100_000
-        self.SOFT_MATE: 100.0 *float(self.weights[4])
-
-    # ------------------------ original helpers (kept) ------------------------
+        self.SOFT_MATE = 100.0 * float(self.weights[4])
+        
+        
+    # ---------------------------- legacy helpers, still used -----------------
 
     def get_legal_moves(self, board):
         order = [3, 4, 2, 5, 1, 6, 0]
@@ -46,42 +43,6 @@ class Connect4Lookahead:
                 new_board[row][col] = player
                 break
         return new_board
-
-    def board_to_patterns(self, board, players):
-        patterns = []
-        # Horizontal
-        for r in range(self.ROWS):
-            for c in range(self.COLS - 3):
-                window = board[r, c:c+4]
-                if any(val in players for val in window):
-                    patterns.append(window)
-        # Vertical
-        for r in range(self.ROWS - 3):
-            for c in range(self.COLS):
-                window = board[r:r+4, c]
-                if any(val in players for val in window):
-                    patterns.append(window)
-        # Diagonal \
-        for r in range(self.ROWS - 3):
-            for c in range(self.COLS - 3):
-                window = np.array([board[r+i][c+i] for i in range(4)])
-                if any(val in players for val in window):
-                    patterns.append(window)
-        # Diagonal /
-        for r in range(3, self.ROWS):
-            for c in range(self.COLS - 3):
-                window = np.array([board[r-i][c+i] for i in range(4)])
-                if any(val in players for val in window):
-                    patterns.append(window)
-        return patterns
-
-    def count_windows(self, patterns, count, player):
-        return sum(
-            1
-            for w in patterns
-            if np.count_nonzero(w == player) == count
-            and np.count_nonzero(w == 0) == 4 - count
-        )
 
     # ---------------------------- fast public API ----------------------------
 
@@ -117,28 +78,19 @@ class Connect4Lookahead:
         legal = self._legal_moves()
         if not legal: raise ValueError("n_step_lookahead: No valid moves available.")
 
-        # Immediate winning move now? Take center-most.
-        wins_now = []
-        for c in legal:
+        # Immediate winning move now? 
+        for c in legal:                      
             r = self._make_move(c, player)
-            win = self._is_win_from(r, c, player)
+            won = self._is_win_from(r, c, player)
             self._unmake_move(c)
-            if win:
-                wins_now.append(c)
-        if wins_now:
-            wins_now.sort(key=lambda x: abs(self.CENTER_COL - x))
-            return wins_now[0]
+            if won: return c
 
-        # === CHANGED: must-block opponent's win-in-1 at root (keeps training sane)
-        opp_wins_now = []
+        # must-block opponent's win-in-1 at root
         for c in legal:
             r = self._make_move(c, -player)
-            if self._is_win_from(r, c, -player):
-                opp_wins_now.append(c)
+            won =  self._is_win_from(r, c, -player)
             self._unmake_move(c)
-        if opp_wins_now:
-            opp_wins_now.sort(key=lambda x: abs(self.CENTER_COL - x))
-            return opp_wins_now[0]
+            if won: return c
 
         best_score = -float("inf")
         best_moves = []
@@ -393,3 +345,34 @@ class Connect4Lookahead:
             while h < self.ROWS and self._board[h][c] != 0:
                 h += 1
             self._heights[c] = h
+            
+    # --------------------------------------------------------------------------------
+
+    def count_pure(self, board, player, n: int) -> int:
+        """
+        Count windows of length 4 that contain exactly `n` of `player` and
+        the rest empty (no opponent stones). Works with board values {+1,-1} or {0,1,2}.
+        """
+        self._load_from_numpy(board)
+        player = -1 if player == 2 else int(player)
+        B = self._board
+        cnt = 0
+        for window in self._windows:
+            p = o = 0
+            for (r, c) in window:
+                v = B[r][c]
+                if v == player: p += 1
+                elif v != 0:    o += 1
+            if o == 0 and p == n:
+                cnt += 1
+        return cnt
+    
+    def count_pure_block_delta(self, before_board, after_board, player, n: int) -> int:
+        """
+        Positive number of `player`’s n-in-a-row *pure* windows removed by the move.
+        (i.e., how many of their threats you blocked)
+        """
+        before = self.count_pure(before_board, player, n)
+        after  = self.count_pure(after_board,  player, n)
+        return max(0, before - after)
+            

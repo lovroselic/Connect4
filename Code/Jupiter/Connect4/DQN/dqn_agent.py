@@ -17,7 +17,7 @@ class DQNAgent:
     def __init__(
         self,
         lr=2e-4, 
-        gamma=0.97,
+        gamma=0.98,                     #0.98
         epsilon=0.08,
         epsilon_min=0.02,
         epsilon_decay=0.995,
@@ -25,12 +25,12 @@ class DQNAgent:
         memory_capacity=500_000,
         
         #per
-        per_alpha=0.55, #0.55
-        per_eps=1e-2, #1e-2 
-        per_beta_start=0.45, #0.5
-        per_beta_end=0.98, #0.9
-        per_beta_steps=200_000, #75_000
-        per_mix_1step=0.70, #0.65
+        per_alpha=0.60,                 #0.55
+        per_eps=1e-2,                   #1e-2 
+        per_beta_start=0.45,            #0.45
+        per_beta_end=0.98,              #0.98
+        per_beta_steps=250_000,         #200_000
+        per_mix_1step=0.70,             #0.70
         
         #defaults, overwritten by phase change
         target_update_interval=500, 
@@ -58,7 +58,7 @@ class DQNAgent:
         self.lookahead = Connect4Lookahead()
         self.reward_scale = 0.01
         self.guard_prob = 0.0                       # controlled by phase
-        self.guard_boost_start = 6
+        self.guard_boost_start = 5
         self.guard_boost_end   = 17
         self.center_start = 0.3                     # controlled by phase
 
@@ -225,8 +225,6 @@ class DQNAgent:
         col_occ = state[0, :, 3] + state[1, :, 3]
         return (col_occ == 0).all()
 
-
-
     def board_to_state(self, board: np.ndarray, player: int) -> np.ndarray:
         agent_plane = (board == player).astype(np.float32)
         opp_plane = (board == -player).astype(np.float32)
@@ -292,8 +290,11 @@ class DQNAgent:
     
         # === Exploitation ===
         
-        q_values = self._symmetry_avg_q(state) if self.use_symmetry_policy else self._q_values_np(state)
+        oriented = self._agent_planes(state, +1)                 # mover is the agent here
+        q_values = (self._symmetry_avg_q(oriented) if self.use_symmetry_policy else self._q_values_np(oriented))
         action = self._argmax_legal_with_tiebreak(q_values, valid_actions)
+        
+        
         self._bump_stat("exploit")
     
         if action not in valid_actions: raise ValueError(f"[act] DQN chose illegal action: {action} — valid: {valid_actions}")
