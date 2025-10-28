@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 from collections import deque
 from collections import defaultdict
+from collections import Counter
 
 from DQN.DQN_replay_memory_per import PrioritizedReplayMemory
 from DQN.dqn_model import DQN
@@ -33,8 +34,8 @@ class DQNAgent:
         per_mix_1step=0.70,             #0.70
         
         #defaults, overwritten by phase change
-        target_update_interval=500, 
-        target_update_mode="hard", 
+        target_update_interval=500,     #very obsolete
+        target_update_mode="soft", 
         tau=0.005,
     ):
         self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -84,8 +85,8 @@ class DQNAgent:
         self.prefer_center = True                   # bias ties toward the center column
         self._center_tie_w = np.array([1.0, 1.0, 1.2, 1.6, 1.2, 1.0, 1.0], dtype=np.float32)
         
-        self.max_seed_frac = 0.90                   # 0.95
-        self.min_seed_frac = 0.10                   # 0.15
+        self.max_seed_frac = 0.90                   # phase ccontrolled
+        self.min_seed_frac = 0.10                   # phase ccontrolled
         
         self.target_lag_hist = deque(maxlen=50_000)  # ||θ-θ̄||/||θ||
         self.lag_log_interval = 250                  # log every N env steps (tune)
@@ -94,7 +95,6 @@ class DQNAgent:
         
         self.act_stats = defaultdict(int)   # counts
         self._act_stats_total = 0 
-        
         self.opp_act_stats = defaultdict(int)
         self._opp_act_total = 0
         
@@ -117,13 +117,6 @@ class DQNAgent:
 
 
     # ------------------------- helper encodings -------------------------
-
-    def _agent_planes(self, board: np.ndarray, agent_side: int) -> np.ndarray:
-        agent_plane = (board[0] if agent_side == 1 else board[1])
-        opp_plane   = (board[1] if agent_side == 1 else board[0])
-        row_plane   = board[2]
-        col_plane   = board[3]
-        return np.stack([agent_plane, opp_plane, row_plane, col_plane])
 
     def update_target_model(self):
         self.target_model.load_state_dict(self.model.state_dict())
@@ -198,22 +191,6 @@ class DQNAgent:
  
      return must_play, safe_actions
 
-
-    # ------------------------- action selection -------------------------
-    
-    def state_to_board(self, state: np.ndarray, player) -> np.ndarray:
-        return self.decode_board_from_state(state, player)
-
-    def decode_board_from_state(self, state, player):
-        """
-        Reconstruct board from 4-channel state, using known player sign.
-        """
-        if player == 1:
-            return state[0] - state[1]
-        elif player == -1:
-            return state[1] - state[0]
-        else:
-            raise ValueError(f"Invalid player sign: {player}")
     
     @staticmethod
     def _center_col_is_empty(state) -> bool:
@@ -221,7 +198,7 @@ class DQNAgent:
         state: (4, 6, 7) [agent, opp, row, col]
         Return True iff column 3 has no stones from either player.
         """
-        assert state.ndim == 3 and state.shape[0] == 4, f"Expected (4,6,7), got {state.shape}"
+        #assert state.ndim == 3 and state.shape[0] == 4, f"Expected (4,6,7), got {state.shape}"
         col_occ = state[0, :, 3] + state[1, :, 3]
         return (col_occ == 0).all()
 
@@ -235,8 +212,8 @@ class DQNAgent:
     def act(self, state: np.ndarray, valid_actions, depth: int, strategy_weights=None, ply = None):
         self._act_stats_total += 1
         assert len(valid_actions) > 0, f"ACT called with empty valid actions {valid_actions}"
-        board = self.decode_board_from_state(state, +1)                         # Reconstruct board in 'player' POV (+1 = us/agent, -1 = opp)
-        
+        board = state[0] - state[1]                                     # mover (+1) minus opp (–1)
+                            
         # === immediate win  ===
         win_now, win_a = self.had_one_ply_win(board, valid_actions)
         if win_now:
@@ -290,15 +267,10 @@ class DQNAgent:
     
         # === Exploitation ===
         
-        oriented = self._agent_planes(state, +1)                 # mover is the agent here
-        q_values = (self._symmetry_avg_q(oriented) if self.use_symmetry_policy else self._q_values_np(oriented))
+        q_values = (self._symmetry_avg_q(state) if self.use_symmetry_policy else self._q_values_np(state))
         action = self._argmax_legal_with_tiebreak(q_values, valid_actions)
-        
-        
         self._bump_stat("exploit")
-    
         if action not in valid_actions: raise ValueError(f"[act] DQN chose illegal action: {action} — valid: {valid_actions}")
-    
         return action
 
     
@@ -328,10 +300,10 @@ class DQNAgent:
 
 
     def replay(self, batch_size, mix_1step=0.7):
-        
-        def pack_many(boards, players):
-            planes = [self._agent_planes(b, p) for b, p in zip(boards, players)]
-            return torch.tensor(np.asarray(planes), dtype=torch.float32, device=self.device)
+        def pack_many(states):
+            # states are already (4,6,7) in mover POV
+            arr = np.asarray(states, dtype=np.float32)
+            return torch.tensor(arr, dtype=torch.float32, device=self.device)
         
         if (len(self.memory.bank_1) + len(self.memory.bank_n)) < batch_size: return
         
@@ -340,41 +312,30 @@ class DQNAgent:
     
         batch_all = list(batch_1) + list(batch_n)
         n1 = len(batch_1)
-
         is_w_all = (np.concatenate([w_1, w_n]) if (w_1.size or w_n.size) else np.ones((len(batch_all),), dtype=np.float32))
-
         states, next_states = [], []
-        s_players, ns_players = [], []
         actions, rewards, dones, gammas_n = [], [], [], []
 
         for t in batch_all:
             if hasattr(t, "reward_n"):
                 s, a, rN, nsN, dN, p, n_used = t
-                p_next = p if (n_used % 2 == 0) else -p
                 states.append(s)
                 next_states.append(nsN)
-                s_players.append(p)
-                ns_players.append(p_next)
                 actions.append(a)
                 rewards.append(rN * self.reward_scale)
                 dones.append(bool(dN))
                 gammas_n.append(self.gamma ** n_used)
             else:
                 s, a, r, ns, d, p = t
-                p_next = -p
                 states.append(s)
                 next_states.append(ns)
-                s_players.append(p)
-                ns_players.append(p_next)
                 actions.append(a)
                 rewards.append(r * self.reward_scale)
                 dones.append(bool(d))
                 gammas_n.append(self.gamma)
 
-        
-
-        X = pack_many(states, s_players)
-        X_next = pack_many(next_states, ns_players)
+        X = pack_many(states)
+        X_next = pack_many(next_states)
 
         actions_t = torch.tensor(actions, dtype=torch.long, device=self.device).view(-1, 1)
         rewards_t = torch.tensor(rewards, dtype=torch.float32, device=self.device)
@@ -410,8 +371,7 @@ class DQNAgent:
             isw_t = isw_t / (isw_t.mean() + 1e-8)   # mean≈1
             isw_t = torch.clamp(isw_t, 0.5, 3.0)    # gentle symmetric cap
             loss = (isw_t * per_sample_loss).mean()
-        else:
-            loss = per_sample_loss.mean()
+        else: loss = per_sample_loss.mean()
 
         
         q_reg_coeff = 1e-6   # 1e-7 
@@ -434,21 +394,29 @@ class DQNAgent:
         self.td_hist.extend(td_all.tolist())             # TD history
         self.per_w_hist.extend(is_w_all.tolist())        # IS weights
 
-        for _ in range(n1):
-            self.sample_mix_hist.append((0, int(s_players[_])))
-        for _ in range(len(batch_n)):
-            self.sample_mix_hist.append((1, int(s_players[n1 + _])))
-
         # --- β schedule update ---
         if self.per_beta < self.per_beta_end:
             self.per_beta = min(self.per_beta_end, self.per_beta + self.per_beta_step)
 
     @staticmethod
     def flip_transition(state, action, next_state):
-        flipped_state = np.flip(state, axis=-1).copy()
-        flipped_next_state = np.flip(next_state, axis=-1).copy()
-        flipped_action = 6 - action
-        return flipped_state, flipped_action, flipped_next_state
+        """
+        Mirror a transition left-right in mover-POV.
+        Flips planes: me(0), opp(1), col(3). Row (2) remains unchanged.
+        """
+        fs = state.copy()
+        fs[0] = fs[0][:, ::-1]
+        fs[1] = fs[1][:, ::-1]
+        fs[3] = fs[3][:, ::-1]
+    
+        fns = next_state.copy()
+        fns[0] = fns[0][:, ::-1]
+        fns[1] = fns[1][:, ::-1]
+        fns[3] = fns[3][:, ::-1]
+    
+        fa = 6 - action
+        return fs, fa, fns
+
 
     def gave_one_ply_win(self, oriented_board, action):
         b1, _ = self._drop_piece(oriented_board, action, +1)
@@ -469,7 +437,6 @@ class DQNAgent:
                 return True, a
         return False, None
 
-    
     # -----------------
     
     def set_target_update_interval(self, steps: int):
@@ -548,35 +515,39 @@ class DQNAgent:
         q = self.model(x).squeeze(0).detach().cpu().numpy()  # [7]
         return q
 
+
     @torch.no_grad()
     def _symmetry_avg_q(self, state) -> np.ndarray:
         """
-        Symmetry-averaged Q(s,·):
-        Accepts same inputs as _q_values_np.
-        Returns: np.ndarray with shape (7,)
+        Symmetry-averaged Q(s,·) under horizontal flip.
+        Input `state` may be np.ndarray (4,6,7) or torch.Tensor (4,6,7)/(1,4,6,7).
+        We flip: me(0), opp(1), col(3); keep row(2) unchanged.
         """
-        # Normalize input to (1,4,6,7) float32 on device
+        # normalize to (1,4,6,7) float32 on device
         if isinstance(state, torch.Tensor):
             x = state.to(self.device, dtype=torch.float32)
-            if x.ndim == 3:
-                x = x.unsqueeze(0)
-            elif x.ndim != 4:
-                raise ValueError(f"_symmetry_avg_q: bad tensor shape {tuple(x.shape)}")
+            if x.ndim == 3: x = x.unsqueeze(0)
+            elif x.ndim != 4: raise ValueError(f"_symmetry_avg_q: bad tensor shape {tuple(x.shape)}")
         else:
             x = torch.tensor(state, dtype=torch.float32, device=self.device)
-            if x.ndim == 3:
-                x = x.unsqueeze(0)
-            elif x.ndim != 4:
-                raise ValueError(f"_symmetry_avg_q: bad ndarray shape {np.shape(state)}")
+            if x.ndim == 3: x = x.unsqueeze(0)
+            elif x.ndim != 4: raise ValueError(f"_symmetry_avg_q: bad ndarray shape {np.shape(state)}")
+    
+        # forward on original
+        q = self.model(x).squeeze(0)  # (7,)
+    
+        # build mirrored state: flip last dim (W) for me, opp, col; row untouched
+        x_m = x.clone()
+        x_m[:, 0] = torch.flip(x_m[:, 0], dims=(-1,))  # me
+        x_m[:, 1] = torch.flip(x_m[:, 1], dims=(-1,))  # opp
+        x_m[:, 3] = torch.flip(x_m[:, 3], dims=(-1,))  # col
+    
+        # forward on mirror, then unflip action indices
+        q_m = self.model(x_m).squeeze(0)               # (7,) in mirrored frame
+        q_m_unflip = torch.flip(q_m, dims=(0,))        # map back: a -> 6-a
+    
+        return (0.5 * (q + q_m_unflip)).detach().cpu().numpy()
 
-        q = self.model(x).squeeze(0).detach().cpu().numpy()  # [7]
-
-        # horizontally flipped state (flip last dim W=7)
-        x_m = torch.flip(x, dims=(-1,))
-        q_m = self.model(x_m).squeeze(0).detach().cpu().numpy()  # [7] in mirrored frame
-        q_m_unflip = q_m[::-1]                                   # map back to canonical
-
-        return 0.5 * (q + q_m_unflip)
 
     def _argmax_legal_with_tiebreak(self, q, valid_actions) -> int:
         """
@@ -586,45 +557,203 @@ class DQNAgent:
         q: array-like of shape [7]
         valid_actions: iterable of legal column indices
         """
-        import numpy as _np
-        import random as _rnd
 
-        va = _np.asarray(list(valid_actions), dtype=int)
-        if va.size == 0:
-            raise ValueError("[_argmax_legal_with_tiebreak] no valid actions")
+        va = np.asarray(list(valid_actions), dtype=int)
+        if va.size == 0: raise ValueError("[_argmax_legal_with_tiebreak] no valid actions")
 
-        q = _np.asarray(q, dtype=_np.float64)
-        if q.shape[0] != 7:
-            raise ValueError(f"expected q shape (7,), got {q.shape}")
+        q = np.asarray(q, dtype=np.float64)
+        if q.shape[0] != 7: raise ValueError(f"expected q shape (7,), got {q.shape}")
 
         # mask illegal moves
-        masked = _np.full_like(q, -_np.inf, dtype=float)
+        masked = np.full_like(q, -np.inf, dtype=float)
         masked[va] = q[va]
 
-        qmax = float(_np.max(masked))
+        qmax = float(np.max(masked))
         tol = getattr(self, "tie_tol", 1e-3)
         tied = va[masked[va] >= (qmax - tol)]
 
         if tied.size == 0:
             # Shouldn’t happen if va non-empty, but be safe.
-            return int(_rnd.choice(list(valid_actions)))
+            return int(random.choice(list(valid_actions)))
         if tied.size == 1:
             return int(tied[0])
 
         # Optional center bias
         prefer_center = getattr(self, "prefer_center", True)
         if not prefer_center:
-            return int(_rnd.choice(tied))
+            return int(random.choice(tied))
 
-        center_w = getattr(self, "_center_tie_w", _np.array([1.0,1.0,1.2,1.6,1.2,1.0,1.0], dtype=_np.float64))
+        center_w = getattr(self, "_center_tie_w", np.array([1.0,1.0,1.2,1.6,1.2,1.0,1.0], dtype=np.float64))
         # Guard in case someone changed board width or weights
         if center_w.shape[0] != 7:
-            center_w = _np.array([1.0,1.0,1.2,1.6,1.2,1.0,1.0], dtype=_np.float64)
+            center_w = np.array([1.0,1.0,1.2,1.6,1.2,1.0,1.0], dtype=np.float64)
 
-        w = center_w[tied].astype(_np.float64)
+        w = center_w[tied].astype(np.float64)
         w_sum = w.sum()
-        if not _np.isfinite(w_sum) or w_sum <= 0:
-            return int(_rnd.choice(tied))
+        if not np.isfinite(w_sum) or w_sum <= 0:
+            return int(random.choice(tied))
         w /= w_sum
-        return int(_np.random.choice(tied, p=w))
+        return int(np.random.choice(tied, p=w))
+    
+    def _mirror_state_lr(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (B,4,6,7) torch tensor on any device."""
+        x_m = x.clone()
+        x_m[:, 0] = torch.flip(x_m[:, 0], dims=(-1,))  # me
+        x_m[:, 1] = torch.flip(x_m[:, 1], dims=(-1,))  # opp
+        x_m[:, 3] = torch.flip(x_m[:, 3], dims=(-1,))  # col
+        return x_m
 
+# ---------------------- debug / QA utilities ----------------------
+
+    @staticmethod
+    def _mirror_state_planes(state: np.ndarray) -> np.ndarray:
+        """
+        Mirror mover-POV planes horizontally.
+        Flips: me(0), opp(1), col(3); keeps row(2) unchanged.
+        state: (4,6,7) numpy array.
+        """
+        sm = state.copy()
+        sm[0] = np.flip(sm[0], axis=-1)
+        sm[1] = np.flip(sm[1], axis=-1)
+        sm[3] = np.flip(sm[3], axis=-1)
+        return sm
+    
+    @torch.no_grad()
+    def symmetry_check_once(self, env, use_symmetry: bool = True, atol: float = 1e-5, verbose: bool = True):
+        """
+        Probe mirror consistency at the current env state (mover POV).
+        Returns a dict with q, qm, ok flag, argmaxes, etc.
+        """
+        s  = env.get_state(perspective=env.current_player)   # (4,6,7)
+        sm = self._mirror_state_planes(s)
+    
+        q  = (self._symmetry_avg_q(s)  if use_symmetry else self._q_values_np(s))
+        qm = (self._symmetry_avg_q(sm) if use_symmetry else self._q_values_np(sm))
+    
+        qm_unflip = qm[::-1]                      # map mirrored actions back
+        arg_q, arg_qm = int(q.argmax()), int(qm.argmax())
+        ok = (arg_qm == 6 - arg_q) and np.allclose(q, qm_unflip, atol=atol)
+        maxdiff = float(np.max(np.abs(q - qm_unflip)))
+    
+        if verbose:
+            print("q: ",  np.round(q, 4))
+            print("qm:",  np.round(qm, 4), "  (mirror argmax:", arg_qm, "→ should equal:", 6 - arg_q, ")")
+            print("max diff after unflip:", maxdiff)
+            print("ARGMAX:", arg_q, "| MIRROR ARGMAX:", arg_qm, "| OK:", ok)
+            print("-" * 60)
+    
+        return {"q": q, "qm": qm, "qm_unflip": qm_unflip, "arg": arg_q, "arg_mirror": arg_qm, "ok": ok, "maxdiff": maxdiff}
+    
+    @torch.no_grad()
+    def exploit_histogram_probe(
+        self,
+        env,
+        trials: int = 100,
+        max_random_prefix: int = 6,
+        use_symmetry: bool = True,
+        seed: int | None = 0,
+        prefer_center: bool = False,
+        tie_tol: float = 0.0,
+        verbose: bool = True,
+        plot: bool = False,
+    ):
+       
+        # backup knobs
+        bak_eps, bak_epsmin = self.epsilon, self.epsilon_min
+        bak_sym = self.use_symmetry_policy
+        bak_center, bak_tol = self.prefer_center, self.tie_tol
+    
+        # force pure exploit
+        self.epsilon = 0.0
+        self.epsilon_min = 0.0
+        self.use_symmetry_policy = bool(use_symmetry)
+        self.prefer_center = bool(prefer_center)
+        self.tie_tol = float(tie_tol)
+    
+        rng = np.random.default_rng(seed)
+        counts = Counter()
+    
+        for _ in range(trials):
+            env.reset()
+            for __ in range(int(rng.integers(0, max_random_prefix + 1))):
+                if env.done: break
+                a = int(rng.choice(env.available_actions()))
+                env.step(a)
+            if env.done: 
+                continue
+    
+            s = env.get_state(perspective=env.current_player)
+            q = (self._symmetry_avg_q(s) if self.use_symmetry_policy else self._q_values_np(s))
+            a = self._argmax_legal_with_tiebreak(q, env.available_actions())
+            counts[int(a)] += 1
+    
+        # restore knobs
+        self.epsilon, self.epsilon_min = bak_eps, bak_epsmin
+        self.use_symmetry_policy = bak_sym
+        self.prefer_center, self.tie_tol = bak_center, bak_tol
+    
+        # ensure keys 0..6 exist
+        out = {i: counts.get(i, 0) for i in range(7)}
+    
+        if verbose:
+            print(f"Pure-exploit action histogram over {trials} randomized states:")
+            print(out)
+    
+        if plot:
+            import matplotlib.pyplot as plt
+            xs = list(out.keys()); ys = list(out.values())
+            plt.figure()
+            plt.bar(xs, ys)
+            plt.xticks(xs)
+            plt.xlabel("Action (column index)")
+            plt.ylabel(f"Count (out of {trials})")
+            plt.title("Pure-exploit action histogram")
+            # annotate bars
+            for x, y in zip(xs, ys):
+                plt.text(x, y, str(y), ha="center", va="bottom")
+            plt.show()
+    
+        return out
+
+    
+    @torch.no_grad()
+    def debug_policy_smoke_test(
+        self,
+        env,
+        symmetry_atol: float = 1e-5,
+        symmetry_states: list[int] = (0, 1, 2, 3, 4, 5, 8),
+        hist_trials: int = 100,
+        hist_max_prefix: int = 6,
+        seed: int | None = 0,
+    ):
+        """
+        Convenience: run a few symmetry checks (including empty board) + histogram probe.
+        """
+        # empty board
+        env.reset()
+        print("— Symmetry check on empty board —")
+        self.symmetry_check_once(env, use_symmetry=True, atol=symmetry_atol, verbose=True)
+    
+        # a few partially-filled boards
+        rng = np.random.default_rng(seed)
+        for moves in symmetry_states:
+            env.reset()
+            for _ in range(moves):
+                if env.done: break
+                a = int(rng.choice(env.available_actions()))
+                env.step(a)
+            print(f"— Symmetry check after {moves} random moves —")
+            self.symmetry_check_once(env, use_symmetry=True, atol=symmetry_atol, verbose=True)
+    
+        # histogram
+        self.exploit_histogram_probe(
+            env,
+            trials=hist_trials,
+            max_random_prefix=hist_max_prefix,
+            use_symmetry=True,
+            seed=seed,
+            prefer_center=False,
+            tie_tol=0.0,
+            verbose=True,
+        )
+    

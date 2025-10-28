@@ -1,5 +1,4 @@
 # agent_eval.py
-# DQN.agent_eval (corrected for player perspective + mean CI)
 from tqdm.auto import tqdm
 import os, random, numpy as np, torch
 from DQN.dqn_agent import DQNAgent
@@ -12,28 +11,25 @@ warnings.filterwarnings("ignore", message="You are using `torch.load`.*weights_o
 
 # ----------------------------- Eval helpers -----------------------------
 
-def set_eval_mode(agent, epsilon=0.0, guard_prob=0.0):
-    agent.model.eval() 
+def set_eval_mode(agent):
+    agent.model.eval(); 
     agent.target_model.eval()
-    agent.epsilon = float(epsilon)
-    agent.epsilon_min = float(epsilon)
-    agent.guard_prob = float(guard_prob)
-
+    agent.epsilon = 0.0; 
+    agent.epsilon_min = 0.0
+    agent.guard_prob = 0.0
+    agent.use_symmetry_policy = True
+    agent.prefer_center = False
+    agent.tie_tol = 0.0
+    agent.center_start = 0.0                    # disable a0=center forcing
+    agent.center_forced_used = True            
 
 def _extract_state_dict(sd):
-    """
-    Accepts:
-      - raw state_dict (param_name -> tensor)
-      - checkpoint dict with keys like: 'model', 'state_dict', 'net', 'params'
-    Strips a leading 'module.' if present (DataParallel).
-    """
     if isinstance(sd, dict):
         for k in ("model", "state_dict", "net", "params"):
             if k in sd and isinstance(sd[k], dict):
                 sd = sd[k]
                 break
-    if not isinstance(sd, dict):
-        raise TypeError("Checkpoint does not contain a state_dict dict.")
+    if not isinstance(sd, dict): raise TypeError("Checkpoint does not contain a state_dict dict.")
 
     clean = {}
     for k, v in sd.items():
@@ -44,21 +40,12 @@ def _extract_state_dict(sd):
 
 def load_agent_from_ckpt(path: str, device=None, epsilon=0.0, guard_prob=0.0):
     agent = DQNAgent(device=device)
-    try:
-        sd = torch.load(path, map_location=agent.device, weights_only=True)
-    except TypeError:
-        sd = torch.load(path, map_location=agent.device)
-
+    try: sd = torch.load(path, map_location=agent.device, weights_only=True)
+    except TypeError: sd = torch.load(path, map_location=agent.device)
     state_dict = _extract_state_dict(sd)
     missing, unexpected = agent.model.load_state_dict(state_dict, strict=False)
-    print(f"[load] missing={len(missing)}, unexpected={len(unexpected)}")
-    matched = sum(1 for n,p in agent.model.named_parameters()
-                  if n in state_dict and state_dict[n].shape == p.shape)
-    total = sum(1 for _ in agent.model.parameters())
-    print(f"[load] matched params: {matched}/{total}")
-
     agent.update_target_model()
-    set_eval_mode(agent, epsilon=epsilon, guard_prob=guard_prob)
+    set_eval_mode(agent)
     return agent
 
 
@@ -74,25 +61,17 @@ def mean_ci(scores, z=1.96):
 
 # ----------------------------- Pure-Q action -----------------------------
 
-def q_act_pure(agent, state_abs, valid_actions, player):
+def q_act_pure(agent, env):
     """
-    Pure Q evaluation with symmetry averaging + legal-aware tie-break,
-    oriented to the true mover 'player' (+1/-1).
+    Pure Q action from the current mover's POV.
+    Uses symmetry-averaged Q if agent.use_symmetry_policy=True.
+    Legal-aware tie-break matches training.
     """
-    assert state_abs.shape == (4, 6, 7), f"state shape {state_abs.shape} unexpected"
-    assert len(valid_actions) > 0, "no valid actions"
-
-    # Re-orient absolute planes so channel 0 is the *current mover*
-    oriented = agent._agent_planes(state_abs, player)   # (4,6,7)
-
-    # Symmetry-averaged Q to match training exploitation
+    s = env.get_state(perspective=env.current_player)            # (4,6,7), mover first
+    va = env.available_actions()
     with torch.no_grad():
-        q = agent._symmetry_avg_q(oriented)  # returns np.ndarray shape (7,)
-
-    # Same legal & tie behavior as in training
-    return agent._argmax_legal_with_tiebreak(q, valid_actions)
-
-
+        q = agent._symmetry_avg_q(s) if agent.use_symmetry_policy else agent._q_values_np(s)
+    return agent._argmax_legal_with_tiebreak(q, va)
 
 # ----------------------------- Game loop -----------------------------
 
@@ -105,63 +84,39 @@ def agent_for_side(side: int, agentA, agentB, A_color: int):
 
 
 def play_game(agentA, agentB, A_color:int=+1, opening_noise_k:int=0, seed:int=0):
-    random.seed(seed); np.random.seed(seed)
     env = Connect4Env()
-    s = env.reset(); done = False
+    env.reset(); 
 
-    # Optional opening noise (consider k=0 for fair eval)
-    for _ in range(opening_noise_k):
-        if done: break
-        a = random.choice(env.available_actions())
-        s, r, done = env.step(a)
+    while not env.done:
+        side = env.current_player                                       # +1 or -1
+        ag = (agentA if side == A_color else agentB)
+        a = q_act_pure(ag, env)                                         # <-- uses mover POV internally
+        env.step(a)
 
-    while not done:
-        side = env.current_player                  # +1 or -1
-        ag, pflag = agent_for_side(side, agentA, agentB, A_color)  # pflag == side
-        a = q_act_pure(ag, s, env.available_actions(), player=pflag)
-        s, r, done = env.step(a)
+    return 0.5 if env.winner == 0 else (1.0 if env.winner == A_color else 0.0)
 
-    winner = env.winner
-    if winner == 0: return 0.5
-    return 1.0 if winner == A_color else 0.0
 
 
 # ----------------------------- Head-to-head -----------------------------
 
 def head_to_head(ckptA:str, ckptB:str, n_games:int=200, device=None,
-                 epsilon=0.0, guard_prob=0.0, opening_noise_k:int=0, seed:int=123,
+                 epsilon=0.0, guard_prob=0.0, opening_noise_k:int=0, seed:int=666,
                  progress: bool = True, center_start: float = 0.0,
-                 disable_init_guard: bool = True):
-    """
-    Evaluates A vs B. We alternate A's color (+1 then -1) to balance first-move advantage.
-    By default we do not inject random opening noise (opening_noise_k=0).
-    center_start is forced to 0.0 by default (no forced a0=center).
-    If disable_init_guard=True, the early-plies guard is disabled as well.
-    """
+                 use_symmetry_policy: bool = True,
+                 prefer_center: bool = False, tie_tol: float = 0.0):
+    
     A = load_agent_from_ckpt(ckptA, device=device, epsilon=epsilon, guard_prob=guard_prob)
     B = load_agent_from_ckpt(ckptB, device=device, epsilon=epsilon, guard_prob=guard_prob)
-
-    # --- ensure eval is purely policy-driven ---
-    for ag in (A, B):
-        ag.epsilon = 0.0
-        ag.epsilon_min = 0.0
-        ag.guard_prob = float(guard_prob)
-        ag.center_start = float(center_start)   # <<< disable forced center
-        if disable_init_guard:
-            ag.init_guard = 0.0               # <<< otherwise it stays 0.5 for first 4 plies
-            ag.init_guard_ply = 0
+    
+    set_eval_mode(A)
+    set_eval_mode(B)
 
     rng = random.Random(seed)
     colors = ([+1, -1] * ((n_games + 1)//2))[:n_games]
     iterable = tqdm(colors, total=n_games, desc=f"{os.path.basename(ckptA)} vs {os.path.basename(ckptB)}") if progress else colors
 
-    timeline = []
-    wins = draws = losses = 0
-
+    timeline = []; wins = draws = losses = 0
     for A_color in iterable:
-        # reset per-game flag to be extra safe
-        A.center_forced_used = False
-        B.center_forced_used = False
 
         res = play_game(A, B, A_color=A_color, opening_noise_k=opening_noise_k, seed=rng.randint(0,10**9))
         timeline.append(res)
@@ -170,8 +125,7 @@ def head_to_head(ckptA:str, ckptB:str, n_games:int=200, device=None,
         else: losses += 1
 
         if progress:
-            games_done = len(timeline)
-            score = (wins + 0.5*draws) / games_done
+            n = len(timeline); score = (wins + 0.5*draws) / n
             iterable.set_postfix(W=wins, D=draws, L=losses, score=f"{score:.3f}")
 
     n = len(timeline)
@@ -180,7 +134,6 @@ def head_to_head(ckptA:str, ckptB:str, n_games:int=200, device=None,
     return {"A_path": ckptA, "B_path": ckptB, "games": n,
             "A_wins": wins, "draws": draws, "A_losses": losses,
             "A_score_rate": score, "A_score_CI95": ci}
-
 
 
 # ----------------------------- Plotting -----------------------------
@@ -226,8 +179,7 @@ def plot_winrate_bar(res, title=None, show_score_bars=True):
     plt.tight_layout()
     plt.show()
 
-    if not show_score_bars:
-        return
+    if not show_score_bars: return
 
     # --- A vs B overall score bar (A gets 1, draw=0.5) ---
     fig, ax = plt.subplots(figsize=(4.8, 3.2))

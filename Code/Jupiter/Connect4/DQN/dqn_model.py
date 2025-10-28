@@ -45,27 +45,28 @@ class C4DirectionalBackbone(nn.Module):
         self.res = ResidualBlock(64)                                        # -> 5x6
         self.pool = nn.MaxPool2d(kernel_size=2)                             # 5x6 -> 2x3
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Directional paths
-        h = F.relu(self.h4(x), inplace=True)             # (B,16,6,6)
-        v = F.relu(self.v4(x), inplace=True)             # (B,16,5,7)
-        k = F.relu(self.k2(x), inplace=True)             # (B,16,5,6)
+    def _to_5x6(self, t: torch.Tensor) -> torch.Tensor:
+        # Symmetric alignment; avoids systematic left/right bias
+        return t if t.shape[-2:] == (5, 6) else F.interpolate(t, size=(5, 6), mode="nearest")
 
-        # Align to common 5x6 canvas
-        h = h[:, :, :5, :6]                              # 6x6 -> 5x6
-        v = v[:, :, :5, :6]                              # 5x7 -> 5x6
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = F.relu(self.h4(x), inplace=True)  # (B,16,6,6)
+        v = F.relu(self.v4(x), inplace=True)  # (B,16,5,7)
+        k = F.relu(self.k2(x), inplace=True)  # (B,16,5,6)
+
+        h = self._to_5x6(h)
+        v = self._to_5x6(v)
         parts = [h, v, k]
 
         if self.use_diag4:
-            d = F.relu(self.d4(x), inplace=True)         # (B,16,3,4)
-            # centrally upsample/align to 5x6 with nearest (lightweight & fine here)
-            d = F.interpolate(d, size=(5, 6), mode="nearest")
+            d = F.relu(self.d4(x), inplace=True)  # (B,16,3,4)
+            d = self._to_5x6(d)
             parts.append(d)
 
-        x = torch.cat(parts, dim=1)                      # (B, 48 or 64, 5, 6)
-        x = F.relu(self.mix(x), inplace=True)            # (B,64,5,6)
-        x = self.res(x)                                  # (B,64,5,6)
-        x = self.pool(x)                                 # (B,64,2,3)
+        x = torch.cat(parts, dim=1)             # (B,48/64,5,6)
+        x = F.relu(self.mix(x), inplace=True)
+        x = self.res(x)
+        x = self.pool(x)                         # (B,64,2,3)
         return x
 
 

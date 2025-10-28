@@ -13,11 +13,11 @@ class Connect4Lookahead:
     immediate_w = 250
     fork_w = 150
     DEFENSIVE = 1.5
-    FLOATING_NEAR = 0.50   # needs exactly 1 filler to be supported
-    FLOATING_FAR  = 0.25   # needs 2+ fillers, still counts but less
+    FLOATING_NEAR = 0.75   # needs exactly 1 filler to be supported
+    FLOATING_FAR  = 0.50   # needs 2+ fillers, still counts but less
 
     def __init__(self, weights=None):
-        self.weights = weights if weights else {2: 10, 3: 100, 4: 1000}
+        self.weights = weights if weights else {2: 10, 3: 200, 4: 1000}
 
         # internal fast state (bottom-based rows)
         self._board: List[List[int]] = [[0] * self.COLS for _ in range(self.ROWS)]
@@ -45,10 +45,13 @@ class Connect4Lookahead:
         return new_board
 
     # ---------------------------- fast public API ----------------------------
+    def _p(self, p: int) -> int:
+        return -1 if p == 2 else int(p)
+
 
     def get_heuristic(self, board, player):
         self._load_from_numpy(board)
-        player = -1 if player == 2 else int(player)
+        player = self._p(player)
         self._root_player = player
         return self._evaluate_leaf(self._root_player)
 
@@ -64,7 +67,7 @@ class Connect4Lookahead:
 
     def minimax(self, board, depth, maximizing, player, alpha, beta):
         self._load_from_numpy(board)
-        player = -1 if player == 2 else int(player)
+        player = self._p(player)
         self._root_player = player
 
         to_move = player if maximizing else -player
@@ -72,7 +75,7 @@ class Connect4Lookahead:
 
     def n_step_lookahead(self, board, player, depth=3):
         self._load_from_numpy(board)
-        player = -1 if player == 2 else int(player)
+        player = self._p(player)
         self._root_player = player
 
         legal = self._legal_moves()
@@ -115,7 +118,7 @@ class Connect4Lookahead:
 
     def has_four(self, board, player: int) -> bool:
         self._load_from_numpy(board)
-        player = -1 if player == 2 else int(player)
+        player = self._p(player)
         for window in self._windows:
             for (r, c) in window:
                 if self._board[r][c] != player:
@@ -129,7 +132,7 @@ class Connect4Lookahead:
 
     def count_immediate_wins(self, board, player: int):
         self._load_from_numpy(board)
-        player = -1 if player == 2 else int(player)
+        player = self._p(player)
         wins = []
         for c in range(self.COLS):
             if self._heights[c] >= self.ROWS:
@@ -152,57 +155,43 @@ class Connect4Lookahead:
     # ----------------------- optimized alpha–beta core -----------------------
 
     def _ab_minimax(self, depth: int, to_move: int, alpha: float, beta: float) -> float:
+       # Terminal/leaf
+       if depth == 0 or self._someone_has_four(): return self._evaluate_leaf(self._root_player)
+   
+       legal = self._legal_moves()
+       if not legal: return self._evaluate_leaf(self._root_player)
+   
+       for c in legal:
+           r = self._make_move(c, to_move)
+           win = self._is_win_from(r, c, to_move)
+           self._unmake_move(c)
+           if win: return self.SOFT_MATE if to_move == self._root_player else -self.SOFT_MATE
+   
+       maximizing = (to_move == self._root_player)
+   
+       if maximizing:
+           value = -float("inf")
+           for col in self._ordered_moves(legal):
+               r = self._make_move(col, to_move)
+               child_val = self._ab_minimax(depth - 1, -to_move, alpha, beta)
+               self._unmake_move(col)
+   
+               if child_val > value: value = child_val
+               if value > alpha: alpha = value
+               if alpha >= beta: break
+           return value
+       else:
+           value = float("inf")
+           for col in self._ordered_moves(legal):
+               r = self._make_move(col, to_move)
+               child_val = self._ab_minimax(depth - 1, -to_move, alpha, beta)
+               self._unmake_move(col)
+   
+               if child_val < value: value = child_val
+               if value < beta: beta = value
+               if alpha >= beta: break
+           return value
 
-        # Terminal/Leaf → evaluate in root POV 
-        if depth == 0 or self._someone_has_four():
-            return self._evaluate_leaf(self._root_player)
-
-        legal = self._legal_moves()
-        if not legal:
-            return self._evaluate_leaf(self._root_player)
-
-        maximizing = (to_move == self._root_player)
-
-        for c in legal:
-            r = self._make_move(c, to_move)
-            win = self._is_win_from(r, c, to_move)
-            self._unmake_move(c)
-            if win:
-                return self.SOFT_MATE if to_move == self._root_player else -self.SOFT_MATE
-
-        if maximizing:
-            value = -float("inf")
-            for col in self._ordered_moves(legal):
-                r = self._make_move(col, to_move)
-                
-                if self._is_win_from(r, col, to_move):
-                    child_val = self.SOFT_MATE if to_move == self._root_player else -self.SOFT_MATE
-                else:
-                    child_val = self._ab_minimax(depth - 1, -to_move, alpha, beta)
-                self._unmake_move(col)
-                if child_val > value:
-                    value = child_val
-                if value > alpha:
-                    alpha = value
-                if alpha >= beta:
-                    break
-            return value
-        else:
-            value = float("inf")
-            for col in self._ordered_moves(legal):
-                r = self._make_move(col, to_move)
-                if self._is_win_from(r, col, to_move):
-                    child_val = self.SOFT_MATE if to_move == self._root_player else -self.SOFT_MATE
-                else:
-                    child_val = self._ab_minimax(depth - 1, -to_move, alpha, beta)
-                self._unmake_move(col)
-                if child_val < value:
-                    value = child_val
-                if value < beta:
-                    beta = value
-                if alpha >= beta:
-                    break
-            return value
 
     # --------------------------- fast evaluation ----------------------------
 
@@ -223,6 +212,7 @@ class Connect4Lookahead:
                         need += (r - self._heights[c])
                 elif v == pov: p += 1
                 else: o += 1
+            if (p + o) < 2: continue
     
             mul = 1.0 if need == 0 else (self.FLOATING_NEAR if need == 1 else self.FLOATING_FAR)
             if o == 0: score += mul * w[p]
@@ -274,16 +264,14 @@ class Connect4Lookahead:
         return n
 
     def _count_immediate_wins(self, player: int) -> int:
-        cnt = 0
-        for c in range(self.COLS):
-            if self._heights[c] >= self.ROWS:
-                continue
-            r = self._make_move(c, player)
-            win = self._is_win_from(r, c, player)
-            self._unmake_move(c)
-            if win:
-                cnt += 1
-        return cnt
+         player = self._p(player)
+         cnt = 0
+         for c in self._legal_moves():
+             r = self._make_move(c, player)
+             if self._is_win_from(r, c, player):
+                 cnt += 1
+             self._unmake_move(c)
+         return cnt
 
     def _someone_has_four(self) -> bool:
         for window in self._windows:
@@ -354,7 +342,7 @@ class Connect4Lookahead:
         the rest empty (no opponent stones). Works with board values {+1,-1} or {0,1,2}.
         """
         self._load_from_numpy(board)
-        player = -1 if player == 2 else int(player)
+        player = self._p(player)
         B = self._board
         cnt = 0
         for window in self._windows:

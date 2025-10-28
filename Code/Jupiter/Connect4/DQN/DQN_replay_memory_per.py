@@ -45,9 +45,6 @@ class PrioritizedReplayMemory:
     def _hflip_action(a):        # 7 columns → indices [0..6]
         return 6 - int(a)
 
-    @staticmethod
-    def _colorswap_state(s):     # agent ↔ opponent channel swap: here encoded as -state
-        return -s
 
     def _finite_or(self, value, fallback):
         return value if np.isfinite(value) else fallback
@@ -103,17 +100,20 @@ class PrioritizedReplayMemory:
         p = int(player)
     
         if mirror:
-            s = np.flip(s, axis=-1).copy()
+            # flip me(0), opp(1), col(3); row(2) unchanged
+            s[0] = s[0][:, ::-1]
+            s[1] = s[1][:, ::-1]
+            s[3] = s[3][:, ::-1]
             a = 6 - a
     
         if colorswap:
-            s[[0, 1]] = s[[1, 0]]   # swap agent/opp planes only
-            p = -p                  # flip player flag
+            # swap channels only; reward sign handled by caller
+            s[[0, 1]] = s[[1, 0]]
+            p = -p
     
         return s, a, p
 
 
-    
     def push_1step_aug(self, s, a, r, s2, done, player,
                        add_mirror=True, add_colorswap=True, add_mirror_colorswap=True):
         # base

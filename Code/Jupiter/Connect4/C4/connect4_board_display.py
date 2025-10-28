@@ -55,13 +55,15 @@ def display_final_boards(agent, env, device, Lookahead, opponents):
     for label in opponents:
         print(f"\n🎯 Opponent: {label}")
 
-        for game_index in [0, 1]:  # even = agent starts, odd = opponent starts
-            outcome, final_state = play_single_game(agent, env, device, Lookahead, label, game_index)
+        for game_index in (0, 1):  # 0: agent first, 1: opponent first
+            outcome, _ = play_single_game(agent, env, device, Lookahead, label, game_index)
+
+            title = (
+                f"{label} — {'Agent First' if game_index == 0 else 'Opponent First'} — "
+                f"{'Win' if outcome == 1 else 'Loss' if outcome == -1 else 'Draw'}"
+            )
             
-            board = agent.decode_board_from_state(final_state, player=1)
+            Connect4_BoardDisplayer.display_board(env.board, title)
 
-            title = f"{label} — {'Agent First' if game_index == 0 else 'Opponent First'} — "
-            title += f"{'Win' if outcome==1 else 'Loss' if outcome==-1 else 'Draw'}"
 
-            Connect4_BoardDisplayer.display_board(board, title)
 

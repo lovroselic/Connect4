@@ -8,6 +8,9 @@ def N_step_lookahead_fast(obs, config):
     """
     import numpy as np
     
+    # Search depth 
+    N_STEPS = 6
+    
     
     ###########################################################################
     
@@ -84,6 +87,9 @@ def N_step_lookahead_fast(obs, config):
                     p += 1
                 else:
                     o += 1
+            if (p + o) < 2: continue
+                    
+                    
             mul = 1.0 if need == 0 else (FLOATING_NEAR if need == 1 else FLOATING_FAR)
             if o == 0:
                 score += mul * WARR[p if p <= K else 0]
@@ -149,8 +155,7 @@ def N_step_lookahead_fast(obs, config):
     
     ###########################################################################
 
-    # Search depth 
-    N_STEPS = 5
+   
 
     # ------------------------------- config ---------------------------------
     
@@ -163,11 +168,12 @@ def N_step_lookahead_fast(obs, config):
     immediate_w = 250.0
     fork_w = 150.0
     DEFENSIVE = 1.5
-    FLOATING_NEAR = 0.50   # needs exactly 1 filler to become supported
-    FLOATING_FAR  = 0.25   # needs 2+ fillers, still counts but less
+    FLOATING_NEAR = 0.75   # needs exactly 1 filler to become supported
+    FLOATING_FAR  = 0.50   # needs 2+ fillers, still counts but less
+
 
     # Pattern weights for counts in a 4-window; unused indices default to 0
-    _weights_dict = {2: 10.0, 3: 100.0, 4: 1000.0}
+    _weights_dict = {2: 10.0, 3: 200.0, 4: 1000.0}
     WARR = [0.0] * (K + 1)
     for i in range(2, min(K, 4) + 1):
         WARR[i] = float(_weights_dict.get(i, 0.0))

@@ -3,7 +3,8 @@ import numpy as np
 from C4.fast_connect4_lookahead import Connect4Lookahead
 
 class Connect4Env:
-    # reward is for the mower, from mower's perspective
+    # ENV is mover centric
+    # reward is for the mover, from mower's perspective
     ROWS = 6
     COLS = 7
     
@@ -36,15 +37,15 @@ class Connect4Env:
         self.done = False
         self.winner = None
         self.ply = 0
-        return self.get_state()
+        return self.get_state(perspective=self.current_player) 
 
-    def get_state(self, perspective=+1) -> np.ndarray:
+    def get_state(self, perspective=None) -> np.ndarray:                          #mover's perspective
+        if perspective is None: perspective = self.current_player
         board = self.board
         player = perspective
     
         agent_plane = (board == player).astype(np.float32)
         opp_plane = (board == -player).astype(np.float32)
-    
         row_plane = np.tile(np.linspace(-1, 1, self.ROWS)[:, None], (1, self.COLS))
         col_plane = np.tile(np.linspace(-1, 1, self.COLS)[None, :], (self.ROWS, 1))
     
@@ -54,14 +55,8 @@ class Connect4Env:
         return [c for c in range(self.COLS) if self.board[0][c] == 0]
 
     def step(self, action):
-        if self.done: return self.get_state(), 0.0, True
-        
-        if self.board[0][action] != 0:
-            print("ILLEGAL MOVE DETECTED!")
-            print(f"Board top row: {self.board[0]}")
-            print(f"Attempted action: {action}")
-            print(f"Winner before return: {self.winner}")
-            raise ValueError("ILLEGAL MOVE DETECTED!")
+        if self.done: return self.get_state(perspective=self.current_player), 0.0, True
+        if self.board[0][action] != 0: raise ValueError("ILLEGAL MOVE DETECTED!")
 
         # Save board state BEFORE move for threat detection
         board_before = self.board.copy()
@@ -100,7 +95,6 @@ class Connect4Env:
                 bonus = self.CENTER_REWARD_BOTTOM * (2.0 if self.ply == 0 else opening_decay)
                 center_reward += bonus
                 
-                
             # --- Fork / anti-fork shaping using Lookahead ---
             signals = self.lookahead.compute_fork_signals(board_before, self.board, self.current_player)
             fork_bonus = self.FORK_BONUS if signals["my_after"] >= 2 else 0
@@ -127,7 +121,7 @@ class Connect4Env:
             reward = np.clip(reward, -self.MAX_REWARD, self.MAX_REWARD)
             reward -= self.STEP_PENALTY
             
-            self.current_player *= -1   # Switch turns, used for evaluation! KEEP! but only for none terminal this is already redundant for training loops which uses hard assignation
+            self.current_player *= -1   # Switch turns, KEEP! even thogh it 0s probably obsolete;
             self.ply += 1
 
         else:  # Terminal rewards
@@ -136,7 +130,7 @@ class Connect4Env:
             else:                                   reward = self.LOSS_PENALTY
                 
             
-        return self.get_state(), reward, self.done
+        return self.get_state(perspective=self.current_player), reward, self.done
 
     def check_game_over(self):
         # Horizontal

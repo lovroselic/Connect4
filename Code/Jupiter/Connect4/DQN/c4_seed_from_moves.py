@@ -30,7 +30,6 @@ Usage:
 """
 
 from __future__ import annotations
-
 from typing import Optional, List, Tuple
 import numpy as np
 import pandas as pd
@@ -67,15 +66,13 @@ def _diff_action(prev_board: np.ndarray, next_board: np.ndarray) -> Optional[int
     """
     d = next_board - prev_board
     changed_cols = np.where(np.any(d != 0, axis=0))[0]
-    if changed_cols.size != 1:
-        return None
+    if changed_cols.size != 1: return None
     c = int(changed_cols[0])
     col_prev = prev_board[:, c]
     col_next = next_board[:, c]
     nz_prev = int(np.count_nonzero(col_prev))
     nz_next = int(np.count_nonzero(col_next))
-    if nz_next != nz_prev + 1:
-        return None
+    if nz_next != nz_prev + 1: return None
     return c
 
 
@@ -90,8 +87,8 @@ def seed_from_dataframe_moves(
 ) -> NStepBuffer:
     """
     Seed agent.memory with transitions derived from a per-move dataset.
-    Rewards in `df["reward"]` are assumed to be *raw/unscaled*; they will be
-    multiplied by `reward_scale` (default: agent.reward_scale, else 1.0).
+    Rewards in `df["reward"]` are *raw/unscaled*; they will be
+    multiplied by `reward_scale` (default: agent.reward_scale).
     Returns the NStepBuffer used for seeding (already flushed/reset per game).
     """
     if gamma is None: gamma = float(agent.gamma)
@@ -120,7 +117,7 @@ def seed_from_dataframe_moves(
     raw_min, raw_max = float("inf"), float("-inf")
     sca_min, sca_max = float("inf"), float("-inf")
 
-    for (label, game_idx), gdf in tqdm(df_sorted.groupby(["label", "game"]), desc="Seeding", disable=not verbose):
+    for (label, game_idx), gdf in tqdm(df_sorted.groupby(["label", "game"]), desc="Seeding", disable=False):
         prev_board = np.zeros((ROWS, COLS), dtype=np.int32)
         max_ply = int(gdf["ply"].max())
 
@@ -134,16 +131,11 @@ def seed_from_dataframe_moves(
             cur_board = _row_to_board(row)
 
             # Tolerate stray duplicate snapshots inside a group
-            if np.array_equal(cur_board, prev_board):
-                if verbose:
-                    print(f"[seed] Duplicate snapshot at ply {ply} in (label={label}, game={game_idx}); skipping row.")
-                continue
+            if np.array_equal(cur_board, prev_board): continue
 
             a = _diff_action(prev_board, cur_board)
             if a is None:
                 valid_game = False
-                if verbose:
-                    print(f"[seed] Skip (label={label}, game={game_idx}) — cannot infer unique action at ply {ply}.")
                 break
 
             # --- SCALE REWARD HERE ---
@@ -166,8 +158,7 @@ def seed_from_dataframe_moves(
         if valid_game:
             nbuf.flush()
             games_added += 1
-        else:
-            failed_games.append((str(label), int(game_idx)))
+        else: failed_games.append((str(label), int(game_idx)))
 
     if verbose:
         print(f"[seed] games_added={games_added}, steps_added={steps_added}, failed_games={len(failed_games)}")

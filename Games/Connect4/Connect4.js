@@ -52,17 +52,17 @@ const INI = {
     OVER_TURN: 6 * 7 + 1,
     MIN_END_TURN: 4 + 3,
     INROW2: 1,
-    INROW3: 100,
+    INROW3: 200, //
     INROW4: 10000,
     IMMEDIATE_WIN: 500,
     FORK_BONUS: 150,
     DEFENSIVE_FACTOR: 1.5,
-    FLOATING_NEAR: 0.50, //0.50
-    FLOATING_FAR: 0.25, //0.25
+    FLOATING_NEAR: 0.750, //0.50
+    FLOATING_FAR: 0.50, //0.25
 };
 
 const PRG = {
-    VERSION: "1.3.8",
+    VERSION: "1.3.9",
     NAME: "Connect-4",
     YEAR: "2025",
     SG: null,
@@ -550,6 +550,20 @@ const AGENT_MANAGER = {
     },
     N_step_lookahead(playerIndex, N) {
         let moves = this.getLegalCentreOrderedMoves();
+
+        // if we can win now, do it
+        for (const c of moves) {
+            const leaf = this.dropPiece(GAME.map, c, playerIndex);
+            if (this.hasFour(leaf, playerIndex)) return c;
+        }
+
+        // if opponent has a win-in-1, block it (same column)
+        const opp = (playerIndex % 2) + 1;
+        for (const c of moves) {
+            const leaf = this.dropPiece(GAME.map, c, opp);
+            if (this.hasFour(leaf, opp)) return c;
+        }
+
         const scores = {};
         for (const move of moves) {
             scores[move] = this.scoreMove(GAME.map, move, playerIndex, N);
@@ -633,18 +647,17 @@ const AGENT_MANAGER = {
                 const v = BOARD._val(GA, x, y);
 
                 if (v === 0) {
-                                                                // if y>0, cell is playable only if y-1 < heights[x]
+                    // if y>0, cell is playable only if y-1 < heights[x]
                     if (y > 0) {
                         const deficit = y - heights[x];         // how many tokens must be dropped first
                         if (deficit > 0) need += deficit;
                     }
                 } else if (v === playerIndex) {
                     p++;
-                } else if (v === opp) {
-                    o++;
-                }
+                } else if (v === opp) o++;
             }
 
+            if ((p + o) < 2) continue;
             const mul = (need === 0) ? 1.0 : (need === 1 ? NEAR : FAR);
 
             if (o === 0) {

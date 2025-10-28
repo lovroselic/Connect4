@@ -8,6 +8,7 @@ EVALUATION_OPPONENTS = {
     "Lookahead-2": 50,
     "Lookahead-3": 50,
     "Lookahead-4": 30,
+    "Lookahead-5": 20,
 }
 
 #online training evals

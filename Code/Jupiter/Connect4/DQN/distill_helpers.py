@@ -3,11 +3,9 @@
 from __future__ import annotations
 import random
 from typing import Dict, Iterable, Optional
-
 import numpy as np
 import torch
 import torch.nn.functional as F
-
 from DQN.dqn_agent import DQNAgent
 from DQN.dqn_model import DQN
 from C4.connect4_env import Connect4Env
@@ -16,7 +14,6 @@ from DQN.agent_eval import load_agent_from_ckpt
 from tqdm.auto import tqdm
 from torch.utils.data import Dataset, DataLoader
 from collections import OrderedDict
-
 import os, json, hashlib
 from pathlib import Path
 
@@ -36,18 +33,18 @@ def _fingerprint_payload(payload: dict) -> str:
 
 @torch.no_grad()
 def collect_states_cached(
-    total: int,
-    split: Dict[str, float],
-    *,
-    cache_path: str | os.PathLike,
-    overwrite: bool = False,
-    device: Optional[torch.device] = None,
-    shuffle: bool = True,
-    max_plies_per_game: Optional[int] = None,
-    enable_cache: bool = True,
-    phase_split=(0.35, 0.45, 0.20),
-    cache_filename: str | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, dict]:
+        total: int,
+        split: Dict[str, float],
+        *,
+        cache_path: str | os.PathLike,
+        overwrite: bool = False,
+        device: Optional[torch.device] = None,
+        shuffle: bool = True,
+        max_plies_per_game: Optional[int] = None,
+        enable_cache: bool = True,
+        phase_split=(0.35, 0.45, 0.20),
+        cache_filename: str | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, dict]:
     """
     Wrapper around collect_states that caches to disk.
     Returns: (states_cpu, mask_cpu, meta)
@@ -213,8 +210,7 @@ def sanity_eval(student: torch.nn.Module,
     Returns a dict of metrics.
     """
 
-    if device is None:
-        device = next(student.parameters()).device
+    if device is None: device = next(student.parameters()).device
     student.eval()
     mA = teacherA.model if teacherA is not None else None
     mB = teacherB.model if teacherB is not None else None

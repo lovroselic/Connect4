@@ -30,13 +30,16 @@ def _parse_lookahead_depth(label: str, default: int = 2) -> int:
 
 def _agent_q_action(agent, state_abs, valid_actions):
     """
-    Pure Q argmax for the +1 agent.
-    state_abs is absolute planes from env.get_state(): [ +1 plane, -1 plane, row, col ].
-    The agent is always +1, so mover-first == state_abs as-is.
+    Pure argmax(Q) among legal actions for the +1 agent.
+    state_abs: (4,6,7) = [+1, -1, row, col] from env.get_state().
     """
-    oriented = agent._agent_planes(state_abs, +1)      # safe: same ordering for +1
-    q = agent._q_values_np(oriented)                   # (7,)
-    return _mask_argmax(q, valid_actions)
+    # state_abs is already mover-first for +1; no reorientation needed
+    q = agent._q_values_np(state_abs)           # (7,)
+    # use the agent’s legal-argmax with eval-time knobs disabled upstream
+    a = agent._argmax_legal_with_tiebreak(q, valid_actions)
+    # safety (helps catch NaNs or masking mistakes in debugging)
+    #assert a in valid_actions, f"Illegal action {a} chosen; valid={valid_actions}"
+    return a
 
 def _opp_action(env, Lookahead, label, depth, rng):
     """
