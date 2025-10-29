@@ -16,3 +16,7 @@ https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 https://openai.com/index/openai-baselines-ppo/
 https://github.com/dennybritz/reinforcement-learning
 https://sites.google.com/view/deep-rl-bootcamp/lectures?pli=1
+
+
+http://blog.gamesolver.org/solving-connect-four/06-bitboard/
+http://blog.gamesolver.org/solving-connect-four/06-bitboard/

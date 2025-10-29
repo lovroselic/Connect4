@@ -9,7 +9,17 @@ def N_step_lookahead_fast(obs, config):
     import numpy as np
     
     # Search depth 
-    N_STEPS = 6
+    N_STEPS = 7
+
+    weights_dict = {2: 10.0, 3: 1000.0, 4: 100000.0}
+
+    # Heuristic weights 
+    MATE_SCORE = 1e12
+    immediate_w = weights_dict[4]
+    fork_w = weights_dict[3] * 2
+    DEFENSIVE = 1.5
+    FLOATING_NEAR = 0.75   # needs exactly 1 filler to become supported
+    FLOATING_FAR  = 0.50   # needs 2+ fillers, still counts but less
     
     
     ###########################################################################
@@ -162,21 +172,12 @@ def N_step_lookahead_fast(obs, config):
     ROWS, COLS, K = 6, 7, 4
     CENTER_COL = 3
     CENTER_ORDER = [3, 4, 2, 5, 1, 6, 0]
-    
-    # Heuristic weights 
-    MATE_SCORE = 1e12
-    immediate_w = 250.0
-    fork_w = 150.0
-    DEFENSIVE = 1.5
-    FLOATING_NEAR = 0.75   # needs exactly 1 filler to become supported
-    FLOATING_FAR  = 0.50   # needs 2+ fillers, still counts but less
-
 
     # Pattern weights for counts in a 4-window; unused indices default to 0
-    _weights_dict = {2: 10.0, 3: 200.0, 4: 1000.0}
+    
     WARR = [0.0] * (K + 1)
     for i in range(2, min(K, 4) + 1):
-        WARR[i] = float(_weights_dict.get(i, 0.0))
+        WARR[i] = float(weights_dict.get(i, 0.0))
 
     # ------------------------------ state -----------------------------------
     # Bottom-based board: row 0 is the bottom, heights track next free row per column.
