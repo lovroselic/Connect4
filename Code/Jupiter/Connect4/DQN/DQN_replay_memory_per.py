@@ -16,14 +16,34 @@ class PrioritizedReplayMemory:
         init_boost_oppmove: float = 1.075,      #1.075
         init_percentile: float = 85.0,          #85
         init_boost_seed: float = 1.01,          #1.00
+        # sign-aware terminal boosts
+        init_boost_terminal_win: float = 1.75,
+        init_boost_terminal_loss: float = 2.50,
+        init_boost_terminal_draw: float = 0.90,
+        boost_terminals_by_sign: bool = True,
+        deboost_small_reward:        float = 0.85,
+        small_reward_abs_threshold:  float = 0.25,  #step rewards are ±1, 0.25 is reasonable
+        deboost_nonterminal_only:    bool  = True,
+        nstep_closeness_k: float = 0.05,
+        init_prio_cap: float = 3.0
     ):
         self.capacity = int(capacity)
         self.alpha = float(alpha)
         self.eps = float(eps)
+        
         self.init_boost_terminal = float(init_boost_terminal)
+        self.init_boost_terminal_win  = float(init_boost_terminal_win)
+        self.init_boost_terminal_loss = float(init_boost_terminal_loss)
+        self.init_boost_terminal_draw = float(init_boost_terminal_draw)
+        self.boost_terminals_by_sign  = bool(boost_terminals_by_sign)
         self.init_boost_oppmove = float(init_boost_oppmove)
         self.init_percentile = float(init_percentile)
         self.init_boost_seed = float(init_boost_seed)
+        self.deboost_small_reward       = float(deboost_small_reward)
+        self.small_reward_abs_threshold = float(small_reward_abs_threshold)
+        self.deboost_nonterminal_only   = bool(deboost_nonterminal_only)
+        self.nstep_closeness_k          = float(nstep_closeness_k)
+        self.init_prio_cap = float(init_prio_cap)
 
         self.bank_1, self.bank_n = [], []
         self.prio_1 = np.zeros((self.capacity,), dtype=np.float32)
@@ -49,26 +69,44 @@ class PrioritizedReplayMemory:
     def _finite_or(self, value, fallback):
         return value if np.isfinite(value) else fallback
 
-    def _compute_boost(self, done_flag, player_flag):
-        # optional initial priority boosts
+    def _compute_boost(self, done_flag, player_flag, reward=None, n_steps=None, is_nstep=False):
         boost = 1.0
+
+        # Terminals: win/loss/draw separated
         if done_flag:
-            boost *= self.init_boost_terminal
-        if player_flag == -1:                # opponent moves can be slightly emphasized
-            boost *= self.init_boost_oppmove
-        if self.seed_mode:
-            boost *= self.init_boost_seed
+            if self.boost_terminals_by_sign and (reward is not None) and np.isfinite(reward):
+                if reward > 0:   boost *= self.init_boost_terminal_win
+                elif reward < 0: boost *= self.init_boost_terminal_loss
+                else:            boost *= self.init_boost_terminal_draw   
+            else:                boost *= self.init_boost_terminal        # legacy fallback
+
+        # Non-terminals: suppress tiny rewards (keeps “already-lost” filler from dominating)
+        elif (reward is not None) and np.isfinite(reward):
+            if abs(float(reward)) < self.small_reward_abs_threshold:
+                if self.deboost_nonterminal_only: boost *= self.deboost_small_reward
+
+        # (optional) prefer shorter N-step horizons a bit
+        if is_nstep and (self.nstep_closeness_k > 0) and (n_steps is not None) and (n_steps > 0):
+            boost *= (1.0 + self.nstep_closeness_k / float(n_steps))
+
+        # Opponent-move & seeding multipliers
+        if player_flag == -1: boost *= self.init_boost_oppmove
+        if self.seed_mode: boost *= self.init_boost_seed
         return boost
 
-    def _seed_priority(self, prio_vector, bank_len, done_flag, player_flag):
-        if bank_len <= 0:
-            base = 1.0
-        else:
+
+
+    def _seed_priority(self, prio_vector, bank_len, done_flag, player_flag, reward_val, n_steps=None, is_nstep=False):
+        base = 1.0
+        if bank_len > 0:
             pv = prio_vector[:bank_len]
             pv = pv[np.isfinite(pv) & (pv > 0)]
             base = np.percentile(pv, self.init_percentile) if pv.size else 1.0
-        boost = self._compute_boost(done_flag, player_flag)
-        return max(self.eps, float(self._finite_or(base * boost, 1.0)))
+        boost = self._compute_boost(done_flag, player_flag, reward_val, n_steps, is_nstep)
+        init_val = base * boost
+        init_val = min(self.init_prio_cap, init_val)       # ← cap initial priority
+        return max(self.eps, float(self._finite_or(init_val, 1.0)))
+
 
     def _push_to_bank(self, bank, prio, pos_ptr, is_seed_arr, transition, init_p):
         if len(bank) < self.capacity:
@@ -85,14 +123,15 @@ class PrioritizedReplayMemory:
 
     # ----------------- base pushers -----------------
     def push_1step(self, s, a, r, ns, done, player):
-        init_p = self._seed_priority(self.prio_1, len(self.bank_1), done, player)
+        init_p = self._seed_priority(self.prio_1, len(self.bank_1), done, player, r)
         t = Transition(s, a, r, ns, bool(done), int(player))
         self.pos_1 = self._push_to_bank(self.bank_1, self.prio_1, self.pos_1, self.is_seed_1, t, init_p)
 
     def push_nstep(self, s, a, rN, nsN, doneN, player, n_steps):
-        init_p = self._seed_priority(self.prio_n, len(self.bank_n), doneN, player)
+        init_p = self._seed_priority(self.prio_n, len(self.bank_n), doneN, player, rN, n_steps=n_steps, is_nstep=True)
         t = NStepTransition(s, a, rN, nsN, bool(doneN), int(player), int(n_steps))
         self.pos_n = self._push_to_bank(self.bank_n, self.prio_n, self.pos_n, self.is_seed_n, t, init_p)
+
     
     def _apply_transform(self, state, action, player, mirror: bool, colorswap: bool):
         s = state.copy()
