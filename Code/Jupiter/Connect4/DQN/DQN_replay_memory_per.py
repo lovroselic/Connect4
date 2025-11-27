@@ -10,22 +10,22 @@ class PrioritizedReplayMemory:
     def __init__(
         self,
         capacity: int,
-        alpha: float = 0.6,                     #0.6
+        alpha: float = 0.65,                    #0.60
         eps: float = 0.02 ,                     #0.02
         init_boost_terminal: float = 1.75,      #1.75
-        init_boost_oppmove: float = 1.075,      #1.075
+        init_boost_oppmove: float = 1.05,       #1.075
         init_percentile: float = 85.0,          #85
-        init_boost_seed: float = 1.01,          #1.00
+        init_boost_seed: float = 1.05,          #1.00
         # sign-aware terminal boosts
-        init_boost_terminal_win: float = 1.75,
-        init_boost_terminal_loss: float = 2.50,
-        init_boost_terminal_draw: float = 0.90,
+        init_boost_terminal_win: float = 1.50,
+        init_boost_terminal_loss: float = 2.00,
+        init_boost_terminal_draw: float = 0.95,
         boost_terminals_by_sign: bool = True,
-        deboost_small_reward:        float = 0.85,
-        small_reward_abs_threshold:  float = 0.25,  #step rewards are ±1, 0.25 is reasonable
+        deboost_small_reward:        float = 0.80,
+        small_reward_abs_threshold:  float = 0.20,  #step rewards are ±1, 0.25 is reasonable
         deboost_nonterminal_only:    bool  = True,
-        nstep_closeness_k: float = 0.05,
-        init_prio_cap: float = 3.0
+        nstep_closeness_k: float = 0.04,
+        init_prio_cap: float = 2.5
     ):
         self.capacity = int(capacity)
         self.alpha = float(alpha)
@@ -279,7 +279,7 @@ class PrioritizedReplayMemory:
         return self.sample_mixed(batch_size, mix=1.0, beta=beta)[0]
 
     def update_priorities(self, indices_1, td_errors_1, indices_n=None, td_errors_n=None):
-        PRIO_CLIP = 3.5
+        PRIO_CLIP = 3.0
         for indices, errors, prios in [(indices_1, td_errors_1, self.prio_1), (indices_n, td_errors_n, self.prio_n)]:
             if indices is not None:
                 for i, e in zip(indices, errors):

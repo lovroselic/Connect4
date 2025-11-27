@@ -1,60 +1,251 @@
 # PPO/ppo_agent_eval.py
-# PPO model-vs-model evaluation (alternating colors, CI, simple plots)
+# Single-source PPO eval helpers, with a simple DQN-style loader.
 
-import os, random, warnings
+import os, re, random,  warnings
+from typing import Iterable, Dict, Tuple, Any
+
 import numpy as np
+import pandas as pd
 import torch
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 
+
 from C4.connect4_env import Connect4Env
+from C4.fast_connect4_lookahead import Connect4Lookahead
 from PPO.actor_critic import ActorCritic
-from PPO.checkpoint import load_checkpoint
+from PPO.checkpoint import load_checkpoint  # uses your legacy save/load format
 
+
+warnings.filterwarnings("ignore", category=FutureWarning, module="pandas")
 warnings.filterwarnings("ignore", message="You are using `torch.load`.*weights_only=False")
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+NEG_INF = -1e9
 
+# =============================
+# Loading (DQN-style, via PPO.checkpoint)
+# =============================
 
-# ----------------------------- Utilities -----------------------------
-
-def _extract_state_dict_ppo(obj: dict) -> dict:
+def load_policy_simple(name_or_path: str,
+                       device=DEVICE,
+                       default_suffix: str = " PPO model.pt"):
     """
-    Accepts:
-      - checkpoint dict with 'model_state' (our PPO saver)
-      - generic dict with 'state_dict'/'model'/'net'/...
-      - raw state_dict
-    Strips 'module.' if present (DataParallel).
+    Minimal loader using PPO.checkpoint.load_checkpoint:
+      - If you pass a filename with .pt/.pth/.ckpt -> load it.
+      - Else append default_suffix (e.g., 'RND_3' -> 'RND_3 PPO model.pt').
+    Returns (policy.eval(), resolved_path, meta_dict).
     """
-    sd = None
-    if isinstance(obj, dict):
-        if "model_state" in obj and isinstance(obj["model_state"], dict):
-            sd = obj["model_state"]
-        else:
-            for k in ("state_dict", "model", "net", "params"):
-                if k in obj and isinstance(obj[k], dict):
-                    sd = obj[k]
-                    break
-    if sd is None:
-        if isinstance(obj, dict):
-            sd = obj  # assume raw state_dict
-        else:
-            raise TypeError("Checkpoint does not contain a usable state_dict.")
+    path = name_or_path
+    if not any(path.endswith(ext) for ext in (".pt", ".pth", ".ckpt")): path = f"{name_or_path}{default_suffix}"
+    if not os.path.isfile(path): raise FileNotFoundError(f"Checkpoint not found: {path}")
 
-    clean = {}
-    for k, v in sd.items():
-        nk = k[7:] if k.startswith("module.") else k
-        clean[nk] = v
-    return clean
+    model, optim_state, meta = load_checkpoint(path, device=device, strict=True)
+
+    return model.eval(), path, meta or {}
 
 
-def load_policy_from_ckpt(path: str, device=DEVICE, strict: bool = False):
-    model, _, _ = load_checkpoint(path, device=device, strict=strict)
-    model.eval()
-    return model
 
+# =============================
+# Encoding & action helpers
+# =============================
+
+def _mirror_state_4ch(s: np.ndarray) -> np.ndarray:
+    """Mirror horizontally; negate col-plane; ensure positive strides."""
+    assert s.shape[0] >= 4 and s.shape[1:] == (6,7), f"Unexpected state shape {s.shape}"
+    sm = s[:, :, ::-1].copy()
+    sm[3] = -sm[3]
+    return sm[:4]
+
+@torch.inference_mode()
+def _logits_np(policy: ActorCritic, s_4: np.ndarray) -> np.ndarray:
+    x_np = np.ascontiguousarray(s_4)
+    x = torch.from_numpy(x_np).float().unsqueeze(0).to(next(policy.parameters()).device)
+    logits, _ = policy.forward(x)
+    return logits.squeeze(0).detach().cpu().numpy()
+
+def _argmax_legal_center_tiebreak(logits: np.ndarray, legal: Iterable[int], center: int = 3, tol: float = 1e-12) -> int:
+    
+    legal = list(legal)
+    if not legal: raise ValueError("No legal actions passed to _argmax_legal_center_tiebreak")
+
+    logits = np.asarray(logits, dtype=float)
+    vals = np.full(7, -np.inf, dtype=float)
+    
+    for c in legal:
+        if 0 <= c < logits.shape[-1]: vals[c] = float(logits[c])
+
+    m = np.max(vals)
+    diff = np.abs(vals - m)
+    tied = np.where(diff <= tol)[0]
+
+    if len(tied) == 0: return int(sorted(legal, key=lambda c: (abs(c - center), c))[0])
+    if len(tied) == 1: return int(tied[0])
+
+    # Multiple argmax actions, break ties by closeness to center, then index
+    return int(sorted(tied, key=lambda c: (abs(c - center), c))[0])
+
+@torch.inference_mode()
+def ppo_act_greedy(policy: ActorCritic, env: Connect4Env) -> int:
+    s = env.get_state(perspective=env.current_player)
+    logits = _logits_np(policy, s)
+    return _argmax_legal_center_tiebreak(logits, env.available_actions())
+
+
+# =============================
+# Symmetry & sanity
+# =============================
+
+def symmetry_check_once(policy: ActorCritic, env: Connect4Env, verbose: bool = True) -> Dict[str, Any]:
+    s = env.get_state(env.current_player)
+    q  = _logits_np(policy, s)
+    qm = _logits_np(policy, _mirror_state_4ch(s))[::-1]
+    diff = float(np.max(np.abs(q - qm)))
+    if verbose:
+        print(f"[SYM] max|q - mirror(q)| = {diff:.6g}")
+    return {"q": q, "qm_unflip": qm, "max_abs_diff": diff}
+
+def random_states_symmetry_probe(policy: ActorCritic, n_random: int = 32, rng_seed: int = 0, atol_warn: float = 1e-5):
+    rng = np.random.default_rng(rng_seed)
+    diffs = []
+    for _ in range(n_random):
+        env = Connect4Env(); env.reset()
+        for _ in range(int(rng.integers(0, 8))):
+            if env.done: break
+            legal = env.available_actions()
+            if not legal: break
+            env.step(int(rng.choice(legal)))
+        s  = env.get_state(env.current_player)
+        q  = _logits_np(policy, s)
+        qm = _logits_np(policy, _mirror_state_4ch(s))[::-1]
+        diffs.append(float(np.max(np.abs(q - qm))))
+    mx, mean = float(np.max(diffs)), float(np.mean(diffs))
+    print(f"[SYM] random-states: max={mx:.6g}, mean={mean:.6g}, >{atol_warn}: {sum(d>atol_warn for d in diffs)}/{n_random}")
+    return {"max": mx, "mean": mean, "diffs": diffs}
+
+def self_test(policy: ActorCritic, atol: float = 1e-2, n_random: int = 32, rng_seed: int = 0):
+    env = Connect4Env(); env.reset()
+    res_raw = symmetry_check_once(policy, env, verbose=True)
+    diff = res_raw["max_abs_diff"]
+    if not diff < atol: print(f"RAW symmetry broken on empty board (diff={diff:.6g} > atol={atol}).")
+
+    # report center pick (no assert, ZERO can be slightly off)
+    s0 = env.get_state(env.current_player)
+    a0 = _argmax_legal_center_tiebreak(_logits_np(policy, s0), env.available_actions())
+    print(f"[CENTER] empty-board argmax = {a0}")
+
+    random_states_symmetry_probe(policy, n_random=n_random, rng_seed=rng_seed)
+    print("✅ PPO self-test passed.")
+
+
+# =============================
+# Opponents & evaluation
+# =============================
+
+def _parse_depth(label: str, default=2) -> int:
+    m = re.search(r"(\d+)", label)
+    return int(m.group(1)) if (label.startswith("Lookahead") and m) else default
+
+def opponent_action(env: Connect4Env, label: str, la: Connect4Lookahead, rng: random.Random) -> int:
+    legal = env.available_actions()
+    if not legal: raise ValueError("No legal actions.")
+    if label == "Random":
+        return rng.choice(legal)
+    d = _parse_depth(label, default=2)
+    a = la.n_step_lookahead(env.board, player=-1, depth=d)
+    return a if a in legal else rng.choice(legal)
+
+def play_single_game_ppo(policy: ActorCritic, opponent_label: str, seed: int = 0) -> Tuple[float, np.ndarray]:
+    rng = random.Random(seed)
+    env = Connect4Env(); env.reset()
+    la  = Connect4Lookahead()
+    AGENT, OPP = +1, -1
+    done = False
+
+    # strict alternation: half the games opponent opens
+    if (seed % 2) != 0:
+        env.current_player = OPP
+        a = opponent_action(env, opponent_label, la, rng)
+        _, _, done = env.step(a)
+
+    while not done:
+        env.current_player = AGENT
+        a = ppo_act_greedy(policy, env)
+        _, _, done = env.step(a)
+        if done: break
+
+        env.current_player = OPP
+        a = opponent_action(env, opponent_label, la, rng)
+        _, _, done = env.step(a)
+
+    if env.winner == AGENT:   outcome = 1.0
+    elif env.winner == OPP:   outcome = -1.0
+    else:                     outcome = 0.5
+
+    return outcome, env.board.copy()
+
+def evaluate_actor_critic_model(policy: ActorCritic, evaluation_opponents: Dict[str,int], seed: int = 666) -> Dict[str, Dict[str, float]]:
+    results = {}
+    for label, n_games in evaluation_opponents.items():
+        wins = losses = draws = 0
+        with tqdm(total=n_games, desc=f"Opponent: {label}", leave=False, position=1) as pbar:
+            for g in range(n_games):
+                outcome, _ = play_single_game_ppo(policy, label, seed=seed+g)
+                if outcome == 1.0: wins += 1
+                elif outcome == -1.0: losses += 1
+                else: draws += 1
+                pbar.update(1)
+        results[label] = dict(
+            wins=wins, losses=losses, draws=draws,
+            win_rate=round(wins / n_games, 3),
+            loss_rate=round(losses / n_games, 3),
+            draw_rate=round(draws / n_games, 3),
+            games=n_games,
+        )
+    return results
+
+
+# =============================
+# Extra: exploitation histogram & reporting
+# =============================
+
+@torch.inference_mode()
+def exploitation_histogram(policy: ActorCritic, n_states: int = 256, rng_seed: int = 0) -> np.ndarray:
+    counts = np.zeros(7, dtype=int)
+    rng = np.random.default_rng(rng_seed)
+    for _ in range(n_states):
+        env = Connect4Env() 
+        env.reset()
+        for _ in range(int(rng.integers(0, 12))):
+            if env.done: break
+            legal = env.available_actions()
+            if not legal: break
+            env.step(int(rng.choice(legal)))
+        a = ppo_act_greedy(policy, env)
+        counts[a] += 1
+    return counts
+
+def results_to_row(run_tag: str, results: dict, elapsed_h: float, episodes=None) -> pd.DataFrame:
+    row = {"TRAINING_SESSION": run_tag, "TIME [h]": round(float(elapsed_h), 6), "EPISODES": episodes}
+    for label, m in results.items():
+        row[label] = m["win_rate"]
+    return pd.DataFrame([row]).set_index("TRAINING_SESSION")
+
+def append_eval_row_to_excel(df_row: pd.DataFrame, excel_path: str) -> None:
+    if os.path.exists(excel_path):
+        old = pd.read_excel(excel_path)
+        if not old.empty and not old.isnull().all().all():
+            new = pd.concat([old, df_row.reset_index()], ignore_index=True)
+    else:
+        new = df_row.reset_index()
+    new.to_excel(excel_path, index=False)
+
+
+# =============================
+# H2H utilities (kept as-is)
+# =============================
 
 def mean_ci(scores, z=1.96):
-    """95% CI for mean of scores in {0, 0.5, 1} via normal approximation."""
     x = np.asarray(scores, dtype=float)
     n = len(x)
     m = float(x.mean()) if n else 0.0
@@ -62,100 +253,139 @@ def mean_ci(scores, z=1.96):
     half = z * s / (n ** 0.5) if n > 1 else 0.0
     return max(0.0, m - half), min(1.0, m + half)
 
-
-# ----------------------------- Encoding & action -----------------------------
-
-def _encode_two_planes(board_2d: np.ndarray, perspective: int) -> np.ndarray:
-    """
-    board_2d: (6,7) in {-1,0,+1}
-    perspective: +1 or -1 (the true mover)
-    returns (2,6,7) float32: [me, opp]
-    """
-    b = (board_2d.astype(np.int8) * int(perspective))
-    me  = (b == +1).astype(np.float32)
-    opp = (b == -1).astype(np.float32)
-    return np.stack([me, opp], axis=0)
-
-
 @torch.inference_mode()
-def ppo_act_greedy(policy: ActorCritic, board_2d: np.ndarray, legal_actions, mover: int) -> int:
-    """
-    Deterministic action: argmax over masked logits.
-    - policy: ActorCritic
-    - board_2d: current env.board (6,7) in {-1,0,+1}
-    - legal_actions: iterable of ints
-    - mover: +1/-1 (env.current_player)
-    """
-    assert len(legal_actions) > 0, "No legal actions."
-    planes = _encode_two_planes(board_2d, perspective=mover)  # (2,6,7)
-
-    x = torch.from_numpy(planes).float().unsqueeze(0).to(policy.device if hasattr(policy, "device") else next(policy.parameters()).device)
-    logits, _ = policy.forward(x)                            # (1,7)
-    logits = logits.squeeze(0)                               # (7,)
-
-    mask = torch.zeros_like(logits, dtype=torch.bool)
-    mask[torch.as_tensor(list(legal_actions), dtype=torch.long, device=logits.device)] = True
-    masked = logits.masked_fill(~mask, float("-inf"))
-    return int(torch.argmax(masked).item())
-
-
-# ----------------------------- Game loop -----------------------------
+def ppo_act_greedy_for_h2h(policy: ActorCritic, env: Connect4Env) -> int:
+    return ppo_act_greedy(policy, env)
 
 def _agent_for_side(side: int, A: ActorCritic, B: ActorCritic, A_color: int) -> ActorCritic:
-    """Return the model that plays the given side (+1/-1)."""
     return A if side == A_color else B
 
-
-def play_game_ppo(A: ActorCritic, B: ActorCritic, A_color: int = +1,
-                  opening_noise_k: int = 0, seed: int = 0) -> float:
-    """
-    Plays one game. A plays as +1 for half the games (alternated by the caller).
-    Returns score from A's perspective (1=win, 0.5=draw, 0=loss).
-    """
+def play_game_ppo(A: ActorCritic, B: ActorCritic, A_color: int = +1, opening_noise_k: int = 0, seed: int = 0) -> float:
     random.seed(seed); np.random.seed(seed)
-    env = Connect4Env()
-    s = env.reset(); done = False
-
+    env = Connect4Env(); env.reset(); done = False
     for _ in range(opening_noise_k):
         if done: break
         a = random.choice(env.available_actions())
-        s, r, done = env.step(a)
-
+        _, _, done = env.step(a)
     while not done:
-        mover = env.current_player                       # +1 or -1
+        legal = env.available_actions()
+        if not legal: return 0.5
+        
+        mover = env.current_player
         model = _agent_for_side(mover, A, B, A_color)
-        action = ppo_act_greedy(model, env.board, env.available_actions(), mover)
-        s, r, done = env.step(action)
-
+        a = ppo_act_greedy_for_h2h(model, env)
+        _, _, done = env.step(a)
     if env.winner == 0: return 0.5
     return 1.0 if env.winner == A_color else 0.0
 
-
-# ----------------------------- Head-to-head -----------------------------
-
-def head_to_head(ckptA: str, ckptB: str, n_games: int = 200, device=DEVICE,
-                 opening_noise_k: int = 0, seed: int = 123, progress: bool = True):
-    """
-    Evaluate PPO model A vs PPO model B.
-    Alternate A's color each game to cancel first-move advantage.
-    """
-    A = load_policy_from_ckpt(ckptA, device=device)
-    B = load_policy_from_ckpt(ckptB, device=device)
-
+def head_to_head(ckptA: str, ckptB: str, n_games: int = 200, device=DEVICE, opening_noise_k: int = 0, seed: int = 123, progress: bool = True):
+    A, A_path, _ = load_policy_simple(ckptA, device=device)
+    B, B_path, _ = load_policy_simple(ckptB, device=device)
     rng = random.Random(seed)
     colors = ([+1, -1] * ((n_games + 1) // 2))[:n_games]
-    iterable = tqdm(colors, total=n_games,
-                    desc=f"{os.path.basename(ckptA)} vs {os.path.basename(ckptB)}") if progress else colors
-
-    timeline = []
-    wins = draws = losses = 0
-
+    iterable = tqdm(colors, total=n_games, desc=f"{os.path.basename(ckptA)} vs {os.path.basename(ckptB)}") if progress else colors
+    timeline = []; wins = draws = losses = 0
     for A_color in iterable:
         res = play_game_ppo(A, B, A_color=A_color, opening_noise_k=opening_noise_k, seed=rng.randint(0, 10**9))
         timeline.append(res)
         if res == 1.0: wins += 1
         elif res == 0.5: draws += 1
         else: losses += 1
+        if progress:
+            g = len(timeline); score = (wins + 0.5 * draws) / g
+            iterable.set_postfix(W=wins, D=draws, L=losses, score=f"{score:.3f}")
+    n = len(timeline); score = (wins + 0.5 * draws) / n if n else 0.0
+    ci95 = mean_ci(timeline, z=1.96)
+    return {"A_path": ckptA, "B_path": ckptB, "games": n, "A_wins": wins, "draws": draws, "A_losses": losses, "A_score_rate": score, "A_score_CI95": ci95}
+
+
+def plot_winrate_bar(res: dict, title: str | None = None, show_score_bars: bool = True):
+    n = int(res["games"]); Aw = int(res["A_wins"]); Ad = int(res["draws"]); Al = int(res["A_losses"])
+    A_score = float(res["A_score_rate"]); B_score = 1.0 - A_score
+    pw, pd, pl = (Aw/n if n else 0.0), (Ad/n if n else 0.0), (Al/n if n else 0.0)
+    a_name = os.path.basename(res["A_path"]); b_name = os.path.basename(res["B_path"])
+    title = title or f"{a_name} vs {b_name}"
+    fig, ax = plt.subplots(figsize=(6.2, 1.6))
+    left = 0.0
+    ax.barh([0], [pw], left=left, color="#4CAF50", label="Win"); left += pw
+    ax.barh([0], [pd], left=left, color="#9E9E9E", label="Draw"); left += pd
+    ax.barh([0], [pl], left=left, color="#F44336", label="Loss")
+    ax.set_xlim(0, 1); ax.set_yticks([]); ax.set_xlabel("Proportion"); ax.set_title(f"{title} — A Win/Draw/Loss")
+    if n > 0:
+        ax.text(pw/2 if pw>0 else 0.01, 0, f"W {Aw}", ha="center", va="center", color="white", fontsize=10)
+        ax.text(pw + (pd/2 if pd>0 else 0.01), 0, f"D {Ad}", ha="center", va="center", color="white", fontsize=10)
+        ax.text(pw + pd + (pl/2 if pl>0 else 0.01), 0, f"L {Al}", ha="center", va="center", color="white", fontsize=10)
+    ax.legend(ncols=3, loc="lower right", frameon=False); plt.tight_layout(); plt.show()
+    if not show_score_bars: return
+    fig, ax = plt.subplots(figsize=(4.8, 3.2))
+    ax.bar([a_name, b_name], [A_score, B_score]); ax.set_ylim(0, 1); ax.set_ylabel("Score rate")
+    ax.set_title(f"{title} — overall score")
+    for i, v in enumerate([A_score, B_score]): ax.text(i, v, f"{v:.3f}", ha="center", va="bottom")
+    ax.grid(axis="y", ls="--", alpha=0.3); plt.tight_layout(); plt.show()
+    
+
+def plot_exploitation_histogram(counts: np.ndarray, title: str = "PPO greedy exploit histogram"):
+    counts = np.asarray(counts, dtype=int)
+    cols = np.arange(7)
+
+    # Frequencies
+    freqs = counts / max(1, counts.sum())
+    fig, ax = plt.subplots(figsize=(6.2, 3.0))
+    ax.bar(cols, freqs)
+    ax.set_xticks(cols)
+    ax.set_ylim(0, 1.0)
+    ax.set_xlabel("Column")
+    ax.set_ylabel("Frequency")
+    ax.set_title(f"{title} (normalized)")
+    for i, v in enumerate(freqs):
+        if v > 0:
+            ax.text(i, v, f"{v:.2f}", ha="center", va="bottom", fontsize=9)
+    plt.tight_layout();
+    #plt.show()
+    return fig
+
+
+def head_to_head_models(
+    A,
+    B,
+    n_games: int = 200,
+    A_label: str = "student",
+    B_label: str = "POP_ensemble",
+    opening_noise_k: int = 0,
+    seed: int = 123,
+    progress: bool = True,
+):
+    """
+    Head-to-head match between two *models* (ActorCritic or PPOEnsemblePolicy),
+    using the same logic as head_to_head(ckptA, ckptB) but without loading.
+
+    Returns a dict compatible with plot_winrate_bar().
+    """
+    rng = random.Random(seed)
+    colors = ([+1, -1] * ((n_games + 1) // 2))[:n_games]
+    iterable = (
+        tqdm(colors, total=n_games, desc=f"{A_label} vs {B_label}")
+        if progress else colors
+    )
+
+    timeline = []
+    wins = draws = losses = 0
+
+    for A_color in iterable:
+        res = play_game_ppo(
+            A,
+            B,
+            A_color=A_color,
+            opening_noise_k=opening_noise_k,
+            seed=rng.randint(0, 10**9),
+        )
+        timeline.append(res)
+        if res == 1.0:
+            wins += 1
+        elif res == 0.5:
+            draws += 1
+        else:
+            losses += 1
 
         if progress:
             g = len(timeline)
@@ -167,59 +397,80 @@ def head_to_head(ckptA: str, ckptB: str, n_games: int = 200, device=DEVICE,
     ci95 = mean_ci(timeline, z=1.96)
 
     return {
-        "A_path": ckptA, "B_path": ckptB, "games": n,
-        "A_wins": wins, "draws": draws, "A_losses": losses,
-        "A_score_rate": score, "A_score_CI95": ci95,
-        # "timeline": timeline,  # keep if you want raw results
+        "A_path": A_label,
+        "B_path": B_label,
+        "games": n,
+        "A_wins": wins,
+        "draws": draws,
+        "A_losses": losses,
+        "A_score_rate": score,
+        "A_score_CI95": ci95,
     }
 
+# =============================
+# Policy visualization helpers
+# =============================
 
-# ----------------------------- Plotting -----------------------------
-
-def plot_winrate_bar(res: dict, title: str | None = None, show_score_bars: bool = True):
+@torch.inference_mode()
+def state_action_distribution(
+    policy: ActorCritic,
+    state_4: np.ndarray,
+    title: str = "policy — action distribution",
+    annotate: bool = True,
+    ylim_pad: float = 0.15,
+):
     """
-    Stacked W/D/L bar for A vs B (A perspective), plus A vs B score bars.
+    Given a single mover-centric state (4,6,7), compute logits, turn them
+    into a softmax probability distribution over columns, and plot it.
+
+    Returns (logits, probs, argmax, fig, ax).
     """
-    n   = int(res["games"])
-    Aw  = int(res["A_wins"])
-    Ad  = int(res["draws"])
-    Al  = int(res["A_losses"])
-    A_score = float(res["A_score_rate"])
-    B_score = 1.0 - A_score
+    # reuse existing helper to stay consistent
+    logits = _logits_np(policy, state_4)  # shape (7,)
 
-    pw, pd, pl = (Aw/n if n else 0.0), (Ad/n if n else 0.0), (Al/n if n else 0.0)
-    a_name = os.path.basename(res["A_path"])
-    b_name = os.path.basename(res["B_path"])
-    title = title or f"{a_name} vs {b_name}"
+    # numerically-stable softmax on numpy side
+    probs = np.exp(logits - logits.max())
+    s = probs.sum()
+    if s > 0.0: probs /= s
 
-    fig, ax = plt.subplots(figsize=(6.2, 1.6))
-    left = 0.0
-    ax.barh([0], [pw], left=left, color="#4CAF50", label="Win"); left += pw
-    ax.barh([0], [pd], left=left, color="#9E9E9E", label="Draw"); left += pd
-    ax.barh([0], [pl], left=left, color="#F44336", label="Loss")
+    argmax = int(np.argmax(probs))
 
-    ax.set_xlim(0, 1)
-    ax.set_yticks([])
-    ax.set_xlabel("Proportion")
-    ax.set_title(f"{title} — A Win/Draw/Loss")
 
-    if n > 0:
-        ax.text(pw/2 if pw>0 else 0.01, 0, f"W {Aw}", ha="center", va="center", color="white", fontsize=10)
-        ax.text(pw + (pd/2 if pd>0 else 0.01), 0, f"D {Ad}", ha="center", va="center", color="white", fontsize=10)
-        ax.text(pw + pd + (pl/2 if pl>0 else 0.01), 0, f"L {Al}", ha="center", va="center", color="white", fontsize=10)
-
-    ax.legend(ncols=3, loc="lower right", frameon=False)
-    plt.tight_layout(); plt.show()
-
-    if not show_score_bars:
-        return
-
-    fig, ax = plt.subplots(figsize=(4.8, 3.2))
-    ax.bar([a_name, b_name], [A_score, B_score])
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Score rate")
-    ax.set_title(f"{title} — overall score")
-    for i, v in enumerate([A_score, B_score]):
-        ax.text(i, v, f"{v:.3f}", ha="center", va="bottom")
+    # visual
+    cols = np.arange(len(probs))
+    fig, ax = plt.subplots(figsize=(7.0, 3.0))
+    ax.bar(cols, probs)
+    ax.set_xticks(cols)
+    ax.set_ylim(0, max(0.01, probs.max() * (1.0 + ylim_pad)))
+    ax.set_xlabel("Column")
+    ax.set_ylabel("Probability")
+    ax.set_title(f"{title}; argmax: {argmax}")
     ax.grid(axis="y", ls="--", alpha=0.3)
-    plt.tight_layout(); plt.show()
+
+    if annotate:
+        for i, p in enumerate(probs):
+            if p > 0:
+                ax.text(i, p, f"{p:.5f}", ha="center", va="bottom", fontsize=9)
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_empty_board_action_distribution(
+    policy: ActorCritic,
+    tag: str = "policy",
+):
+    """
+    Convenience wrapper: reset env, get empty-board state and call
+    state_action_distribution().
+
+    Example:
+        plot_empty_board_action_distribution(policy, tag="ZERO")
+
+    Returns (logits, probs, argmax, fig, ax).
+    """
+    env = Connect4Env()
+    env.reset()
+    s0 = env.get_state(env.current_player)  # (4,6,7), mover-centric
+    title = f"{tag} — empty board action distribution"
+    return state_action_distribution(policy, s0, title=title)

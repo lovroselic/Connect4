@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import display
 from DQN.eval_utilities import play_single_game
+from PPO.ppo_agent_eval import play_single_game_ppo
 
 class Connect4_BoardDisplayer:
     @staticmethod
@@ -64,6 +65,18 @@ def display_final_boards(agent, env, device, Lookahead, opponents):
             )
             
             Connect4_BoardDisplayer.display_board(env.board, title)
+            
+def display_final_boards_PPO(policy, opponents, seed: int = 666):
+    """
+    Show two final boards per opponent label: agent-first (seed) and opponent-first (seed+1).
+    Uses play_single_game_ppo() and Connect4_BoardDisplayer.display_board(...).
+    """
+    for label in opponents:
+        print(f"\n🎯 Opponent: {label}")
+        for who_first, s in (("Agent first", seed), ("Opponent first", seed + 1)):
+            outcome, final_board = play_single_game_ppo(policy, opponent_label=label, seed=s)
+            title = f"{label} — {who_first} — {'Win' if outcome==1.0 else 'Loss' if outcome==-1.0 else 'Draw'}"
+            Connect4_BoardDisplayer.display_board(final_board, title=title)
 
 
 

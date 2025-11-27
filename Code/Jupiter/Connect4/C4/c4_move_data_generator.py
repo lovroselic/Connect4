@@ -9,6 +9,7 @@ import pandas as pd
 from C4.connect4_env import Connect4Env  
 from C4.fast_connect4_lookahead import Connect4Lookahead  
 
+
 def _play_one_game_rows(lookA: int, lookB: int, label: str, game_index: int, seed: int = 666, CFG: Dict[str, Any] = None) -> List[Dict[str, Any]]:
     """
     Play ONE game; return a list of ROWS, one per MOVE, each row containing:
@@ -21,34 +22,30 @@ def _play_one_game_rows(lookA: int, lookB: int, label: str, game_index: int, see
 
     env = Connect4Env()
     la  = Connect4Lookahead()
-    _ = env.reset()  # state not used directly; board snapshot taken from env.board
+    _ = env.reset()
 
     done = False
-    ply = 1  # 1-based as before
+    ply = 1
     rows: List[Dict[str, float]] = []
-    
+
+    CFG = CFG or {}  # <— important if caller passes None
     noiseA = CFG.get("noiseA", 0.0)
     noiseB = CFG.get("noiseB", 0.0)
-    FL = CFG.get("forceLoss", 0.0)
+    FL     = CFG.get("forceLoss", 0.0)
 
     while not done:
         player = env.current_player
         depth  = lookA if player == 1 else lookB
         p_mist = noiseA if player == 1 else noiseB
-        
+
         if p_mist > 0:
             action = choose_move_noisy(env, la, player, depth, p_mistake=p_mist, FL=FL)
-        # normal action
-        else: action = la.n_step_lookahead(env.board, player, depth=depth)
+        else:
+            action = la.n_step_lookahead(env.board, player, depth=depth)
 
-        _, reward, done = env.step(action)  # immediate mover-centric reward
+        _, reward, done = env.step(action)
 
-        row_dict: Dict[str, float] = {
-            "label": label,
-            "reward": float(reward),   # <-- immediate step reward (was cumulative)
-            "game": int(game_index),
-            "ply": int(ply),
-        }
+        row_dict: Dict[str, float] = {"label": label, "reward": float(reward), "game": int(game_index), "ply": int(ply)}
         for r in range(env.ROWS):
             for c in range(env.COLS):
                 row_dict[f"{r}-{c}"] = int(env.board[r, c])
@@ -57,6 +54,7 @@ def _play_one_game_rows(lookA: int, lookB: int, label: str, game_index: int, see
         ply += 1
 
     return rows
+
 
 
 
@@ -114,40 +112,69 @@ def upsert_excel(df_new: pd.DataFrame, path: str) -> pd.DataFrame:
     return df_all
 
 
-def _safe_alternatives(env, la, player, FL):
-
-    p = -1 if player in (-1, 2) else 1
-    opp = -p
-
-    la._load_from_numpy(env.board) # Load the top-based NumPy board ONCE into lookahead's internal state
+def _safe_alternatives(env, la: Connect4Lookahead, player: int, FL: float):
+    """
+    Bitboard-aware "safe" moves:
+      - legal if column top isn't occupied
+      - SAFE if, after our move, opponent has zero immediate winning replies
+      - If there are UNSAFE moves and random() <= FL, return a single random unsafe move
+        (to intentionally seed some losing lines).
+    """
+    # Current position as bitboards
+    p1, p2, mask = la._parse_board_bitboards(env.board)
+    me_mark = la._p(player)               # +1 for player 1, -1 for player 2 / -1
+    pos = p1 if me_mark == 1 else p2
 
     safe, unsafe = [], []
 
-    for c in la._legal_moves():
-        la._make_move(c, p)
+    # Short references to Numba-side arrays
+    TOP_MASK    = la._N["TOP_MASK"]
+    BOTTOM_MASK = la._N["BOTTOM_MASK"]
+    COL_MASK    = la._N["COL_MASK"]
+    CENTER_ORD  = la._N["CENTER_ORDER"]
+    stride_i    = np.int32(la.STRIDE)
 
-        opp_immediate = la._count_immediate_wins(opp)
-        if opp_immediate == 0: safe.append(c)
-        else: unsafe.append(c)
+    for c in range(la.COLS):
+        # legal move?
+        if (mask & la.TOP_MASK[c]) != 0:
+            continue
 
-        la._unmake_move(c)
+        # Make move in bitboard space
+        mv = la._play_bit_py(mask, c)
+        nm = mask | mv
+        me_after = pos | mv
+        opp_pos = nm ^ me_after  # opponent's stones after our move
 
-    if unsafe and random.random() <= FL: return [random.choice(unsafe)]
+        # Count opponent's immediate wins (center-first order for stability)
+        opp_imm = la._N["count_immediate_wins_bits"](
+            np.uint64(opp_pos), np.uint64(nm),
+            CENTER_ORD, TOP_MASK, BOTTOM_MASK, COL_MASK, stride_i
+        )
+
+        if int(opp_imm) == 0:
+            safe.append(c)
+        else:
+            unsafe.append(c)
+
+    if unsafe and random.random() <= FL:
+        return [random.choice(unsafe)]
     return safe
 
-
-def choose_move_noisy(env, la, player, depth, p_mistake=0.15, prefer_offcenter=True, FL = 0):
-    # clean best
+def choose_move_noisy(env, la: Connect4Lookahead, player: int, depth: int, p_mistake=0.15, prefer_offcenter=True, FL=0.0):
+    # Clean best via lookahead
     best = la.n_step_lookahead(env.board, player, depth=depth)
-    if random.random() >= p_mistake: return best
+    if random.random() >= p_mistake:
+        return best
 
-    # safe alternatives (excluding best)
+    # Safe alternatives (excluding the best)
     alts = [c for c in _safe_alternatives(env, la, player, FL) if c != best]
-    if not alts: return best  # fall back if no safe alternative
+    if not alts:
+        return best
 
     if prefer_offcenter:
-        # bias away from center to de-bias the dataset
         center = la.CENTER_COL
         alts.sort(key=lambda c: abs(center - c), reverse=True)
-        alts = alts[:min(2, len(alts))]  # pick among the farthest 1–2
+        alts = alts[:min(2, len(alts))]  # choose among the 1–2 most off-center
+
     return random.choice(alts)
+

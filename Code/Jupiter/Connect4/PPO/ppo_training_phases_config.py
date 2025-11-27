@@ -1,95 +1,221 @@
+# PPO/ppo_training_phases_config.py
 
 TRAINING_PHASES = {
     
-    "BootL1a": {
-        "duration": 300, "lookahead": 1,
-        "opponent_mix": {"L1": 0.85, "R": 0.10, "L2": 0.05},
+    "Mixed_intro": {
+        "duration": 100,
+        "opponent_mix": {
+            "R": 0.01,
+            "L1":  0.30,
+            "L2": 0.30,
+            "L3": 0.30,
+            "L4": 0.00,
+            "L5": 0.00,
+            "POP": 0.05,
+            "SP": 0.04,
+        },
         "params": {
-            "lr": 1.6e-4, "clip": 0.22, "entropy": 0.012, "epochs": 4,
-            "batch_size": 256, "temperature": 0.25, "steps_per_update": 4096
-        }
-    },
-    "Rinse": {
-        "duration": 100, "lookahead": None,
-        "opponent_mix": {"R": 0.7, "L1": 0.3},
-        "params": {
-            "lr": 1.6e-4, "clip": 0.22, "entropy": 0.008, "epochs": 3,
-            "batch_size": 256, "temperature": 0.8, "steps_per_update": 2048
-        }
-    },
-    "BootL1b": {
-        "duration": 300, "lookahead": 1,
-        "opponent_mix": {"L1": 0.9, "R": 0.07, "L2": 0.03},
-        "params": {
-            "lr": 1.2e-4, "clip": 0.25, "entropy": 0.012, "epochs": 4,
-            "batch_size": 256, "temperature": 0.2, "steps_per_update": 4096
-        }
-    },
+            "lr":              1100e-7,
+            "clip":            0.20,
+            "entropy":         0.0045,
+            "epochs":          4,
+            "batch_size":      256,
+            "steps_per_update": 128,
+            "vf_clip":         0.19,
+            "max_grad_norm":   0.5,
+            "target_kl":       0.018,
+            "temperature":     1.14,
 
-   "L2a": {
-       "duration": 100, "lookahead": 2,
-       "opponent_mix": {"R":0.25, "L1":0.55, "L2":0.18, "SP":0.02},
-       "params": { "lr":1.6e-4, "clip":0.10, "entropy":0.004, "epochs":4,
-                   "batch_size":256, "temperature":0.05, "steps_per_update":4096 }
-   },
-   
-   "L3a": {
-       "duration": 100, "lookahead": 2,
-       "opponent_mix": {"R":0.10, "L1":0.50, "L2":0.20, "SP":0.02, "L3": 0.18},
-       "params": { "lr":1.6e-4, "clip":0.10, "entropy":0.004, "epochs":4,
-                   "batch_size":256, "temperature":0.05, "steps_per_update":4096 }
-   },
-   
-    "SPa": {
-        "duration": 100, "lookahead": "self",
-        "opponent_mix": {"SP":1.0},
-        "params": { "lr":1.2e-4, "clip":0.08, "entropy":0.004, "epochs":3,
-                    "batch_size":256, "temperature":0.06, "steps_per_update":4096 }
+            "center_start":    0.85,
+            "guard_prob":      0.58,
+            "win_now_prob":    0.91,
+            "guard_ply_min":   5,
+            "guard_ply_max":   13,
+            "distill_coef":    0.05,
+            "mentor_depth": 5,
+            "mentor_prob": 0.25,
+            "mentor_coef": 0.20,
+        },
     },
+    
+    
+    "L2L3_intro": {
+        "duration": 300,
+        "opponent_mix": {
+            "R": 0.01,
+            "L1":  0.20,
+            "L2": 0.33,
+            "L3": 0.34,
+            "L4": 0.01,
+            "L5": 0.01,
+            "POP": 0.05,
+            "SP": 0.05,
+        },
+        "params": {
+            "lr":              1100e-7,
+            "clip":            0.20,
+            "entropy":         0.0045,
+            "epochs":          4,
+            "batch_size":      256,
+            "steps_per_update": 128,
+            "vf_clip":         0.19,
+            "max_grad_norm":   0.5,
+            "target_kl":       0.018,
+            "temperature":     1.14,
+
+            "center_start":    0.84,
+            "guard_prob":      0.57,
+            "win_now_prob":    0.90,
+            "guard_ply_min":   5,
+            "guard_ply_max":   13,
+            "distill_coef":    0.05,
+            "mentor_depth": 5,
+            "mentor_prob": 0.25,
+            "mentor_coef": 0.20,
+        },
+    },
+    
+    "Mixed_L3_focus": {
+        "duration": 500,
+        "opponent_mix": {
+            "L1":  0.21,
+            "L2": 0.22,
+            "L3": 0.45,
+            "L4": 0.01,
+            "L5": 0.01,
+            "POP": 0.05,
+            "SP": 0.05,
+        },
+        "params": {
+            "lr":              1050e-7,
+            "clip":            0.20,
+            "entropy":         0.0044,
+            "epochs":          4,
+            "batch_size":      256,
+            "steps_per_update": 128,
+            "vf_clip":         0.19,
+            "max_grad_norm":   0.5,
+            "target_kl":       0.0175,
+            "temperature":     1.12,
+
+            "center_start":    0.83,
+            "guard_prob":      0.56,
+            "win_now_prob":    0.89,
+            "guard_ply_min":   5,
+            "guard_ply_max":   13,
+            "distill_coef":    0.05,
+            "mentor_depth": 5,
+            "mentor_prob": 0.25,
+            "mentor_coef": 0.20,
+        },
+    },
+    
+    "L3_power": {
+        "duration": 500,
+        "opponent_mix": {
+            "L1":  0.23,
+            "L2": 0.15,
+            "L3": 0.50,
+            "L4": 0.01,
+            "L5": 0.01,
+            "POP": 0.05,
+            "SP": 0.05,
+        },
+        "params": {
+            "lr":              1000e-7,
+            "clip":            0.20,
+            "entropy":         0.0040,
+            "epochs":          4,
+            "batch_size":      256,
+            "steps_per_update": 128,
+            "vf_clip":         0.19,
+            "max_grad_norm":   0.5,
+            "target_kl":       0.0170,
+            "temperature":     1.11,
+
+            "center_start":    0.82,
+            "guard_prob":      0.55,
+            "win_now_prob":    0.88,
+            "guard_ply_min":   5,
+            "guard_ply_max":   13,
+            "distill_coef":    0.05,
+            "mentor_depth": 5,
+            "mentor_prob": 0.25,
+            "mentor_coef": 0.20,
+        },
+    },
+    
+    "L3_Force": {
+        "duration": 500,
+        "opponent_mix": {
+            "L1":  0.15,
+            "L2": 0.10,
+            "L3": 0.60,
+            "L4": 0.02,
+            "L5": 0.03,
+            "POP": 0.05,
+            "SP": 0.05,
+        },
+        "params": {
+            "lr":              999e-7,
+            "clip":            0.20,
+            "entropy":         0.0039,
+            "epochs":          4,
+            "batch_size":      256,
+            "steps_per_update": 128,
+            "vf_clip":         0.185,
+            "max_grad_norm":   0.5,
+            "target_kl":       0.0170,
+            "temperature":     1.10,
+
+            "center_start":    0.81,
+            "guard_prob":      0.54,
+            "win_now_prob":    0.87,
+            "guard_ply_min":   5,
+            "guard_ply_max":   13,
+            "distill_coef":    0.05,
+            "mentor_depth": 5,
+            "mentor_prob": 0.25,
+            "mentor_coef": 0.20,
+        },
+    },
+    
+    "L3_Major": {
+        "duration": 500,
+        "opponent_mix": {
+            "L1":  0.10,
+            "L2": 0.05,
+            "L3": 0.70,
+            "L4": 0.02,
+            "L5": 0.03,
+            "POP": 0.05,
+            "SP": 0.05,
+        },
+        "params": {
+            "lr":              997e-7,
+            "clip":            0.20,
+            "entropy":         0.0039,
+            "epochs":          4,
+            "batch_size":      256,
+            "steps_per_update": 128,
+            "vf_clip":         0.184,
+            "max_grad_norm":   0.5,
+            "target_kl":       0.0169,
+            "temperature":     1.10,
+
+            "center_start":    0.80,
+            "guard_prob":      0.53,
+            "win_now_prob":    0.86,
+            "guard_ply_min":   5,
+            "guard_ply_max":   13,
+            "distill_coef":    0.05,
+            "mentor_depth": 5,
+            "mentor_prob": 0.25,
+            "mentor_coef": 0.20,
+        },
+    },
+    
+    
+
+
 }
-
-    # "R0": {
-    #     "duration": 100, "lookahead": None,       
-    #     "opponent_mix": {"R":0.90, "L1":0.10},   
-    #     "params": { "lr":3e-4, "clip":0.20, "entropy":0.010, "epochs":4,
-    #                 "batch_size":256, "temperature":0.8, "steps_per_update":2048 }
-    # },
-
-    # "L1a": {
-    #     "duration": 100, "lookahead": 1,
-    #     "opponent_mix": {"R":0.40, "L1":0.60},
-    #     "params": { "lr":2.0e-4, "clip":0.12, "entropy":0.006, "epochs":5,
-    #                 "batch_size":256, "temperature":0.08, "steps_per_update":4096 }
-    # },
-
-    # "R1": {
-    #     "duration": 100, "lookahead": None,
-    #     "opponent_mix": {"R":0.70, "L1":0.25, "L2":0.05},
-    #     "params": { "lr":2.0e-4, "clip":0.18, "entropy":0.008, "epochs":3,
-    #                 "batch_size":256, "temperature":0.8, "steps_per_update":2048 }
-    # },
-
-    # "L1b": {
-    #     "duration":1200, "lookahead": 1,
-    #     "opponent_mix": {"R":0.35, "L1":0.55, "L2":0.10},
-    #     "params": { "lr":1.8e-4, "clip":0.10, "entropy":0.005, "epochs":5,
-    #                 "batch_size":256, "temperature":0.06, "steps_per_update":4096 }
-    # },
-
-    # "R2": {
-    #     "duration": 100, "lookahead": None,
-    #     "opponent_mix": {"R":0.55, "L1":0.35, "L2":0.10},
-    #     "params": { "lr":1.8e-4, "clip":0.16, "entropy":0.008, "epochs":3,
-    #                 "batch_size":256, "temperature":0.8, "steps_per_update":2048 }
-    # },
-
-    # "L2a": {
-    #     "duration": 100, "lookahead": 2,
-    #     "opponent_mix": {"R":0.25, "L1":0.55, "L2":0.18, "SP":0.02},
-    #     "params": { "lr":1.6e-4, "clip":0.10, "entropy":0.004, "epochs":4,
-    #                 "batch_size":256, "temperature":0.05, "steps_per_update":4096 }
-    # },
-
-
-
-

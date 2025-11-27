@@ -28,20 +28,26 @@ def plot_td_running(agent, window=500):
     plt.xlabel("sample idx"); plt.ylabel("running |td|"); plt.grid(True, ls='--', alpha=0.4)
     plt.show()
 
-def plot_is_weights(agent, bins=60):
+def plot_is_weights(agent, bins=60, return_figs=False):
     w = np.array(agent.per_w_hist, dtype=np.float32)
     if w.size == 0:
         print("No IS weights yet."); return
-    plt.figure(figsize=(8,4))
+    fig_histogram = plt.figure(figsize=(8,4))
     plt.hist(w, bins=bins, density=True, alpha=0.8)
     plt.title(f"Importance weights (mean={w.mean():.3f}, max={w.max():.3f})")
-    plt.xlabel("w"); plt.ylabel("Density"); plt.grid(True, ls='--', alpha=0.4)
-    plt.show()
+    plt.xlabel("w") 
+    plt.ylabel("Density") 
+    plt.grid(True, ls='--', alpha=0.4)
+    plt.tight_layout()
+    
+    if return_figs:
+        return fig_histogram
+    else: 
+        plt.show()
 
 def check_per_priority_correlation(agent, sample=2048):
     # draw a mixed batch and compute |td| vs. updated priority to see correlation
-    if (len(agent.memory.bank_1)+len(agent.memory.bank_n)) < sample:
-        print("Not enough memory to probe."); return
+    if (len(agent.memory.bank_1)+len(agent.memory.bank_n)) < sample: print("Not enough memory to probe."); return
     (b1, bn), (i1, in_), (w1, wn) = agent.memory.sample_mixed(sample, mix=0.5, beta=agent.per_beta)
     batch = list(b1)+list(bn)
     # Quick forward pass to compute provisional td

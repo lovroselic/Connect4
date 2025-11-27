@@ -3,7 +3,7 @@
 # === Save & Load utilities for PPO ===
 
 from __future__ import annotations
-import os, time, torch
+import time, torch
 from PPO.actor_critic import ActorCritic
 
 
@@ -18,7 +18,6 @@ def save_checkpoint(
     policy,
     optim,
     episode: int,
-    lookahead_depth,
     cfg,
     hparams,
     model_path: str,             # e.g. f"{MODEL_DIR}{TRAINING_SESSION}_... .pt"
@@ -28,16 +27,11 @@ def save_checkpoint(
     Save PPO checkpoint to both a versioned path and the fixed default path.
     Uses standard keys: 'model_state_dict' and 'optim_state_dict'.
     """
-    lk = (
-        -1 if isinstance(lookahead_depth, str) and str(lookahead_depth).lower() == "self"
-        else (0 if lookahead_depth is None else int(lookahead_depth))
-    )
 
     ckpt = {
         "model_state_dict": policy.state_dict(),
         "optim_state_dict": optim.state_dict() if optim is not None else None,
         "episode": int(episode),
-        "lookahead_depth": lk,
         "cfg": _obj_to_dict_or_none(cfg),
         "hparams": _obj_to_dict_or_none(hparams),
         "timestamp": time.strftime("%Y%m%d-%H%M%S"),
@@ -45,14 +39,8 @@ def save_checkpoint(
         "torch_version": torch.__version__,
     }
 
-    # ensure directories exist (if any)
-    for p in (model_path, default_model_path):
-        d = os.path.dirname(p)
-        if d:
-            os.makedirs(d, exist_ok=True)
-
     torch.save(ckpt, model_path)
-    torch.save(ckpt, default_model_path)
+    if default_model_path is not None: torch.save(ckpt, default_model_path)
     return model_path, default_model_path
 
 

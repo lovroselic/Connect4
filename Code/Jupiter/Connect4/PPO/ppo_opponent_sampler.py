@@ -7,11 +7,10 @@ class OpponentSampler:
     Weighted opponent picker.
 
     Keys:
-      "R"   -> Random
-      "L1"  -> Lookahead-1
-      "L2"  -> Lookahead-2
-      "L3"  -> Lookahead-3
-      "SP"  -> Self-play (same policy acting as -1)
+      "R"         -> Random
+      "L1"..."L13"-> Lookahead-1..13   (any 'L' + digits is treated as depth)
+      "SP"        -> Self-play (same policy acting as -1)
+      "POP"  -> Population ensemble (HOF)
     """
     def __init__(self, weights: dict[str, float], seed: int | None = None):
         self.keys = list(weights.keys())
@@ -27,8 +26,12 @@ class OpponentSampler:
 
     @staticmethod
     def key_to_mode(k: str):
-        if k == "R":  return None       # Random
-        if k == "SP": return "self"     # Self-play
+        if k == "R":
+            return None           # random opponent
+        if k == "SP":
+            return "self"         # self-play: use student policy
+        if k == "POP":
+            return "POP"          # NEW: hall-of-fame ensemble
         if k.startswith("L") and k[1:].isdigit():
-            return int(k[1:])           # Lookahead depth
+            return int(k[1:])     # lookahead depth
         raise ValueError(f"Unknown opponent key: {k}")

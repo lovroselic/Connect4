@@ -87,13 +87,20 @@ def _ensure_numba_cache():
     WIN_R = np.array(_win_rows, dtype=np.int8)     # (W,4)
 
     # ---------- Numba core (no objmode, all arrays passed as args) ----------
+    # @njit(cache=True, fastmath=True)
+    # def popcount64(x: UINT) -> np.int32:
+    #     cnt = 0
+    #     while x != UINT(0):
+    #         x &= (x - UINT(1))
+    #         cnt += 1
+    #     return cnt
+    
     @njit(cache=True, fastmath=True)
     def popcount64(x: UINT) -> np.int32:
-        cnt = 0
-        while x != UINT(0):
-            x &= (x - UINT(1))
-            cnt += 1
-        return cnt
+        x = x - ((x >> 1) & 0x5555555555555555)
+        x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+        x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0f
+        return np.int32((x * 0x0101010101010101) >> 56)
 
     @njit(cache=True, fastmath=True)
     def has_won(bb: UINT, stride_i: np.int32) -> bool:

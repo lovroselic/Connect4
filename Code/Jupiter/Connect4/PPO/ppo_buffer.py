@@ -32,9 +32,10 @@ class PPOBuffer:
     On-policy rollout storage for PPO.
     Stores only AGENT turns (insert only when the agent acts).
 
-    State format:
+     State format:
       - Scalar board (6,7) with values in {-1,0,+1}, or
-      - Two planes (2,6,7) = [agent(+1) plane, opp(-1) plane].
+      - Two planes (2,6,7) = [agent(+1), opp(-1)], or
+      - Four planes (4,6,7) = [agent, opp, row, col].
 
     Reward scaling:
       - All rewards written through this class are multiplied by reward_scale.
@@ -97,14 +98,42 @@ class PPOBuffer:
     # -----------------------
 
     def _hflip_state(self, s: np.ndarray) -> np.ndarray:
-        # (6,7) or (2,6,7) -> same, flipped horizontally (last axis)
+        """
+        (6,7), (2,6,7) or (4,6,7) -> same shape, flipped horizontally.
+        
+        For 4-channel states [me, opp, row, col]:
+          - reverse columns
+          - negate the col-plane so coords follow the flip.
+        """
+        s = np.asarray(s)
+        if s.ndim == 3 and s.shape[1:] == (6, 7) and s.shape[0] >= 4:
+            sm = s[:, :, ::-1].copy()
+            # channel 3 is col-plane
+            sm[3] = -sm[3]
+            return sm
+        # scalar or 2-plane: just reverse columns
         return s[..., ::-1].copy()
 
+
     def _colorswap_state(self, s: np.ndarray) -> np.ndarray:
-        # swap agent/opponent channels or invert scalar board
-        if s.ndim == 3 and s.shape[0] == 2:
-            return s[[1, 0], :, :].copy()
-        return (-s).copy()  # scalar board
+        """
+        Swap agent/opponent channels or invert scalar board.
+        For 4-channel states, assume [me, opp, row, col]:
+          - swap channels 0 and 1
+          - keep row/col as-is.
+        """
+        s = np.asarray(s)
+        if s.ndim == 2 and s.shape == (6, 7):
+            return (-s).copy()
+        if s.ndim == 3:
+            if s.shape[0] == 2:
+                return s[[1, 0], :, :].copy()
+            if s.shape[0] >= 4:
+                out = s.copy()
+                out[[0, 1]] = out[[1, 0]]
+                return out
+        raise ValueError(f"Unexpected state shape for colorswap: {s.shape}")
+
 
     def _hflip_action(self, a: int) -> int:
         return (self.action_dim - 1) - int(a)
@@ -232,35 +261,28 @@ class PPOBuffer:
         gid = int(self._next_group_id)   # one real decision = one group
         self._next_group_id += 1
     
-        variants: List[Tuple[np.ndarray, int, np.ndarray, int, bool]] = []  # (s,a,m,sign,primary)
-    
+        variants: List[Tuple[np.ndarray, int, np.ndarray, int, bool]] = []
+
         if include_original:
             variants.append((base_state, int(action), base_mask, +1, True))  # primary
-    
+        
         if hflip:
-            s = base_state[..., ::-1].copy()
-            a = (self.action_dim - 1) - int(action)
-            m = base_mask[::-1].copy()
+            s = self._hflip_state(base_state)
+            a = self._hflip_action(action)
+            m = self._hflip_mask(base_mask)
             variants.append((s, a, m, +1, False))
-    
+        
         if colorswap:
-            if base_state.ndim == 3 and base_state.shape[0] == 2:
-                s = base_state[[1, 0], :, :].copy()
-            else:
-                s = (-base_state).copy()
-            a = int(action)
+            s = self._colorswap_state(base_state)
+            a = int(action)        # same column in mirrored roles
             m = base_mask.copy()
             variants.append((s, a, m, -1, False))
-    
+        
         if hflip and colorswap:
-            # colorswap then hflip
-            if base_state.ndim == 3 and base_state.shape[0] == 2:
-                cs = base_state[[1, 0], :, :]
-            else:
-                cs = -base_state
-            s = cs[..., ::-1].copy()
-            a = (self.action_dim - 1) - int(action)
-            m = base_mask[::-1].copy()
+            cs = self._colorswap_state(base_state)
+            s = self._hflip_state(cs)
+            a = self._hflip_action(action)
+            m = self._hflip_mask(base_mask)
             variants.append((s, a, m, -1, False))
     
         if len(self) + len(variants) > self.capacity:

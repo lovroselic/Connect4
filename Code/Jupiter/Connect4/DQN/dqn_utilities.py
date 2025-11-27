@@ -5,23 +5,94 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from copy import deepcopy
-from DQN.training_phases_config import TRAINING_PHASES
+#from DQN.training_phases_config import TRAINING_PHASES
+from PPO.ppo_training_phases_config import TRAINING_PHASES
 from C4.connect4_env import Connect4Env
 from DQN.eval_utilities import evaluate_agent_model
 import os
 from IPython.display import display, HTML
 import torch
-from PPO.ppo_eval import evaluate_actor_critic_model
+from PPO.ppo_agent_eval import evaluate_actor_critic_model
 from C4.eval_oppo_dict import EVAL_CFG
+from pathlib import Path
+import shutil
+import re
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+
+
 
 
 TAU_DEFAULT         = 0.006                         # phase controlled
 GUARD_DEFAULT       = 0.30                          # phase controlled
+WIN_DEFAULT         = 1.0                           # phase controlled
 CENTER_START        = 0.30                          # phase controlled
 MIN_SEED_FRACTION   = 0.0                           # phase controlled
 MAX_SEED_FRACTION   = 1.0                           # phase controlled
 LR                  = 2e-4                          # phase controlled
 
+
+# === QR-DQN training helpers  ===
+
+def qr_training_updates(agent, env, batch_size: int):
+    """
+    Mirrors your 3-tier update schedule, but as a helper.
+    Uses agent.per_mix_1step if not overridden.
+    """
+    mem_len = len(agent.memory)
+    MIX = getattr(agent, "per_mix_1step", 0.70)
+
+    WARMUP_HALF = max(batch_size * 2, 256)
+    WARMUP_FULL = max(batch_size * 5, 1024)
+
+    updates_done = 0
+
+    if mem_len >= WARMUP_FULL:
+        # Full batches
+        updates = 4 + min(12, env.ply // 2)                 # 4..16 updates per episode
+        for _ in range(updates):
+            agent.replay(batch_size, mix_1step=MIX)
+        updates_done = updates
+
+    elif mem_len >= WARMUP_HALF:
+        # Smaller batches
+        b = max(32, min(batch_size, mem_len // 16))         # adaptive mini-batch
+        updates = 2 + min(6, env.ply // 3)                  # 2..8 updates
+        for _ in range(updates):
+            agent.replay(b, mix_1step=MIX)
+        updates_done = updates
+
+    else:
+        if mem_len >= 64:
+            for _ in range(2):
+                agent.replay(32, mix_1step=MIX)
+            updates_done = 2
+
+    return updates_done
+
+
+def maybe_phase_checkpoint(phase_changed, phase, agent, episode, model_dir, session_prefix):
+    """
+    Your exact checkpoint pattern, as a helper. No-op if phase didn't change.
+    """
+    import time, torch
+    if phase_changed and phase is not None:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        model_path = f"{model_dir}{session_prefix}_Temp_C4_{timestamp} eps-{episode+1} phase-{phase}.pt"
+        default_model_path = f"phase-{phase} Interim C4.pt"
+        torch.save(agent.model.state_dict(), model_path)
+        torch.save(agent.model.state_dict(), default_model_path)
+        print(f"Temp Model saved to {model_path}")
+
+
+# ------------------------------- #
+
+def reset_dir(path):
+    p = Path(path).resolve()
+    if str(p) in ("/", "C:\\", "C:/"): raise RuntimeError(f"Refusing to delete root path: {p}")
+    shutil.rmtree(p, ignore_errors=True)   # delete dir and all contents
+    p.mkdir(parents=True, exist_ok=True)   # recreate empty dir
+    
+    
 @torch.no_grad()
 def _flatten_params(module: torch.nn.Module) -> torch.Tensor:
     """Concatenate all trainable parameters into a single 1-D tensor (cpu, detached)."""
@@ -202,6 +273,7 @@ def get_phase(episode):
                 phase_data.get("tau", TAU_DEFAULT),
                 phase_data.get("guard_prob", GUARD_DEFAULT),
                 phase_data.get("center_start", CENTER_START),
+                phase_data.get("win_now_prob", WIN_DEFAULT),
                 phase_data.get("min_seed_fraction", MIN_SEED_FRACTION),
                 phase_data.get("max_seed_fraction", MAX_SEED_FRACTION),
                 phase_data.get("lr", LR),
@@ -209,43 +281,53 @@ def get_phase(episode):
 
 
 def handle_phase_change(
-        agent, 
-        new_phase, current_phase, 
-        epsilon, memory_prune_low, epsilon_min, 
-        prev_frozen_opp, 
-        env, episode, device, 
-        Lookahead, training_session, 
-        guard_prob, center_start, 
-        min_seed_fraction,max_seed_fraction,
-        lr
-        ):
+    agent, 
+    new_phase, current_phase, 
+    epsilon, memory_prune_low, epsilon_min, 
+    prev_frozen_opp, 
+    env, episode, device, 
+    Lookahead, training_session, 
+    guard_prob, center_start, win_now_prob,
+    min_seed_fraction, max_seed_fraction,
+    lr
+):
+    frozen_opp = prev_frozen_opp
     
-    frozen_opp = prev_frozen_opp 
-    
-    if new_phase.startswith("SelfPlay"): 
-        if frozen_opp is None: 
-            frozen_opp = deepcopy(agent) 
-            frozen_opp.model.eval() 
-            frozen_opp.target_model.eval() 
-            frozen_opp.epsilon = 0.0 
+    if new_phase.startswith("SelfPlay"):
+        if frozen_opp is None:
+            frozen_opp = deepcopy(agent)
+            frozen_opp.model.eval()
+            frozen_opp.target_model.eval()
+            frozen_opp.epsilon = 0.0
             frozen_opp.epsilon_min = 0.0
             frozen_opp.guard_prob = 0.0
             frozen_opp.center_start = 0.0
-            
     else: frozen_opp = None
-    
+
     if new_phase != current_phase:
+        # exploration resets
         agent.epsilon = epsilon
         agent.epsilon_min = epsilon_min
+
+        # phase policy knobs
         agent.guard_prob = guard_prob
+        agent.center_start = center_start
+        agent.win_now_prob = win_now_prob
+
+        # replay / sampling knobs
         agent.min_seed_frac = min_seed_fraction
         agent.max_seed_frac = max_seed_fraction
         agent.memory.prune(memory_prune_low, mode="low_priority")
-        for g in agent.optimizer.param_groups: g["lr"] = lr
+
+        # optimizer LR
+        for g in agent.optimizer.param_groups:
+            g["lr"] = lr
         agent.lr = lr
+
         return new_phase, frozen_opp
 
     return current_phase, frozen_opp
+
 
 
 def evaluate_final_result(env, agent_player):
@@ -337,6 +419,58 @@ def log_summary_stats(
 
 
 # ----- benchmarking ----------------
+
+def opponent_weight(label: str,
+                    base: float = 1.4,
+                    random_weight: float = 1.0,
+                    default_weight: float = 1.0) -> float:
+    """
+    Exponential-ish weight by opponent depth.
+
+    - 'Random' gets random_weight.
+    - 'Lookahead-k' (or anything with a number) gets base**k.
+    - Anything else falls back to default_weight.
+
+    Examples with base=1.4:
+        L1 -> 1.4
+        L2 -> 1.4^2 ≈ 1.96
+        L3 -> 1.4^3 ≈ 2.74
+        L4 -> 1.4^4 ≈ 3.84
+    """
+    s = str(label)
+
+    if "Random" in s:
+        return float(random_weight)
+
+    m = re.search(r"(\d+)", s)
+    if m:
+        depth = int(m.group(1))
+        return float(base) ** depth
+
+    return float(default_weight)
+
+
+def global_score_from_results(results: dict,
+                              base: float = 1.4) -> float:
+    """
+    Compute a single global score G in [0,1] from one benchmark snapshot:
+
+        G = sum_i w_i * WR_i / sum_i w_i
+
+    where WR_i is win_rate vs opponent i, w_i = opponent_weight(label_i).
+    """
+    num = 0.0
+    den = 0.0
+    for label, stats in results.items():
+        wr = float(stats.get("win_rate", 0.0))
+        w  = opponent_weight(label, base=base)
+        num += w * wr
+        den += w
+    return num / den if den > 1e-12 else float("nan")
+
+
+# ---------- main function ----------
+
 def update_benchmark_winrates(
     agent,
     env,
@@ -346,46 +480,62 @@ def update_benchmark_winrates(
     history: dict | None = None,
     save: str | None = None,
     opponents_cfg: dict = EVAL_CFG,
+    score: int = 0,
+    ensemble_score: int = 0,
+    global_base: float = 1.4,      # <-- tweak exponential strength here
 ):
 
+    # init history
     if history is None:
-        history = {"episode": [], "by_opponent": {k: [] for k in opponents_cfg}}
+        history = {
+            "episode":        [],
+            "by_opponent":    {k: [] for k in opponents_cfg},
+            "score":          [],
+            "ensemble_score": [],
+            "global_score":   [],   
+        }
 
     is_dqn = hasattr(agent, "model") and hasattr(agent, "target_model")
-    if is_dqn: results = evaluate_agent_model(agent, env, opponents_cfg, device, Lookahead)
-    else:
-        results = evaluate_actor_critic_model(
-            agent=agent,
-            env=env,
-            evaluation_opponents=opponents_cfg,
-            Lookahead=Lookahead,
-            temperature=0.0,  # greedy eval
-        )
+    if is_dqn:   results = evaluate_agent_model(agent, env, opponents_cfg, device, Lookahead)
+    else:        results = evaluate_actor_critic_model(policy=agent, evaluation_opponents=opponents_cfg)
 
-    # Append
+    # per-benchmark global score (depth-weighted)
+    gscore = global_score_from_results(results, base=global_base)
+
+    # append to history
     history["episode"].append(episode)
+    history["score"].append(score)
+    history["ensemble_score"].append(ensemble_score)
+    history["global_score"].append(gscore)
+
     for label in opponents_cfg:
         history["by_opponent"].setdefault(label, [])
         history["by_opponent"][label].append(results[label]["win_rate"])
 
     # persistent log (one row per benchmark)
     if save is not None:
-        row = {"episode": episode}
+        row = {
+            "episode":       episode,
+            "score":         score,
+            "ensemble_score": ensemble_score,
+            "global_score":  gscore,
+        }
         for label in opponents_cfg:
             row[f"{label}_wr"] = results[label]["win_rate"]
+
         df = pd.DataFrame([row])
         if os.path.exists(save):
             try:
-                existing = pd.read_excel(save)  # default sheet
+                existing = pd.read_excel(save)
                 out = pd.concat([existing, df], ignore_index=True)
             except Exception:
                 out = df
             out.to_excel(save, index=False)
         else:
-            # Create new workbook
             df.to_excel(save, index=False)
 
     return history
+
 
 def _plot_bench_on_axis(
     ax,
@@ -420,7 +570,7 @@ def _plot_bench_on_axis(
         x = x_all[-y.size:]
 
         if ks:
-            # --- smoothed-only (unchanged) ---
+            # --- smoothed-only ---
             y_s = _smooth_same(y, ks[0])
             line, = ax.plot(x, y_s, linewidth=1.8, label=label, solid_capstyle="round")
             col = line.get_color()
@@ -454,8 +604,13 @@ def _plot_bench_on_axis(
 
     ax.set_ylabel("Bench WR")
     ax.set_ylim(0.0, 1.0)
-    ax.grid(True, alpha=0.3)
+
+    ax.yaxis.set_major_locator(MultipleLocator(0.1))
+    ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
+    ax.grid(True, alpha=0.3, axis="y")
+
     ax.legend(loc="upper center", ncol=1, fontsize=8)
+
 
 
     
@@ -717,6 +872,42 @@ def _smooth_same(y: np.ndarray, k: int) -> np.ndarray:
     return np.convolve(ypad, kernel, mode="valid")
 
 
+
+## ---- H2H --- ##
+
+def h2h_append(hist: dict, episode: int, res: dict):
+    lo, hi = res["A_score_CI95"]
+    hist["episode"].append(int(episode))
+    hist["score"].append(float(res["A_score_rate"]))
+    hist["lo"].append(float(lo))
+    hist["hi"].append(float(hi))
+    hist["n"].append(int(res["games"]))
+
+def _plot_h2h_axis(ax, history: dict, training_phases: dict | None = None, title: str = "H2H vs baseline (score ±95% CI)"):
+    if not history or not history.get("episode"):
+        ax.set_visible(False)
+        return
+    import numpy as np
+    x  = np.asarray(history["episode"], dtype=int)
+    y  = np.asarray(history["score"],  dtype=float)
+    lo = np.asarray(history["lo"],     dtype=float)
+    hi = np.asarray(history["hi"],     dtype=float)
+
+    ax.plot(x, y, linewidth=1.8, label="A score vs baseline")
+    ax.fill_between(x, lo, hi, alpha=0.20)
+    ax.axhline(0.5, color="#888", ls="--", lw=1.2, label="even (0.5)")
+    if y.size:
+        ax.scatter([x[-1]], [y[-1]], s=22, zorder=3)
+        ax.annotate(f"{y[-1]:.2f}", (x[-1], y[-1]), textcoords="offset points", xytext=(6, -6),
+                    ha="left", fontsize=8)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_ylabel("H2H score")
+    ax.set_title(title, fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper left", fontsize=8)
+    if training_phases: draw_phase_vlines(ax, training_phases, up_to=int(x.max()), label=True)
+
+
 ### ----- final live plot ----- ###
 
 def plot_live_training(
@@ -732,19 +923,25 @@ def plot_live_training(
     hspace: float = 0.48,
     dpi: int = 120,
     openings_ylim: tuple[float, float] | None = (0.70, 1.00),
+    h2h_history=None,
     return_figs=False
 ):
     use_openings = openings is not None
 
-    # +1 row for the new MA-15 panel
     if use_openings:
-        nrows = 15
-        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 3.2, 2.1, 2.1, 2.1, 2.1, 2.6, 3.0]
-        # rows:   0    1    2    3    4    5     6     7     8     9    10   11   12   13   14
+        nrows = 16
+        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 3.2,  # up to MA-15
+                        2.6,  # NEW: H2H panel
+                        2.1, 2.1, 2.1, 2.1, 2.6, 3.0]
+        # rows: 0..8 = reward/win/eps/mem/TU/bench/raw/MA3/MA7/MA15
+        #       9     = H2H
+        #       10..15 = action mix triplet + opp eps + openings (2)
     else:
-        nrows = 13
-        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 3.2, 2.1, 2.1, 2.1, 2.1]
-        # rows:   0    1    2    3    4    5     6     7     8     9    10   11   12
+        nrows = 14
+        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 3.2,
+                        2.6,  # NEW: H2H panel
+                        2.1, 2.1, 2.1, 2.1]
+
 
     heights = [h * height_scale for h in base_heights]
 
@@ -760,7 +957,14 @@ def plot_live_training(
     ax_bench      = fig_ep.add_subplot(gs[5, 0], sharex=ax_reward)
     ax_bench_s35  = fig_ep.add_subplot(gs[6, 0], sharex=ax_reward)
     ax_bench_s57  = fig_ep.add_subplot(gs[7, 0], sharex=ax_reward)
-    ax_bench_s15  = fig_ep.add_subplot(gs[8, 0], sharex=ax_reward)  # NEW MA-15 panel
+    ax_bench_s15  = fig_ep.add_subplot(gs[8, 0], sharex=ax_reward)
+    ax_h2h        = fig_ep.add_subplot(gs[9, 0], sharex=ax_reward)
+    
+    # Action-mix triplet + opponent ε-branch (shifted down by one row)
+    ax_mix_explore = fig_ep.add_subplot(gs[10, 0])
+    ax_mix_guard   = fig_ep.add_subplot(gs[11, 0])
+    ax_mix_eps     = fig_ep.add_subplot(gs[12, 0])
+    ax_opp_eps     = fig_ep.add_subplot(gs[13, 0])
 
     # Reward
     plot_moving_averages(ax_reward, reward_history, [10, 25, 100, 500],
@@ -812,34 +1016,30 @@ def plot_live_training(
     )
     ax_bench_s57.set_xlabel("Episode"); ax_bench_s57.set_title("Benchmarks (MA 7)", fontsize=10)
 
-    # Benchmarks (MA 15) — NEW
+    # Benchmarks (MA 15)
     _plot_bench_on_axis(
         ax_bench_s15, bench_history, smooth_k=15,
         training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
     )
     ax_bench_s15.set_xlabel("Episode"); ax_bench_s15.set_title("Benchmarks (MA 15)", fontsize=10)
 
-    # Action-mix triplet + opponent ε-branch (shifted down by one row)
-    ax_mix_explore = fig_ep.add_subplot(gs[9, 0])
-    ax_mix_guard   = fig_ep.add_subplot(gs[10, 0])
-    ax_mix_eps     = fig_ep.add_subplot(gs[11, 0])
-    ax_opp_eps     = fig_ep.add_subplot(gs[12, 0])
+    # H2H panel
+    _plot_h2h_axis(ax_h2h, h2h_history or {}, training_phases=TRAINING_PHASES)
 
     _plot_action_mix_triplet(ax_mix_explore, ax_mix_guard, ax_mix_eps, agent)
     _plot_opp_epsdetail(ax_opp_eps, agent)
 
     # Openings (hist + rate)
     if use_openings:
-        ax_hist = fig_ep.add_subplot(gs[13, 0])
-        ax_rate = fig_ep.add_subplot(gs[14, 0], sharex=ax_reward)
+        ax_hist = fig_ep.add_subplot(gs[14, 0])
+        ax_rate = fig_ep.add_subplot(gs[15, 0], sharex=ax_reward)
         _draw_openings_on_axes(ax_hist, ax_rate, openings, training_phases=TRAINING_PHASES, rate_ylim=openings_ylim)
 
     # Phase markers on time-series axes (include new MA-15 axis)
-    axes = [ax_reward, ax_win, ax_eps, ax_mem, ax_tu, ax_bench, ax_bench_s35, ax_bench_s57, ax_bench_s15]
-    if use_openings:
-        axes += [ax_rate]
-    for ax in axes:
-        draw_phase_vlines(ax, TRAINING_PHASES, up_to=episode, label=True)
+    axes = [ax_reward, ax_win, ax_eps, ax_mem, ax_tu, ax_bench, ax_bench_s35, ax_bench_s57, ax_bench_s15, ax_h2h]
+    if use_openings: axes += [ax_rate]
+    
+    for ax in axes: draw_phase_vlines(ax, TRAINING_PHASES, up_to=episode, label=True)
 
     fig_ep.suptitle(
         f"{title} - Ep {episode} — Phase: {phase} | Wins: {win_count}, "

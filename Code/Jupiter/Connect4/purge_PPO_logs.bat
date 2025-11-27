@@ -1,9 +1,9 @@
 @echo off
 echo === Purging PPQ logs, models, and plots ===
 
-set LOG_DIR=Logs\PPQ
-set MODEL_DIR=Models\PPQ
-set PLOTS_DIR=Plots\PPQ
+set LOG_DIR=Logs\PPO
+set MODEL_DIR=Models\PPO
+set PLOTS_DIR=Plots\PPO
 
 :: Delete contents of Logs/PPQ
 if exist "%LOG_DIR%" (

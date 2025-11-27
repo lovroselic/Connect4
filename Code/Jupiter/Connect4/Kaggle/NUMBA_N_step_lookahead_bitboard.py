@@ -4,6 +4,11 @@ def NUMBA_N_step_lookahead_bitboard(obs, config):
     import numpy as np, time
     from numba import njit
 
+    #MAX_DEPTH = 12
+    MAX_DEPTH = 9   #best so far, better than 11?? or just luck
+    #MAX_DEPTH = 11 
+    #MAX_DEPTH = 13 # let's see, curiousity never hurts, except cats
+
     # cache compiled core & precomputed tables across calls
     _CACHE = globals().setdefault("_NUMBA_C4_CACHE", {})
 
@@ -74,13 +79,20 @@ def NUMBA_N_step_lookahead_bitboard(obs, config):
         WIN_R = np.array(_win_rows, dtype=np.int8)     # (W,4)
 
         # ---------- Numba core (no objmode, all arrays passed as args) ----------
+        # @njit(cache=True, fastmath=True)
+        # def popcount64(x: UINT) -> np.int32:
+        #     cnt = 0
+        #     while x != UINT(0):
+        #         x &= (x - UINT(1))
+        #         cnt += 1
+        #     return cnt
+        
         @njit(cache=True, fastmath=True)
         def popcount64(x: UINT) -> np.int32:
-            cnt = 0
-            while x != UINT(0):
-                x &= (x - UINT(1))
-                cnt += 1
-            return cnt
+            x = x - ((x >> 1) & 0x5555555555555555)
+            x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333)
+            x = (x + (x >> 4)) & 0x0f0f0f0f0f0f0f0f
+            return np.int32((x * 0x0101010101010101) >> 56)
 
         @njit(cache=True, fastmath=True)
         def has_won(bb: UINT, stride_i: np.int32) -> bool:
@@ -385,7 +397,7 @@ def NUMBA_N_step_lookahead_bitboard(obs, config):
 
     # ---------- root logic: iterative deepening + aspiration ----------
     DEADLINE = time.perf_counter() + 7.6
-    MAX_DEPTH = 9  # safe with node budgeting; tweak if needed
+
 
     # per-move scratch
     killers = np.full((64, 2), -1, dtype=np.int8)  # 42 plies max, 64 for headroom

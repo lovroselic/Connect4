@@ -1,7 +1,7 @@
 # agent_eval.py
 from tqdm.auto import tqdm
 import os, random, numpy as np, torch
-from DQN.dqn_agent import DQNAgent
+from DQN.dqn_agent_qr import DQNAgent
 from C4.connect4_env import Connect4Env
 import warnings
 import matplotlib.pyplot as plt
@@ -10,6 +10,89 @@ warnings.filterwarnings("ignore", message="You are using `torch.load`.*weights_o
 
 
 # ----------------------------- Eval helpers -----------------------------
+
+# ------------------------------------------------------------------
+# Self-test after: set_eval_mode(agent)
+# ------------------------------------------------------------------
+
+
+def self_test(agent, env, atol=1e-6, n_random=32, rng_seed=0):
+    # Deterministic seeds
+    SEED = 666
+    torch.manual_seed(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
+
+    # 0) Sanity: models in eval, exploration off (set_eval_mode already did this)
+    agent.model.eval()
+    agent.target_model.eval()
+
+    # 1) Encoder parity: env.get_state vs agent.board_to_state
+    env.reset()
+    s_env   = env.get_state(+1)               # (4,6,7) with row/col in [-1,1]
+    board   = env.board.copy()
+    s_agent = agent.board_to_state(board, +1) # (4,6,7) in [-1,1]
+
+    qe = agent._q_values_np(s_env)
+    qa = agent._q_values_np(s_agent)
+    d_enc = float(np.max(np.abs(qe - qa)))
+    print(f"[ENC] max Δ(env vs agent) = {d_enc}")
+    assert d_enc < 1e-8, "Encoder mismatch: env.get_state vs agent.board_to_state differ"
+
+    # 2) Empty-board RAW symmetry (disable averaging for the check)
+    bak = agent.use_symmetry_policy
+    agent.use_symmetry_policy = False
+    res_raw = agent.symmetry_check_once(env, use_symmetry=False, atol=atol, verbose=True)
+    agent.use_symmetry_policy = bak
+
+    # Require raw q to mirror under flip (column-reversed)
+    assert np.allclose(res_raw["q"], res_raw["qm_unflip"], atol=atol), \
+        "RAW symmetry broken on empty board (q != mirror-unflip)"
+
+    # With zeroed head + center-biased prior, the empty-board argmax MUST be 3
+    if getattr(agent.model, "_init_center_bias_scale", 0.0) > 0:
+        assert res_raw["arg"] == 3, "Center-biased init: empty-board argmax must be 3"
+
+    # 3) Empty-board AVERAGED symmetry (smoke test)
+    res_avg = agent.symmetry_check_once(env, use_symmetry=True, atol=atol, verbose=True)
+    assert np.allclose(res_avg["q"], res_avg["qm_unflip"], atol=atol), \
+        "Symmetry-averaged q != mirror-unflip on empty board"
+
+    # 4) Randomized states probe (RAW, no averaging) to hunt subtle asymmetries
+    bak = agent.use_symmetry_policy
+    agent.use_symmetry_policy = False
+
+    rng = np.random.default_rng(rng_seed)
+    diffs = []
+    wrong = 0
+
+    for i in range(n_random):
+        env.reset()
+        # random legal prefix
+        k = int(rng.integers(0, 8))
+        for _ in range(k):
+            if env.done: break
+            legal = env.available_actions()
+            if not legal: break
+            a = int(rng.choice(legal))
+            env.step(a)
+
+        s  = env.get_state(env.current_player)
+        sm = agent._mirror_state_planes(s)  # flips me, opp, col planes
+
+        q   = agent._q_values_np(s)
+        qmU = agent._q_values_np(sm)[::-1]  # unflip by reversing columns
+
+        diff = float(np.max(np.abs(q - qmU)))
+        diffs.append(diff)
+        wrong += int(diff > 1e-5)
+
+    agent.use_symmetry_policy = bak
+
+    print(f"[SYM] random-states: max={np.max(diffs):.6g}, mean={np.mean(diffs):.6g}, >1e-5: {wrong}/{n_random}")
+    assert np.max(diffs) < 1e-4, "Symmetry broken on randomized states (max diff > 1e-4)"
+    print("✅ Self-test passed.")
+
 
 def set_eval_mode(agent):
     agent.model.eval(); 
@@ -20,8 +103,9 @@ def set_eval_mode(agent):
     agent.use_symmetry_policy = True
     agent.prefer_center = False
     agent.tie_tol = 0.0
-    agent.center_start = 0.0                    # disable a0=center forcing
-    agent.center_forced_used = True            
+    agent.center_start = 0.0                    
+    agent.center_forced_used = True     
+    agent.win_now_prob = 1.0        
 
 def _extract_state_dict(sd):
     if isinstance(sd, dict):
