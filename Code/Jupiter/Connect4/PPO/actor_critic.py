@@ -1,36 +1,38 @@
 # PPO/actor_critic.py
+# CNet192-based Actor-Critic for PPO, using 1-channel POV boards.
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.distributions import Categorical
-import numpy as np
-import random
 
-# Device is resolved once here; model can be moved later with .to(DEVICE)
-DEVICE  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-NEG_INF = -1e9  # large negative for masked logits
+from C4.CNet192 import CNet192, load_cnet192
+
+NEG_INF = -1e9
 CENTER_COL = 3
 
-def _lowest_empty_row(board: np.ndarray, col: int) -> int | None:
-    """
-    Return the bottom-most empty row index for a column in a 6x7 board.
-    Board uses values {-1, 0, +1}. None if column is full.
-    """
-    rows, _ = board.shape
-    for r in range(rows - 1, -1, -1):  # bottom → top
+
+# -------------------------
+# Tiny board tactics (optional)
+# -------------------------
+
+def _lowest_empty_row(board: np.ndarray, col: int) -> Optional[int]:
+    """Bottom-most empty row for a column on a 6x7 board. None if full."""
+    for r in range(5, -1, -1):
         if board[r, col] == 0:
             return r
     return None
 
 
 def _has_four_from(board: np.ndarray, row: int, col: int, player: int) -> bool:
-    """
-    Check if 'player' has a 4-in-a-row passing through (row, col).
-    """
+    """Check if player has 4-in-a-row passing through (row, col)."""
     rows, cols = board.shape
-    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-
-    for dr, dc in directions:
+    for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
         count = 1
 
         rr, cc = row + dr, col + dc
@@ -52,9 +54,7 @@ def _has_four_from(board: np.ndarray, row: int, col: int, player: int) -> bool:
 
 
 def _is_winning_drop(board: np.ndarray, col: int, player: int) -> bool:
-    """
-    If 'player' drops in 'col', does it immediately win?
-    """
+    """If player drops into col, does it immediately win?"""
     r = _lowest_empty_row(board, col)
     if r is None:
         return False
@@ -66,9 +66,8 @@ def _is_winning_drop(board: np.ndarray, col: int, player: int) -> bool:
     return win
 
 
-def _find_immediate_wins(board: np.ndarray, player: int, legal_actions: list[int]) -> list[int]:
-    """Return list of columns that are immediate wins for 'player'."""
-    wins = []
+def _find_immediate_wins(board: np.ndarray, player: int, legal_actions: List[int]) -> List[int]:
+    wins: List[int] = []
     for c in legal_actions:
         if _is_winning_drop(board, c, player):
             wins.append(int(c))
@@ -77,27 +76,20 @@ def _find_immediate_wins(board: np.ndarray, player: int, legal_actions: list[int
 
 def _tactical_guard(
     board: np.ndarray,
-    legal_actions: list[int],
+    legal_actions: List[int],
     me: int = +1,
     opp: int = -1,
-) -> tuple[int | None, list[int]]:
+) -> Tuple[Optional[int], List[int]]:
     """
-    Basic tactical guard (like in DQN):
-
-      • If opponent has exactly one immediate win: must block that column.
-      • Otherwise, return a 'safe_actions' subset where, after we play,
-        opponent has no 1-ply win.
-
-    Returns:
-      (must_play, safe_actions)
+    Basic tactical guard:
+      - If opponent has exactly one immediate win now: must block that column.
+      - Otherwise return safe_actions where opponent has no immediate 1-ply win after our move.
     """
-    # Opponent immediate wins now
     opp_wins_now = _find_immediate_wins(board, opp, legal_actions)
     if len(opp_wins_now) == 1 and opp_wins_now[0] in legal_actions:
         return opp_wins_now[0], legal_actions
 
-    # Safe actions: after we move, opponent has no immediate win
-    safe_actions: list[int] = []
+    safe_actions: List[int] = []
     for c in legal_actions:
         r = _lowest_empty_row(board, c)
         if r is None:
@@ -112,547 +104,515 @@ def _tactical_guard(
 
     return None, safe_actions
 
-def _epsilon_soften_probs(probs: torch.Tensor, mask: torch.Tensor, eps_explore: float) -> torch.Tensor:
-    """
-    Mix a bit of uniform over LEGAL actions into probs:
-      pi_eps = (1 - eps) * pi + eps * U(legal)
-    probs: [B,A], mask: [B,A] bool (True = legal)
-    """
-    if eps_explore <= 0.0:
-        return probs
 
-    # Uniform over legal actions
-    legal_counts = mask.sum(dim=-1, keepdim=True).clamp_min(1).float()
-    uniform = mask.float() / legal_counts  # 0 on illegal, 1/|legal| on legal
+# -------------------------
+# Actor-Critic wrapper
+# -------------------------
 
-    mixed = (1.0 - eps_explore) * probs + eps_explore * uniform
-    mixed = mixed / mixed.sum(dim=-1, keepdim=True).clamp_min(1e-12)
-    return mixed
+@dataclass
+class TransferCfg:
+    """Optional transfer-learning knobs."""
+    freeze_conv: bool = False          # Marco-style: freeze pre-trained conv block
+    strict_load: bool = True           # strict checkpoint load
 
-
-
-# =======================
-#  Building blocks (from DQN)
-# =======================
-
-class ResidualBlock(nn.Module):
-    """
-    Simple 3x3 -> ReLU -> 3x3 residual block (same channels).
-    Keeps HxW; padding=1 to preserve spatial size.
-    """
-    def __init__(self, ch: int):
-        super().__init__()
-        self.conv1 = nn.Conv2d(ch, ch, kernel_size=3, padding=1, bias=True)
-        self.conv2 = nn.Conv2d(ch, ch, kernel_size=3, padding=1, bias=True)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = F.relu(self.conv1(x), inplace=True)
-        h = self.conv2(h)
-        return F.relu(h + x, inplace=True)
-
-
-class C4DirectionalBackbone(nn.Module):
-    """
-    Direction-aware feature extractor for Connect-4.
-    Parallel (1x4), (4x1), (2x2) paths catch horizontal, vertical, and local clamps.
-    On 6x7 input (with 6 channels) -> (B, 64, 2, 3) before GAP.
-    """
-    def __init__(self, in_ch: int, use_diag4: bool = True):
-        super().__init__()
-        # Three primary directional paths
-        self.h4 = nn.Conv2d(in_ch, 16, kernel_size=(1, 4), padding=(0, 1))  # 6x7 -> 6x6
-        self.v4 = nn.Conv2d(in_ch, 16, kernel_size=(4, 1), padding=(1, 0))  # 6x7 -> 5x7
-        self.k2 = nn.Conv2d(in_ch, 16, kernel_size=(2, 2), padding=0)       # 6x7 -> 5x6
-
-        # No upsampling path here; three paths only
-        self.use_diag4 = False
-
-        # Symmetric shrinkers (equivariant under left–right / top–bottom)
-        self.shrink_h = nn.AvgPool2d(kernel_size=(2, 1), stride=(1, 1))  # 6x6 -> 5x6
-        self.shrink_w = nn.AvgPool2d(kernel_size=(1, 2), stride=(1, 1))  # 5x7 -> 5x6
-
-        self.mix = nn.Conv2d(48, 64, kernel_size=3, padding=1)  # 3 paths → 48 ch
-        self.res = ResidualBlock(64)
-        self.pool = nn.MaxPool2d(kernel_size=2)                 # 5x6 -> 2x3
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = F.relu(self.h4(x), inplace=True)     # (B,16,6,6)
-        v = F.relu(self.v4(x), inplace=True)     # (B,16,5,7)
-        k = F.relu(self.k2(x), inplace=True)     # (B,16,5,6)
-
-        h = self.shrink_h(h)                     # -> 5x6
-        v = self.shrink_w(v)                     # -> 5x6
-
-        x = torch.cat([h, v, k], dim=1)          # (B,48,5,6)
-        x = F.relu(self.mix(x), inplace=True)
-        x = self.res(x)
-        x = self.pool(x)                         # (B,64,2,3)
-        return x
-
-
-# =======================
-#  Actor-Critic with directional backbone
-# =======================
 
 class ActorCritic(nn.Module):
     """
-    Connect-4 PPO Actor-Critic with the DQN-style directional backbone.
+    PPO Actor-Critic using your CNet192 architecture.
 
-    Accepted inputs (single or batched):
-      Scalar board (values in {-1,0,+1}):
-        (6,7), (1,6,7), (B,6,7), (B,1,6,7)
-      Plane boards:
-        (2,6,7), (B,2,6,7)              -> [me, opp]
-        (4,6,7), (B,4,6,7)              -> [me, opp, row, col]
-        (6,6,7), (B,6,6,7)              -> [me, opp, row, col, row-col, row+col]
+    Input convention (IMPORTANT):
+      - 1-channel POV board, shape (B,1,6,7) or (1,6,7) or (6,7)
+      - values in {-1, 0, +1}
+      - POV means: current-to-play pieces are +1, opponent pieces are -1
 
-    Notes:
-    - Keep boards agent-centric upstream (agent pieces == +1). If you only have
-      an environment-centric board and the current player can be -1, flip with:
-        s_agent = ActorCritic.ensure_agent_centric(s_env, current_player)
-
-    - If you perform horizontal-flip augmentation outside the model, prefer to
-      feed **4-channel** inputs [me, opp, row, col] so row/col flip along with
-      the pieces. If you pass just 2 channels, we synthesize row/col inside,
-      which will not reflect your external flip.
+    Compatibility:
+      - Also accepts 2-channel (me, opp) as (2,6,7) or (B,2,6,7) and converts to POV scalar.
     """
 
-    def __init__(
-        self,
-        action_dim: int = 7,
-        init_center_bias_scale: float = 2e-3,
-        init_center_sigma: float = 1.25,
-        enforce_lr_symmetry: bool = True,
-    ):
+    def __init__(self, use_mid_3x3: bool = True):
         super().__init__()
-        self.action_dim = int(action_dim)
+        self.net = CNet192(in_channels=1, use_mid_3x3=use_mid_3x3)
 
-        # Direction-aware backbone expects 6 channels after appending diagonals
-        self.backbone = C4DirectionalBackbone(in_ch=6, use_diag4=False)
-        self.gap = nn.AdaptiveAvgPool2d((1, 1))  # -> (B,64,1,1)
-
-        # Small MLP trunk before heads
-        self.fc = nn.Sequential(
-            nn.Linear(64, 128),
-            nn.ReLU(inplace=True),
-        )
-
-        # Heads
-        self.policy_head = nn.Linear(128, self.action_dim)
-        self.value_head  = nn.Linear(128, 1)
-
-        # Coord buffers (fixed for 6x7)
-        # row in [-1,1] top->bottom, col in [-1,1] left->right (consistent with DQN)
-        row = torch.linspace(-1.0, 1.0, steps=6).view(1, 1, 6, 1).expand(1, 1, 6, 7)
-        col = torch.linspace(-1.0, 1.0, steps=7).view(1, 1, 1, 7).expand(1, 1, 6, 7)
-        self.register_buffer("coord_row", row)  # (1,1,6,7)
-        self.register_buffer("coord_col", col)  # (1,1,6,7)
-
-        # Store init knobs
-        self._init_center_bias_scale = float(init_center_bias_scale)
-        self._init_center_sigma = float(init_center_sigma)
-        self._enforce_lr_symmetry_flag = bool(enforce_lr_symmetry)
-
-        self._init_weights()
-        
-        # --- Heuristic knobs (phase-dependent) ---
-        self.center_start: float = 1.0     # P(center push) on early plies
-        self.center_ply_max: int = 1       # only on ply 0/1, like DQN
-        self.guard_prob: float = 1.0       # P(activating tactical guard)
-        self.guard_ply_min: int = 2        # guard only in this ply window
+        # --- Heuristic knobs (phase-dependent, default OFF) ---
+        self.center_start: float = 0.0
+        self.center_ply_max: int = 1
+        self.guard_prob: float = 0.0
+        self.guard_ply_min: int = 2
         self.guard_ply_max: int = 10
-        self.win_now_prob: float = 1.0     # P(take 1-ply win when found)
-        self.center_forced_used = False
- 
-        # --- Action-mix stats for plotting ---
+        self.win_now_prob: float = 0.0
+
+        # Per-episode flag (center-book should be a gentle nudge, not a religion)
+        self.center_forced_used: bool = False
+
+        # Action-mix stats (handy for your live plots)
         self._act_stats_total: int = 0
-        self._act_stats: dict[str, int] = {
+        self._act_stats: Dict[str, int] = {
             "win_now": 0,
             "center": 0,
             "guard": 0,
-            "policy": 0,   # pure policy sample (no heuristic override)
+            "policy": 0,
         }
 
-    # ---------- shape/encoding helpers ----------
+    # -------------------------
+    # Transfer helpers
+    # -------------------------
 
-    @staticmethod
-    def ensure_agent_centric(s: np.ndarray | torch.Tensor, current_player: int):
-        """
-        Returns a scalar-board where agent is always +1.
-        If current_player == -1, it flips signs.
-        """
-        if isinstance(s, np.ndarray):
-            return s if current_player == 1 else -s
-        t = s
-        return t if current_player == 1 else -t
-
-    @staticmethod
-    def _planes_from_scalar_board(s: torch.Tensor) -> torch.Tensor:
-        """s: [..., 6, 7] with values in {-1,0,+1} -> returns two planes (agent, opp)."""
-        agent = (s > 0.5).float()
-        opp   = (s < -0.5).float()
-        return agent, opp
-
-    def _append_coords(self, x_2ch: torch.Tensor) -> torch.Tensor:
-        """
-        x_2ch: (B,2,6,7) -> (B,4,6,7) by appending [row, col] from buffers.
-        """
-        B = x_2ch.size(0)
-        row = self.coord_row.expand(B, -1, -1, -1)
-        col = self.coord_col.expand(B, -1, -1, -1)
-        return torch.cat([x_2ch, row, col], dim=1)
-
-    @staticmethod
-    def _append_diagonals(x_4ch: torch.Tensor) -> torch.Tensor:
-        """
-        Build diag planes from the CURRENT row/col channels so that a horizontal flip
-        (which reverses the col plane) transforms diags consistently.
-        x_4ch: (B, 4, 6, 7) with channels [me, opp, row, col] in [-1, 1]
-        Returns: (B, 6, 6, 7) channels = [me, opp, row, col, row-col, row+col]
-        """
-        if x_4ch.shape[1] != 4:
-            x_4ch = x_4ch[:, :4, :, :]
-        row = x_4ch[:, 2:3, :, :]
-        col = x_4ch[:, 3:4, :, :]
-        diag_diff = row - col
-        diag_sum  = row + col
-        return torch.cat([x_4ch, diag_diff, diag_sum], dim=1)
-
-    def _to_six_channel(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Normalize arbitrary input to (B, 6, 6, 7) on DEVICE.
-        Accepts scalar boards, 2-ch, 4-ch, or already-6-ch inputs.
-        """
-        if not isinstance(x, torch.Tensor):
-            x = torch.as_tensor(x)
-        x = x.to(dtype=torch.float32, device=DEVICE)
-
-        # Scalar boards
-        if x.dim() == 2:  # (6,7)
-            a, o = self._planes_from_scalar_board(x)
-            x2 = torch.stack([a, o], dim=0).unsqueeze(0)  # (1,2,6,7)
-            x4 = self._append_coords(x2)                  # (1,4,6,7)
-            return self._append_diagonals(x4)             # (1,6,6,7)
-
-        if x.dim() == 3:
-            # Either (C,6,7) single sample OR (B,6,7) batch of scalar boards
-            if x.size(1) == 6 and x.size(2) == 7 and x.size(0) in (1, 2, 4, 6):
-                # treat as channel-first single example: (C,6,7)
-                C = x.size(0)
-                if C == 2:
-                    x4 = self._append_coords(x.unsqueeze(0))   # -> (1,4,6,7)
-                    return self._append_diagonals(x4)          # -> (1,6,6,7)
-                if C == 4:
-                    return self._append_diagonals(x.unsqueeze(0))
-                if C == 6:
-                    return x.unsqueeze(0)
-                # C == 1 -> scalar
-                s = x[0]
-                a, o = self._planes_from_scalar_board(s)
-                x2 = torch.stack([a, o], dim=0).unsqueeze(0)
-                x4 = self._append_coords(x2)
-                return self._append_diagonals(x4)
-            else:
-                # treat as batch of scalar boards: (B,6,7)
-                s = x
-                a = (s > 0.5).float()
-                o = (s < -0.5).float()
-                x2 = torch.stack([a, o], dim=1)                # (B,2,6,7)
-                x4 = self._append_coords(x2)                   # (B,4,6,7)
-                return self._append_diagonals(x4)              # (B,6,6,7)
-
-        if x.dim() == 4:
-            # (B,C,6,7)
-            _, C = x.size(0), x.size(1)
-            if C == 2:
-                x4 = self._append_coords(x)
-                return self._append_diagonals(x4)
-            if C == 4:
-                return self._append_diagonals(x)
-            if C == 6:
-                return x
-            if C == 1:
-                s = x[:, 0, :, :]
-                a, o = self._planes_from_scalar_board(s)
-                x2 = torch.stack([a, o], dim=1)                # (B,2,6,7)
-                x4 = self._append_coords(x2)
-                return self._append_diagonals(x4)
-            raise ValueError(f"Unexpected channel count {C}; expected 1/2/4/6.")
-
-        raise ValueError(f"Unexpected input shape {tuple(x.shape)}")
-
-    # ---------- core forward ----------
-
-    def _forward_backbone(self, x6: torch.Tensor) -> torch.Tensor:
-        """
-        x6: (B, 6, 6, 7) -> (B, 64)
-        """
-        h = self.backbone(x6)            # (B,64,2,3)
-        h = self.gap(h).flatten(1)       # (B,64)
-        return h
-
-    def forward(self, x: torch.Tensor):
-        """
-        Returns:
-          logits: [B, action_dim]
-          value : [B]
-        """
-        x6 = self._to_six_channel(x)     # (B,6,6,7)
-        h  = self._forward_backbone(x6)  # (B,64)
-        h  = self.fc(h)                  # (B,128)
-        logits = self.policy_head(h)     # (B, A)
-        value  = self.value_head(h).squeeze(-1)  # (B)
-        return logits, value
-
-    # ---------- action helpers ----------
-
-    @staticmethod
-    def make_legal_action_mask(batch_legal_actions, action_dim: int = 7) -> torch.Tensor:
-        """
-        batch_legal_actions: iterable of iterables/sets of ints
-        returns: [B, A] bool mask (on DEVICE)
-        """
-        B = len(batch_legal_actions)
-        mask = torch.zeros(B, action_dim, dtype=torch.bool, device=DEVICE)
-        for i, acts in enumerate(batch_legal_actions):
-            if acts:  # guard against empty list
-                idx = torch.as_tensor(list(acts), dtype=torch.long, device=DEVICE)
-                mask[i, idx] = True
-        return mask
-
-    @torch.inference_mode()
-    def act(
-        self,
-        state_np: np.ndarray,              # (2, 6, 7) agent-centric planes
-        legal_actions,
-        temperature: float = 1.0,
-        ply_idx: int | None = None,
-    ) -> tuple[int, torch.Tensor, torch.Tensor, dict]:
-        """
-        PPO policy with DQN-style safety rails:
-
-          1) If there's a 1-ply win for +1, take it with prob win_now_prob.
-          2) Otherwise, on early plies, push center with prob center_start.
-          3) Otherwise, with prob guard_prob in a ply window, apply tactical guard:
-             - block unique opponent immediate win OR
-             - restrict sampling to 'safe' moves.
-          4) Fallback: sample from masked softmax (temperature-scaled).
-
-        Returns:
-            action (int),
-            logprob (tensor),
-            value (tensor),
-            info (dict with 'mode').
-        """
-        # Ensure list[int]
-        legal_actions = [int(a) for a in legal_actions]
-        assert len(legal_actions) > 0, "act called with empty legal_actions"
-
-        # Rebuild board from agent-centric planes: +1 for agent, -1 for opp
-        # state_np: (2, 6, 7)
-        if state_np.shape[0] < 2:
-            raise ValueError(f"Expected 2-channel state, got {state_np.shape}")
-        board = (state_np[0] - state_np[1]).astype(np.int8)   # (6, 7)
-
-        # Forward pass
-        x = torch.from_numpy(state_np).unsqueeze(0).to(next(self.parameters()).device).float()
-        logits, value = self.forward(x)          # logits: [1, A], value: [1] or [1,1]
-
-        # Build legal mask
-        mask = torch.zeros_like(logits, dtype=torch.bool)     # [1, A]
-        mask[0, legal_actions] = True
-
-        # Apply mask + temperature
-        T = max(float(temperature), 1e-6)
-        masked = logits.masked_fill(~mask, NEG_INF)
-        log_probs = torch.log_softmax(masked / T, dim=-1)     # [1, A]
-        probs = log_probs.exp()
-
-        # ---------- 1) 1-ply win ----------
-        mode = "policy"
-        win_moves = _find_immediate_wins(board, +1, legal_actions)
-        if win_moves and self.win_now_prob > 0.0 and random.random() < self.win_now_prob:
-            a = int(win_moves[0])   # we don't care which winning move
-            lp = log_probs[0, a].detach()
-            self._bump_stat("win_now")
-            return a, lp, value.squeeze(0).detach(), {"mode": "win_now"}
-
-        # ---------- 2) Center start (ply 0/1) ----------
-        if (
-            not self.center_forced_used    
-            and self.center_start > 0.0
-            and ply_idx is not None
-            and ply_idx <= self.center_ply_max
-            and CENTER_COL in legal_actions
-            and random.random() < self.center_start
-        ):
-            a = CENTER_COL
-            lp = log_probs[0, a].detach()
-            self._bump_stat("center")
-            self.center_forced_used = True
-            return a, lp, value.squeeze(0).detach(), {"mode": "center"}
-
-        # ---------- 3) Tactical guard ----------
-        if (
-            self.guard_prob > 0.0
-            and ply_idx is not None
-            and self.guard_ply_min <= ply_idx <= self.guard_ply_max
-            and random.random() < self.guard_prob
-        ):
-            must_play, safe_actions = _tactical_guard(board, legal_actions, me=+1, opp=-1)
-
-            # unique block
-            if must_play is not None:
-                a = int(must_play)
-                lp = log_probs[0, a].detach()
-                self._bump_stat("guard")
-                return a, lp, value.squeeze(0).detach(), {"mode": "guard_block"}
-
-            # restrict to safe subset if it exists and is a strict subset
-            if safe_actions and len(safe_actions) < len(legal_actions):
-                legal_actions = [int(a) for a in safe_actions]
-                mask = torch.zeros_like(logits, dtype=torch.bool)
-                mask[0, legal_actions] = True
-                masked = logits.masked_fill(~mask, NEG_INF)
-                log_probs = torch.log_softmax(masked / T, dim=-1)
-                probs = log_probs.exp()
-                mode = "guard_safe"
-
-        # ---------- 4) Default policy sampling ----------
-        dist = Categorical(probs=probs[0])
-        a_t = dist.sample()            # scalar tensor
-        a = int(a_t.item())
-        lp = dist.log_prob(a_t).detach()
-
-        self._bump_stat("policy")
-        return a, lp, value.squeeze(0).detach(), {"mode": mode}
-
-    def greedy_act(self, state_np, legal_actions, ply_idx=None):
-        return self.act(state_np, legal_actions, temperature=0.0, ply_idx=ply_idx)
-
-
-    def evaluate_actions(
-        self,
-        states: torch.Tensor,
-        actions: torch.Tensor,
-        legal_action_masks: torch.Tensor | None = None
-    ):
-        """
-        states: [B,6,7], [B,1,6,7], [B,2,6,7], [B,4,6,7], or [B,6,6,7]; we encode internally.
-        actions: [B] long
-        legal_action_masks: [B, A] bool or None
-        Returns: (logprobs[B], entropy[B], values[B])
-        """
-        logits, values = self.forward(states)
-
-        mask = None
-        if legal_action_masks is not None:
-            mask = legal_action_masks.to(dtype=torch.bool, device=logits.device)
-            # Ensure at least one legal action per row
-            no_legal = (mask.sum(dim=-1) == 0)
-            if no_legal.any():
-                mask = mask.clone()
-                mask[no_legal] = True
-            logits = logits.masked_fill(~mask, NEG_INF)
-
-        probs = F.softmax(logits, dim=-1)
-
-        # Replace any NaN rows with uniform over legal actions
-        if torch.isnan(probs).any():
-            if mask is None:
-                probs = torch.full_like(probs, 1.0 / probs.size(-1))
-            else:
-                with torch.no_grad():
-                    legal_counts = mask.sum(dim=-1, keepdim=True).clamp_min(1)
-                    uniform = mask.float() / legal_counts
-                nan_rows = torch.isnan(probs).any(dim=-1, keepdim=True)
-                probs = torch.where(nan_rows, uniform, probs)
-
-        dist = Categorical(probs)
-        actions = actions.long()
-        logprobs = dist.log_prob(actions)
-        entropy  = dist.entropy()
-        return logprobs, entropy, values
-
-    # ---------- init ----------
-
-    @staticmethod
-    def _enforce_lr_symmetry_(module: nn.Module):
-        """
-        Make every Conv2d LR-equivariant by averaging kernels with their left-right flips.
-        """
-        with torch.no_grad():
-            for m in module.modules():
-                if isinstance(m, nn.Conv2d):
-                    m.weight.copy_(0.5 * (m.weight + torch.flip(m.weight, dims=[-1])))
-                    # bias untouched
-
-    def _init_weights(self):
-        # Kaiming for convs/linears
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.Linear)):
-                nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-        # Heads: orthogonal helps PPO stability
-        nn.init.orthogonal_(self.policy_head.weight, gain=0.01)
-        nn.init.zeros_(self.policy_head.bias)
-        nn.init.orthogonal_(self.value_head.weight, gain=1.0)
-        nn.init.zeros_(self.value_head.bias)
-
-        # Center-column action prior on policy bias (gentle, symmetric)
-        with torch.no_grad():
-            a = torch.arange(self.action_dim, dtype=torch.float32, device=self.policy_head.bias.device)
-            mu = 3.0  # center column
-            sigma = max(1e-6, self._init_center_sigma)
-            gauss = torch.exp(-0.5 * ((a - mu) / sigma) ** 2)
-            gauss = gauss / (gauss.max() + 1e-12)
-            bias_per_action = self._init_center_bias_scale * gauss
-            bias_per_action = bias_per_action - bias_per_action.mean()
-            self.policy_head.bias.add_(bias_per_action)
-
-        # Optionally enforce LR symmetry on all convs so mirror holds at init
-        if self._enforce_lr_symmetry_flag:  self._enforce_lr_symmetry_(self)
-            
-    # ----- phase hooks -----
-    def set_phase_heuristics(
-        self,
+    @classmethod
+    def from_cnet192_checkpoint(
+        cls,
+        path: str,
+        device: torch.device,
         *,
-        center_start: float | None = None,
-        guard_prob: float | None = None,
-        win_now_prob: float | None = None,
-        guard_ply_min: int | None = None,
-        guard_ply_max: int | None = None,
-    ) -> None:
-        """Set heuristic knobs from phase config."""
-        if center_start is not None:            self.center_start = float(center_start)
-        if guard_prob is not None:              self.guard_prob = float(guard_prob)
-        if win_now_prob is not None:            self.win_now_prob = float(win_now_prob)
-        if guard_ply_min is not None:           self.guard_ply_min = int(guard_ply_min)
-        if guard_ply_max is not None:           self.guard_ply_max = int(guard_ply_max)
+        override_cfg: Optional[Dict[str, Any]] = None,
+        transfer: Optional[TransferCfg] = None,
+    ) -> "ActorCritic":
+        """
+        Build ActorCritic and load weights from a CNet192 checkpoint created by save_cnet192().
+        """
+        transfer = transfer or TransferCfg()
+        model_cnet, ckpt = load_cnet192(
+            path=path,
+            device=device,
+            strict=transfer.strict_load,
+            override_cfg=override_cfg,
+        )
+        use_mid = bool(ckpt.get("cfg", {}).get("use_mid_3x3", True)) if override_cfg is None else bool(override_cfg.get("use_mid_3x3", True))
+        ac = cls(use_mid_3x3=use_mid).to(device)
+        ac.net.load_state_dict(model_cnet.state_dict(), strict=True)
 
-    # ----- stats helpers -----
+        if transfer.freeze_conv:
+            ac.freeze_conv_block(True)
+
+        return ac
+
+    def freeze_conv_block(self, freeze: bool = True) -> None:
+        """Freeze/unfreeze the convolutional feature extractor (Marco-style transfer)."""
+        for p in self.net.conv1.parameters():
+            p.requires_grad = not freeze
+        if self.net.conv_mid is not None:
+            for p in self.net.conv_mid.parameters():
+                p.requires_grad = not freeze
+        for p in self.net.conv2.parameters():
+            p.requires_grad = not freeze
+
+    # -------------------------
+    # Episode / stats helpers
+    # -------------------------
+
+    def begin_episode(self) -> None:
+        """Call at the start of each game/episode."""
+        self.center_forced_used = False
+
     def _bump_stat(self, key: str) -> None:
         if key not in self._act_stats:
             self._act_stats[key] = 0
         self._act_stats[key] += 1
         self._act_stats_total += 1
 
-    def act_stats_summary(self, normalize: bool = True) -> dict[str, float]:
-        """
-        Return action-mix stats, e.g. fractions of:
-          • win_now
-          • center
-          • guard
-          • policy   (pure policy sample)
-        """
-        if not self._act_stats_total:
-            if normalize:
-                return {k: 0.0 for k in self._act_stats}
-            return dict(self._act_stats)
-
+    def act_stats_summary(self, normalize: bool = True) -> Dict[str, float]:
+        if self._act_stats_total == 0:
+            return {k: 0.0 for k in self._act_stats} if normalize else dict(self._act_stats)
         if normalize:
             return {k: v / self._act_stats_total for k, v in self._act_stats.items()}
         return dict(self._act_stats)
 
+    # -------------------------
+    # Phase hooks (same names you already use)
+    # -------------------------
+
+    def set_phase_heuristics(
+        self,
+        *,
+        center_start: Optional[float] = None,
+        guard_prob: Optional[float] = None,
+        win_now_prob: Optional[float] = None,
+        guard_ply_min: Optional[int] = None,
+        guard_ply_max: Optional[int] = None,
+        center_ply_max: Optional[int] = None,
+    ) -> None:
+        if center_start is not None:
+            self.center_start = float(center_start)
+        if guard_prob is not None:
+            self.guard_prob = float(guard_prob)
+        if win_now_prob is not None:
+            self.win_now_prob = float(win_now_prob)
+        if guard_ply_min is not None:
+            self.guard_ply_min = int(guard_ply_min)
+        if guard_ply_max is not None:
+            self.guard_ply_max = int(guard_ply_max)
+        if center_ply_max is not None:
+            self.center_ply_max = int(center_ply_max)
+
+    # -------------------------
+    # Input normalization (1-channel POV)
+    # -------------------------
+
+    def _dev(self) -> torch.device:
+        return next(self.parameters()).device
+
+    @staticmethod
+    def pov_from_env_board(board: np.ndarray, player_to_move: int) -> np.ndarray:
+        """
+        Convert env-centric scalar board to POV scalar board:
+          POV = board * player_to_move
+        So the current player always becomes +1.
+        """
+        b = np.asarray(board, dtype=np.int8)
+        p = 1 if int(player_to_move) == 1 else -1
+        return (b * p).astype(np.int8)
+
+    def _to_1ch_pov(self, x: torch.Tensor | np.ndarray) -> torch.Tensor:
+        """
+        Normalize to (B,1,6,7) float32 on model device.
+
+        Accepts:
+          - (6,7)
+          - (1,6,7)
+          - (B,6,7)
+          - (B,1,6,7)
+          - (2,6,7) or (B,2,6,7) as (me,opp) planes -> POV scalar = me - opp
+        """
+        dev = self._dev()
+
+        if not isinstance(x, torch.Tensor):
+            x = torch.as_tensor(x)
+
+        x = x.to(device=dev, dtype=torch.float32)
+
+        if x.dim() == 2:  # (6,7)
+            return x.unsqueeze(0).unsqueeze(0)
+
+        if x.dim() == 3:
+            # (1,6,7) or (2,6,7) or (B,6,7)
+            if x.shape == (1, 6, 7):
+                return x.unsqueeze(0)
+            if x.shape == (2, 6, 7):
+                s = x[0] - x[1]
+                return s.unsqueeze(0).unsqueeze(0)
+            # assume (B,6,7)
+            if x.shape[1:] == (6, 7):
+                return x.unsqueeze(1)
+            raise ValueError(f"Unexpected 3D input shape: {tuple(x.shape)}")
+
+        if x.dim() == 4:
+            # (B,1,6,7) or (B,2,6,7)
+            if x.shape[1:] == (1, 6, 7):
+                return x
+            if x.shape[1:] == (2, 6, 7):
+                s = x[:, 0] - x[:, 1]
+                return s.unsqueeze(1)
+            raise ValueError(f"Unexpected 4D input shape: {tuple(x.shape)}")
+
+        raise ValueError(f"Unexpected input rank: {x.dim()}")
+
+    # -------------------------
+    # Core forward
+    # -------------------------
+
+    def forward(self, x: torch.Tensor | np.ndarray) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns:
+          logits: (B,7)
+          value : (B,)
+        """
+        x1 = self._to_1ch_pov(x)
+        logits, value = self.net(x1)
+        return logits, value
+
+    # -------------------------
+    # Legal masking utils
+    # -------------------------
+
+    @staticmethod
+    def make_legal_action_mask(
+        batch_legal_actions: Iterable[Iterable[int]],
+        action_dim: int = 7,
+        device: Optional[torch.device] = None,
+    ) -> torch.Tensor:
+        acts_list = list(batch_legal_actions)
+        B = len(acts_list)
+        dev = device if device is not None else torch.device("cpu")
+        mask = torch.zeros(B, action_dim, dtype=torch.bool, device=dev)
+        for i, acts in enumerate(acts_list):
+            a = list(acts)
+            if not a:
+                continue
+            idx = torch.as_tensor(a, dtype=torch.long, device=dev)
+            mask[i, idx] = True
+        return mask
+
+    @staticmethod
+    def _renorm(p: torch.Tensor) -> torch.Tensor:
+        return p / p.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+
+    @staticmethod
+    def _mix(p: torch.Tensor, q: torch.Tensor, w: float) -> torch.Tensor:
+        w = float(w)
+        if w <= 0.0:
+            return p
+        if w >= 1.0:
+            return q
+        return ActorCritic._renorm((1.0 - w) * p + w * q)
+
+    def _apply_center_mix_single(
+        self,
+        probs: torch.Tensor,      # [1,7]
+        mask: torch.Tensor,       # [1,7] bool
+        legal_actions: List[int],
+        ply_idx: Optional[int],
+    ) -> Tuple[torch.Tensor, bool]:
+        if (
+            self.center_start <= 0.0
+            or ply_idx is None
+            or ply_idx > self.center_ply_max
+            or CENTER_COL not in legal_actions
+            or self.center_forced_used
+        ):
+            return probs, False
+
+        lam = float(self.center_start)
+        book = torch.zeros_like(probs)
+        book[0, CENTER_COL] = 1.0
+
+        mixed = (1.0 - lam) * probs + lam * book
+        mixed = mixed * mask.float()
+        mixed = self._renorm(mixed)
+        return mixed, True
+
+    # -------------------------
+    # Action selection
+    # -------------------------
+
+    @torch.inference_mode()
+    def act(
+        self,
+        state_np: np.ndarray,
+        legal_actions: Iterable[int],
+        *,
+        temperature: float = 1.0,
+        ply_idx: Optional[int] = None,
+    ) -> Tuple[int, torch.Tensor, torch.Tensor, Dict[str, Any]]:
+        """
+        Sample an action and return:
+          (action:int, logprob:Tensor[], value:Tensor[], info:dict)
+
+        state_np can be:
+          - (6,7) POV scalar
+          - (1,6,7) POV 1ch
+          - (2,6,7) (me,opp) planes
+        """
+        legal = [int(a) for a in legal_actions]
+        if not legal:
+            raise ValueError("act() called with empty legal_actions")
+
+        dev = self._dev()
+
+        x = torch.from_numpy(np.asarray(state_np, dtype=np.float32)).to(dev)
+        logits, value = self.forward(x)  # logits [1,7] if single
+
+        if logits.dim() == 1:
+            logits = logits.unsqueeze(0)
+
+        mask = torch.zeros_like(logits, dtype=torch.bool)
+        mask[0, legal] = True
+
+        T = max(float(temperature), 1e-6)
+        masked_logits = logits.masked_fill(~mask, NEG_INF) / T
+        probs = torch.softmax(masked_logits, dim=-1)
+
+        # board for tactic checks (POV scalar)
+        x1 = self._to_1ch_pov(x)
+        board = x1[0, 0].detach().cpu().numpy().astype(np.int8)
+
+        center_applied = False
+        win_moves: List[int] = []
+        must_play: Optional[int] = None
+        safe_actions: List[int] = []
+
+        # 1) Center mix
+        probs, center_applied = self._apply_center_mix_single(probs, mask, legal, ply_idx)
+
+        # 2) Win-now mix
+        win_moves = _find_immediate_wins(board, +1, legal)
+        if win_moves and self.win_now_prob > 0.0:
+            win_mask = torch.zeros_like(probs, dtype=torch.bool)
+            win_mask[0, win_moves] = True
+            win_probs = probs * win_mask.float()
+            if win_probs.sum() <= 1e-8:
+                win_probs = torch.zeros_like(probs)
+                win_probs[0, win_moves] = 1.0 / max(1, len(win_moves))
+            else:
+                win_probs = self._renorm(win_probs)
+            probs = self._mix(probs, win_probs, self.win_now_prob)
+
+        # 3) Guard mix (ply window)
+        if (
+            self.guard_prob > 0.0
+            and ply_idx is not None
+            and self.guard_ply_min <= ply_idx <= self.guard_ply_max
+        ):
+            must_play, safe_actions = _tactical_guard(board, legal, me=+1, opp=-1)
+
+            if must_play is not None:
+                block = torch.zeros_like(probs)
+                block[0, must_play] = 1.0
+                probs = self._mix(probs, block, self.guard_prob)
+
+            elif safe_actions and len(safe_actions) < len(legal):
+                safe_mask = torch.zeros_like(probs, dtype=torch.bool)
+                safe_mask[0, safe_actions] = True
+                safe_probs = probs * safe_mask.float()
+                if safe_probs.sum() <= 1e-8:
+                    safe_probs = torch.zeros_like(probs)
+                    safe_probs[0, safe_actions] = 1.0 / max(1, len(safe_actions))
+                else:
+                    safe_probs = self._renorm(safe_probs)
+                probs = self._mix(probs, safe_probs, self.guard_prob)
+
+        # 4) Sample
+        dist = Categorical(probs=probs[0])
+        a_t = dist.sample()
+        lp = dist.log_prob(a_t).detach()
+        a = int(a_t.item())
+
+        # Mode + stats
+        if win_moves and (a in win_moves):
+            mode = "win_now"
+            self._bump_stat("win_now")
+        elif must_play is not None and a == int(must_play):
+            mode = "guard_block"
+            self._bump_stat("guard")
+        elif safe_actions and (a in safe_actions) and (len(safe_actions) < len(legal)):
+            mode = "guard_safe"
+            self._bump_stat("guard")
+        elif center_applied and a == CENTER_COL:
+            mode = "center"
+            self._bump_stat("center")
+            self.center_forced_used = True
+        else:
+            mode = "policy"
+            self._bump_stat("policy")
+
+        return a, lp, value.squeeze(0).detach(), {"mode": mode}
+
+    # -------------------------
+    # PPO evaluation helper
+    # -------------------------
+
+    def evaluate_actions(
+        self,
+        states: torch.Tensor | np.ndarray,
+        actions: torch.Tensor,
+        *,
+        legal_action_masks: Optional[torch.Tensor] = None,
+        ply_indices: Optional[torch.Tensor] = None,
+        temperature: float | torch.Tensor = 1.0,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Batch evaluation for PPO:
+          returns (logprobs, entropy, values)
+
+        - states: (B,1,6,7) or compatible shapes (see _to_1ch_pov)
+        - actions: (B,)
+        - legal_action_masks: (B,7) bool, optional
+        - ply_indices: (B,), optional (for center/guard window behavior)
+        """
+        dev = self._dev()
+
+        logits, values = self.forward(states)  # logits (B,7), values (B,)
+
+        # temperature
+        if isinstance(temperature, torch.Tensor):
+            T = temperature.to(device=dev, dtype=logits.dtype).clamp_min(1e-6)
+            logits = logits / (T.view(-1, 1) if T.dim() > 0 else T)
+        else:
+            logits = logits / max(float(temperature), 1e-6)
+
+        # legal mask
+        if legal_action_masks is not None:
+            mask = legal_action_masks.to(device=dev, dtype=torch.bool)
+            no_legal = (mask.sum(dim=-1) == 0)
+            if no_legal.any():
+                mask = mask.clone()
+                mask[no_legal] = True
+            logits = logits.masked_fill(~mask, NEG_INF)
+        else:
+            mask = torch.ones_like(logits, dtype=torch.bool, device=dev)
+
+        probs = torch.softmax(logits, dim=-1)
+
+        # center mix (vectorized)
+        if ply_indices is not None and self.center_start > 0.0 and self.center_ply_max >= 0:
+            lam = float(self.center_start)
+            ply = ply_indices.to(device=dev).long()
+            apply_row = (ply <= int(self.center_ply_max)) & mask[:, CENTER_COL]
+            if apply_row.any():
+                book = torch.zeros_like(probs)
+                book[:, CENTER_COL] = 1.0
+                mixed = (1.0 - lam) * probs + lam * book
+                mixed = mixed * mask.float()
+                mixed = self._renorm(mixed)
+                probs = torch.where(apply_row.unsqueeze(-1), mixed, probs)
+
+        # win_now / guard mix (loop, matches act())
+        # NOTE: If you keep these probs > 0 during training, PPO is "learning a policy + a rulebook".
+        # That can be fine for curriculum bootstrapping, but you'll likely want them -> 0 later.
+        if (self.win_now_prob > 0.0) or (self.guard_prob > 0.0):
+            x1 = self._to_1ch_pov(states)
+            boards = x1[:, 0].detach().cpu().numpy().astype(np.int8)
+            mask_cpu = mask.detach().cpu().numpy()
+
+            probs_out = probs.clone()
+            B = probs_out.shape[0]
+
+            for i in range(B):
+                legal = [int(a) for a in np.where(mask_cpu[i])[0].tolist()]
+                if not legal:
+                    continue
+
+                pi = probs_out[i:i+1, :]
+
+                # win mix
+                if self.win_now_prob > 0.0:
+                    wins = _find_immediate_wins(boards[i], +1, legal)
+                    if wins:
+                        win_mask = torch.zeros_like(pi, dtype=torch.bool)
+                        win_mask[0, wins] = True
+                        win_pi = pi * win_mask.float()
+                        if win_pi.sum() <= 1e-8:
+                            win_pi = torch.zeros_like(pi)
+                            win_pi[0, wins] = 1.0 / max(1, len(wins))
+                        else:
+                            win_pi = self._renorm(win_pi)
+                        pi = self._mix(pi, win_pi, self.win_now_prob)
+
+                # guard mix
+                if self.guard_prob > 0.0 and ply_indices is not None:
+                    ply_i = int(ply_indices[i].item())
+                    if self.guard_ply_min <= ply_i <= self.guard_ply_max:
+                        must_play, safe_actions = _tactical_guard(boards[i], legal, me=+1, opp=-1)
+                        if must_play is not None:
+                            block = torch.zeros_like(pi)
+                            block[0, int(must_play)] = 1.0
+                            pi = self._mix(pi, block, self.guard_prob)
+                        elif safe_actions and len(safe_actions) < len(legal):
+                            safe_mask = torch.zeros_like(pi, dtype=torch.bool)
+                            safe_mask[0, safe_actions] = True
+                            safe_pi = pi * safe_mask.float()
+                            if safe_pi.sum() <= 1e-8:
+                                safe_pi = torch.zeros_like(pi)
+                                safe_pi[0, safe_actions] = 1.0 / max(1, len(safe_actions))
+                            else:
+                                safe_pi = self._renorm(safe_pi)
+                            pi = self._mix(pi, safe_pi, self.guard_prob)
+
+                probs_out[i:i+1, :] = pi
+
+            probs = probs_out
+
+        dist = Categorical(probs=probs)
+        actions = actions.long()
+        logprobs = dist.log_prob(actions)
+        entropy = dist.entropy()
+
+        return logprobs, entropy, values

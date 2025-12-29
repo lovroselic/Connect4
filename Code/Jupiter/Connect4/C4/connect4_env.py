@@ -64,22 +64,21 @@ class Connect4Env:
     COLS = COLS
     
     # reward constants 
-    THREAT2_VALUE = 2
+    THREAT2_VALUE = 5
     THREAT3_VALUE = 10
-    BLOCK2_VALUE = 2.5
-    BLOCK3_VALUE = 15
-    MAX_REWARD = 100
-    WIN_REWARD = 1000
-    DRAW_REWARD = 20
-    LOSS_PENALTY = -1000
-    CENTER_REWARD = 1.0
-    CENTER_REWARD_BOTTOM = 50
-    FORK_BONUS = 20
+    BLOCK2_VALUE = 5
+    BLOCK3_VALUE = 20
+    MAX_REWARD = 999        #999
+    WIN_REWARD = 10000      #10000
+    DRAW_REWARD = 100       #100
+    LOSS_PENALTY = -WIN_REWARD
+    CENTER_REWARD = 0.1
+    CENTER_REWARD_BOTTOM = MAX_REWARD  
+    FORK_BONUS = 25
     BLOCK_FORK_BONUS = 25
-    OPP_IMMEDIATE_PENALTY = 100
+    OPP_IMMEDIATE_PENALTY = 1000
     STEP_PENALTY = 1
-    #CENTER_WEIGHTS = [0.25, 0, 0.5, 1.0, 0.5, 0, 0.25]
-    CENTER_WEIGHTS = [0.90, 0.85, 0.95, 1.0, 0.95, 0.85, 0.90]
+    CENTER_WEIGHTS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     OPENING_DECAY_STEPS = 7 #6
 
     # Precomputed coordinate planes (float32) reused for every state
@@ -110,15 +109,12 @@ class Connect4Env:
         return self.get_state(perspective=self.current_player)
 
     def get_state(self, perspective=None) -> np.ndarray:
-        """Return (4,6,7) mover-centric planes. Uses precomputed row/col planes."""
-        if perspective is None: perspective = self.current_player
-        b = self.board
-        p = perspective
+        """Return (1,6,7) float32 mover-centric POV plane."""
+        if perspective is None:
+            perspective = self.current_player
+        x = (self.board.astype(np.float32) * float(perspective))[None, :, :]
+        return x
 
-        agent_plane = (b == p).astype(np.float32, copy=False)
-        opp_plane   = (b == -p).astype(np.float32, copy=False)
-        # row/col planes are constants
-        return np.stack([agent_plane, opp_plane, self._ROW_PLANE, self._COL_PLANE], axis=0)
 
     def available_actions(self):
         # Using heights avoids reading top row

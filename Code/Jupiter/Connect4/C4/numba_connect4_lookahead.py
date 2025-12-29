@@ -14,7 +14,7 @@
 #   - Center-first ordering + killer/history ordering
 #   - Gravity-aware heuristic (FLOATING_NEAR/FAR) + DEFENSIVE factor
 
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 import numpy as np
 from numba import njit
 
@@ -567,51 +567,58 @@ class Connect4Lookahead:
         val = float(v)
         return val if to_move == root_pov else -val
 
-    def n_step_lookahead(self, board, player, depth=3) -> int:
+    def n_step_lookahead(self, board, player, depth=3, tie_break: str = "center", rng=None) -> int:
         """
-        Root move selection with exact fixed `depth` (no timeouts).
-        - Immediate win
-        - Single must-block
-        - Avoid immediate handovers if possible
-        - Negamax(depth-1), center-first ordering
+        tie_break:
+          - "center": current behavior (fast, deterministic via root_select_fixed) - fast
+          - "random": uniform random among best-scored legal actions (uses n_step_action_scores) - for data generation diversity
         """
+        if tie_break != "random":
+            # current fast deterministic path
+            p1, p2, mask = self._parse_board_bitboards(board)
+            me_mark = self._p(player)
+            me  = p1 if me_mark == 1 else p2
+    
+            WARR = np.zeros(self.K + 1, dtype=np.float64)
+            for k in (2, 3, 4):
+                WARR[k] = float(self.weights.get(k, 0.0))
+    
+            killers = np.full((64, 2), -1, dtype=np.int8)
+            history = np.zeros(self.COLS, dtype=np.int32)
+    
+            TT_SIZE = 1 << 16
+            TT_pos  = np.zeros(TT_SIZE, dtype=np.uint64)
+            TT_mask = np.zeros(TT_SIZE, dtype=np.uint64)
+            TT_depth= np.full(TT_SIZE, -1, dtype=np.int16)
+            TT_flag = np.zeros(TT_SIZE, dtype=np.int8)
+            TT_val  = np.zeros(TT_SIZE, dtype=np.float64)
+            TT_move = np.full(TT_SIZE, -1, dtype=np.int8)
+    
+            mv = self._N["root_select_fixed"](
+                np.uint64(me), np.uint64(mask), np.int16(depth),
+                self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
+                WARR,
+                float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+                np.uint64(self._N["CENTER_MASK"]),
+                float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
+                self._N["CENTER_ORDER"], self._N["TOP_MASK"], self._N["BOTTOM_MASK"],
+                np.int32(self.STRIDE), np.int32(self.ROWS), np.int32(self.COLS),
+                np.uint64(self._N["FULL_MASK"]),
+                float(self.MATE_SCORE),
+                killers, history,
+                TT_pos, TT_mask, TT_depth, TT_flag, TT_val, TT_move
+            )
+            return int(mv)
+    
+        # ---- stochastic tie-break path ----
         p1, p2, mask = self._parse_board_bitboards(board)
-        me_mark = self._p(player)
-        me  = p1 if me_mark == 1 else p2
+        legal_cols = [c for c in range(self.COLS) if (mask & self.TOP_MASK[c]) == 0]
+        if not legal_cols:
+            return 0
+    
+        scores = self.n_step_action_scores(board, player, depth=depth)
+        return self._choose_uniform_among_best(scores, legal_cols, rng=rng)
 
-        # weights -> WARR
-        WARR = np.zeros(self.K + 1, dtype=np.float64)
-        for k in (2, 3, 4):
-            WARR[k] = float(self.weights.get(k, 0.0))
-
-        # per-call scratch
-        killers = np.full((64, 2), -1, dtype=np.int8)
-        history = np.zeros(self.COLS, dtype=np.int32)
-
-        # TT per move
-        TT_SIZE = 1 << 16
-        TT_pos  = np.zeros(TT_SIZE, dtype=np.uint64)
-        TT_mask = np.zeros(TT_SIZE, dtype=np.uint64)
-        TT_depth= np.full(TT_SIZE, -1, dtype=np.int16)
-        TT_flag = np.zeros(TT_SIZE, dtype=np.int8)
-        TT_val  = np.zeros(TT_SIZE, dtype=np.float64)
-        TT_move = np.full(TT_SIZE, -1, dtype=np.int8)
-
-        mv = self._N["root_select_fixed"](
-            np.uint64(me), np.uint64(mask), np.int16(depth),
-            self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
-            WARR,
-            float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
-            np.uint64(self._N["CENTER_MASK"]),
-            float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
-            self._N["CENTER_ORDER"], self._N["TOP_MASK"], self._N["BOTTOM_MASK"],
-            np.int32(self.STRIDE), np.int32(self.ROWS), np.int32(self.COLS),
-            np.uint64(self._N["FULL_MASK"]),
-            float(self.MATE_SCORE),
-            killers, history,
-            TT_pos, TT_mask, TT_depth, TT_flag, TT_val, TT_move
-        )
-        return int(mv)
 
     def has_four(self, board, player: int) -> bool:
         p1, p2, _ = self._parse_board_bitboards(board)
@@ -794,3 +801,237 @@ class Connect4Lookahead:
                     # treat {2 or -1} as the other side
                     p2 |= b
         return p1, p2, mask
+
+    def n_step_action_scores(self, board, player, depth=1) -> np.ndarray:
+        """
+        Returns scores[7] from the POV of `player`.
+        Illegal columns are -inf.
+        """
+        p1, p2, mask = self._parse_board_bitboards(board)
+        me_mark = self._p(player)
+        me = p1 if me_mark == 1 else p2
+    
+        # weights -> WARR
+        WARR = np.zeros(self.K + 1, dtype=np.float64)
+        for k in (2, 3, 4):
+            WARR[k] = float(self.weights.get(k, 0.0))
+    
+        scores = np.full(self.COLS, -np.inf, dtype=np.float64)
+    
+        # shared scratch (OK to share; TT we re-init per action for simplicity)
+        killers = np.full((64, 2), -1, dtype=np.int8)
+        history = np.zeros(self.COLS, dtype=np.int32)
+    
+        for c in self._CENTER_ORDER:
+            if (mask & self.TOP_MASK[c]) != 0:
+                continue
+    
+            # immediate win shortcut (matches your root logic)
+            if self._is_winning_move_py(me, mask, c):
+                scores[c] = self.MATE_SCORE
+                continue
+    
+            mv = self._play_bit_py(mask, c)
+            nm = mask | mv
+            next_pos = nm ^ (me | mv)  # switch player in "pos" convention
+    
+            # TT per action (simple & safe)
+            TT_SIZE = 1 << 16
+            TT_pos  = np.zeros(TT_SIZE, dtype=np.uint64)
+            TT_mask = np.zeros(TT_SIZE, dtype=np.uint64)
+            TT_depth= np.full(TT_SIZE, -1, dtype=np.int16)
+            TT_flag = np.zeros(TT_SIZE, dtype=np.int8)
+            TT_val  = np.zeros(TT_SIZE, dtype=np.float64)
+            TT_move = np.full(TT_SIZE, -1, dtype=np.int8)
+    
+            node_counter = np.zeros(1, dtype=np.int64)
+            max_nodes = np.int64(9_000_000_000_000)
+    
+            v, _ = self._N["negamax"](
+                np.uint64(next_pos), np.uint64(nm), np.int16(depth - 1),
+                -float(self.MATE_SCORE), float(self.MATE_SCORE), np.int16(1),
+                node_counter, max_nodes, float(self.MATE_SCORE),
+                self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
+                WARR,
+                float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+                np.uint64(self._N["CENTER_MASK"]),
+                float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
+                self._N["CENTER_ORDER"], self._N["TOP_MASK"], self._N["BOTTOM_MASK"],
+                np.int32(self.STRIDE), np.int32(self.ROWS), np.int32(self.COLS),
+                killers, history, np.uint64(self._N["FULL_MASK"]),
+                TT_pos, TT_mask, TT_depth, TT_flag, TT_val, TT_move
+            )
+    
+            scores[c] = -float(v)  # back to root POV
+    
+        return scores
+    
+    
+    def policy_scores_delta(self, board, player, depth=1) -> np.ndarray:
+        """Like his visualization: action_scores - current_board_score."""
+        base = float(self.get_heuristic(board, player))
+        sc = self.n_step_action_scores(board, player, depth=depth)
+        return sc - base
+    
+    def _choose_uniform_among_best(self, scores: np.ndarray, legal_cols: List[int], rng=None,
+                               atol: float = 1e-9, rtol: float = 1e-9) -> int:
+        """
+        Uniform random among best-scored legal actions.
+        Uses isclose to avoid float equality traps.
+        """
+        if rng is None:
+            rng = np.random.default_rng()
+    
+        if not legal_cols:
+            return 0
+    
+        best = max(float(scores[c]) for c in legal_cols)
+        best_cols = [c for c in legal_cols if np.isclose(scores[c], best, atol=atol, rtol=rtol)]
+        if not best_cols:
+            best_cols = legal_cols  # ultra-defensive fallback
+    
+        return int(rng.choice(best_cols))
+
+
+    # ---------------- Baselines (convenience) ----------------
+
+    def legal_actions(self, board=None, mask=None) -> List[int]:
+        """
+        Returns list of legal columns [0..6].
+        Provide either `board` OR a pre-parsed `mask` (int bitboard occupancy).
+        """
+        if mask is None:
+            if board is None:
+                raise ValueError("legal_actions() requires either board=... or mask=...")
+            _, _, mask = self._parse_board_bitboards(board)
+        return [c for c in range(self.COLS) if (mask & self.TOP_MASK[c]) == 0]
+
+
+    def random_action(self, board, rng: Optional[object] = None) -> int:
+        """
+        Uniform random legal action.
+        `rng` can be:
+          - numpy.random.Generator
+          - random.Random
+          - anything exposing .choice(sequence)
+        """
+        legal = self.legal_actions(board)
+        if not legal:
+            return 0
+
+        if rng is None:
+            rng = np.random.default_rng()
+
+        # numpy Generator has choice; python random.Random has choice too
+        try:
+            return int(rng.choice(legal))
+        except Exception:
+            # very defensive fallback
+            return int(np.random.default_rng().choice(legal))
+
+    def leftmost_action(self, board) -> int:
+        """
+        Deterministic: pick the leftmost legal column.
+        (Useful for debugging / baseline.)
+        """
+        legal = self.legal_actions(board)
+        return int(min(legal)) if legal else 0
+
+    def baseline_action(self, board, kind: str = "random", rng: Optional[object] = None) -> int:
+        """
+        Convenience wrapper:
+          kind="random"   -> uniform random legal
+          kind="leftmost" -> leftmost legal
+          kind="center"   -> center-first legal (matches your center-order convention)
+        """
+        k = (kind or "").lower()
+        if k in ("random", "rnd"):
+            return self.random_action(board, rng=rng)
+        if k in ("leftmost", "left", "lm"):
+            return self.leftmost_action(board)
+        if k in ("center", "centre"):
+            # center-first legal
+            _, _, mask = self._parse_board_bitboards(board)
+            for c in self._CENTER_ORDER:
+                if (mask & self.TOP_MASK[c]) == 0:
+                    return int(c)
+            return 0
+        raise ValueError(f"Unknown baseline kind={kind!r}")
+        
+    import numpy as np
+
+    def baseline_policy_probs(self, board, kind: str = "random") -> np.ndarray:
+        """
+        Returns probs[7] for a simple baseline policy.
+    
+        kind:
+          - "random": uniform over legal actions
+          - "leftmost": deterministic leftmost legal
+          - "center": deterministic center-first legal (your CENTER_ORDER)
+        """
+        probs = np.zeros(self.COLS, dtype=np.float32)
+    
+        _, _, mask = self._parse_board_bitboards(board)
+    
+        k = (kind or "").lower()
+    
+        if k in ("random", "rnd"):
+            # uniform over legal actions
+            legal = 0
+            for c in range(self.COLS):
+                if (mask & self.TOP_MASK[c]) == 0:
+                    legal += 1
+            if legal == 0:
+                probs[0] = 1.0
+                return probs
+            p = 1.0 / float(legal)
+            for c in range(self.COLS):
+                if (mask & self.TOP_MASK[c]) == 0:
+                    probs[c] = p
+            return probs
+    
+        if k in ("leftmost", "left", "lm"):
+            for c in range(self.COLS):
+                if (mask & self.TOP_MASK[c]) == 0:
+                    probs[c] = 1.0
+                    return probs
+            probs[0] = 1.0
+            return probs
+    
+        if k in ("center", "centre"):
+            for c in self._CENTER_ORDER:
+                if (mask & self.TOP_MASK[c]) == 0:
+                    probs[c] = 1.0
+                    return probs
+            probs[0] = 1.0
+            return probs
+    
+        raise ValueError(f"Unknown baseline kind={kind!r}")
+
+    
+    
+    def sample_action_from_probs(self, probs: np.ndarray, rng: Optional[object] = None) -> int:
+        """
+        Sample an action from a probs[7] vector.
+        """
+        if rng is None:
+            rng = np.random.default_rng()
+    
+        probs = np.asarray(probs, dtype=np.float64)
+        s = probs.sum()
+        if s <= 0:
+            return 0
+        probs = probs / s
+    
+        try:
+            return int(rng.choice(self.COLS, p=probs))
+        except Exception:
+            # defensive fallback
+            return int(np.random.default_rng().choice(self.COLS, p=probs))
+
+   
+    def _baseline_selfcheck(self, board, kind="random"):
+        a = self.baseline_action(board, kind=kind)
+        p = self.baseline_policy_probs(board, kind=kind)
+        assert p[a] > 0.0, (kind, a, p)
+

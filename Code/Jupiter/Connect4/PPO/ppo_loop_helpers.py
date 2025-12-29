@@ -5,66 +5,64 @@ import numpy as np
 import torch
 
 from C4.connect4_env import Connect4Env
-from PPO.ppo_utilities import encode_two_channel_agent_centric, select_opponent_action, encode_four_channel_agent_centric
+from PPO.ppo_utilities import select_opponent_action
 from DQN.dqn_utilities import record_first_move, evaluate_final_result, map_final_result_to_reward
 
 
-NEG_INF = -1e9
+def encode_single_channel_agent_centric(board: np.ndarray, player: int) -> np.ndarray:
+    """
+    Single-channel, agent-centric encoding.
+
+    Assumes env.board contains {-1, 0, +1}. We multiply by `player` so the current
+    mover's stones become +1 and the opponent's stones become -1.
+
+    Returns shape: (1, 6, 7) float32  (channel-first)
+    """
+    b = np.asarray(board, dtype=np.int8)
+    enc = (b * int(player)).astype(np.float32)
+    return enc[None, :, :]   # (1, H, W)
+
+
+def _to_float(x) -> float:
+    if x is None:
+        return 0.0
+    if isinstance(x, (float, int, np.floating, np.integer)):
+        return float(x)
+    if torch.is_tensor(x):
+        return float(x.detach().item())
+    try:
+        return float(x)
+    except Exception:
+        return 0.0
 
 
 def make_recompute_lp_val(
     policy,
-    device: torch.device,
     temperature_ref: Dict[str, float],
-) -> Callable[[np.ndarray, int, np.ndarray], Tuple[torch.Tensor, torch.Tensor]]:
-    """
-    Build a callable:
-        recompute_fn(state_np, action_int, legal_mask_np) -> (logprob, value)
-
-    where:
-      - state_np is the same shape as stored in the buffer, e.g.
-            (2,6,7) agent-centric planes [me, opp]
-         or (4,6,7) [me, opp, row, col]
-         or (6,7) scalar board in {-1,0,+1}
-      - legal_mask_np is shape (A,) bool, A == policy.action_dim
-      - action_int is in [0, A-1]
-
-    The function:
-      - runs a fresh forward pass through `policy`
-      - applies the legal-action mask
-      - uses the CURRENT temperature in temperature_ref["T"]
-      - returns (logprob_of_given_action, value)
-    """
+) -> Callable[[np.ndarray, int, np.ndarray, int], Tuple[torch.Tensor, torch.Tensor]]:
 
     @torch.inference_mode()
-    def _recompute(state_np: np.ndarray, action_int: int, legal_mask_np: np.ndarray):
-        # --- state to tensor; shape becomes [1, ..., 6, 7] ---
+    def _recompute(state_np: np.ndarray, action_int: int, legal_mask_np: np.ndarray, ply_idx: int = -1):
+        dev = next(policy.parameters()).device
+
         x = np.asarray(state_np, dtype=np.float32)
-        s = torch.from_numpy(x).unsqueeze(0).to(device)  # (1,C,6,7) or (1,6,7)
+        s = torch.from_numpy(x).unsqueeze(0).to(dev)   # (B, C, H, W) if x is (C,H,W)
 
-        # Forward through ActorCritic (handles 1/2/4/6 channels internally)
-        logits, v = policy.forward(s)  # logits: [1,A], v: [1] or [1,1]
-
-        # --- legal mask ---
         lm_np = np.asarray(legal_mask_np, dtype=bool)
-        lm = torch.from_numpy(lm_np).unsqueeze(0).to(device=device)  # (1,A)
-        if lm.sum().item() == 0:
-            # Safety: ensure at least something is legal
-            lm = torch.ones_like(lm, dtype=torch.bool)
+        lm = torch.from_numpy(lm_np).unsqueeze(0).to(dev)
 
-        masked = logits.masked_fill(~lm, NEG_INF)
+        a = torch.tensor([int(action_int)], dtype=torch.long, device=dev)
+        ply = None if ply_idx is None or int(ply_idx) < 0 else torch.tensor([int(ply_idx)], dtype=torch.long, device=dev)
 
-        # --- temperature ---
-        T = float(temperature_ref.get("T", 1.0))
-        if T <= 0.0:
-            # degenerate "argmax-style" – but still use log_softmax for numeric sanity
-            log_probs = torch.log_softmax(masked, dim=-1)
-        else:
-            log_probs = torch.log_softmax(masked / T, dim=-1)
+        T = max(float(temperature_ref.get("T", 1.0)), 1e-6)
 
-        a_idx = int(action_int)
-        lp = log_probs[0, a_idx]
-        return lp.detach(), v.squeeze(0).detach()
+        lp, _, v = policy.evaluate_actions(
+            s, a,
+            legal_action_masks=lm,
+            ply_indices=ply,
+            temperature=T,
+        )
+        return lp[0].detach(), v[0].detach()
 
     return _recompute
 
@@ -74,30 +72,38 @@ def ppo_agent_step(
     policy,
     buffer,
     temperature: float,
-    recompute_fn,  # still used for aug recompute
+    recompute_fn,
     last_agent_reward_entries_ref,
     ply_idx: int,
     opening_kpis,
     openings,
 ):
     """
-    Agent (+1) turn. Uses policy.act with built-in heuristics (win_now/center/guard).
+    Agent (+1) turn.
+    Returns: (done, reward, new_ply_idx)
     """
+    ply_used = int(ply_idx)
+
     legal = env.available_actions()
-    if not legal: return True, 0.0, ply_idx
+    if not legal:
+        return True, 0.0, ply_idx
 
     legal = [int(a) for a in legal]
     legal_mask = np.zeros(7, dtype=bool)
     legal_mask[legal] = True
 
-    # agent-centric encoding
-    enc = encode_four_channel_agent_centric(env.board, +1)
+    # --- SINGLE-CHANNEL agent-centric encoding ---
+    enc = encode_single_channel_agent_centric(env.board, +1)
 
-    # policy decides (with heuristics)
-    action, logprob, value, info = policy.act(enc,legal,temperature=temperature, ply_idx=ply_idx)
+    action, logprob, value, _info = policy.act(
+        enc,
+        legal,
+        temperature=float(temperature),
+        ply_idx=int(ply_idx),
+    )
 
     env.current_player = +1
-    _, reward, done = env.step(action)
+    _, reward, done = env.step(int(action))
     ply_idx += 1
 
     # opening stats (agent started)
@@ -106,32 +112,32 @@ def ppo_agent_step(
         if openings is not None:
             openings.on_first_move(int(action), is_agent=True)
 
-    # write augmented samples
     last_agent_reward_entries_ref[0] = buffer.add_augmented(
         state_np=enc,
         action=int(action),
-        logprob=logprob,
-        value=value,
-        reward=reward,
-        done=done,
+        logprob=_to_float(logprob),
+        value=_to_float(value),
+        reward=_to_float(reward),
+        done=bool(done),
         legal_mask_bool=legal_mask,
         hflip=True,
-        colorswap=False,
+        colorswap=True,
         include_original=True,
         recompute_fn=recompute_fn,
+        ply_idx=ply_used,
     )
 
-    return done, float(reward), ply_idx
+    return bool(done), float(reward), int(ply_idx)
 
 
 def ppo_opponent_step(
     env: Connect4Env,
     policy,
-    lookahead_mode: Optional[int | str],  # int depth or "self" or None
+    lookahead_mode: Optional[int | str],  # int depth or "self" or "R"/None
     temperature: float,
     buffer,
     last_agent_reward_entries_ref: List[Optional[Any]],
-    loss_penalty: float,              # <- can now be unused
+    loss_penalty: float,
     ply_idx: int,
     opening_kpis: Optional[Dict[str, Any]] = None,
     openings: Optional[Any] = None,
@@ -139,24 +145,39 @@ def ppo_opponent_step(
 ) -> tuple[bool, int, float]:
     """
     Opponent (-1) turn.
-
-    Returns:
-        done (bool),
-        new_ply_idx (int),
-        penalty_to_agent (float)  # for ep_return logging
+    Returns: (done, new_ply_idx, penalty_to_agent)
     """
     legal = env.available_actions()
-    if not legal: return True, ply_idx, 0.0
+    if not legal:
+        return True, ply_idx, 0.0
+
+    legal = [int(a) for a in legal]
+
+    mode = lookahead_mode
+    if mode == "POP":
+        mode = "self"
 
     # Choose opponent action
-    if lookahead_mode == "self":
-        enc_opp = encode_two_channel_agent_centric(env.board, -1)
-        opp_action, _, _, _ = policy.act(enc_opp, legal, temperature=temperature)
+    if mode in (None, "R", "rand", "Random", 0):
+        opp_action = int(np.random.choice(legal))
+
+    elif mode == "self":
+        # --- SINGLE-CHANNEL opponent-centric encoding (player=-1 => opponent stones become +1) ---
+        enc_opp = encode_single_channel_agent_centric(env.board, -1)
+        opp_action, _, _, _ = policy.act(
+            enc_opp,
+            legal,
+            temperature=float(temperature),
+            ply_idx=int(ply_idx),
+        )
+        opp_action = int(opp_action)
+
     else:
-        opp_action = select_opponent_action(env.board.copy(), player=-1, depth=lookahead_mode)
+        depth = int(mode)
+        opp_action = int(select_opponent_action(env.board.copy(), player=-1, depth=depth))
 
     env.current_player = -1
-    _, oppo_reward, done = env.step(opp_action)   # <- mover-centric, from opp POV
+    _, oppo_reward, done = env.step(int(opp_action))  # mover-centric (opponent POV)
 
     # First-move stats (opponent starts)
     if ply_idx == 0:
@@ -166,23 +187,25 @@ def ppo_opponent_step(
             openings.on_first_move(int(opp_action), is_agent=False)
 
     penalty_to_agent = 0.0
-    
     OPPO_PENALTY_FACTOR = 1.0
 
     # Convert opponent reward into agent-centric penalty
     if attr_loss_to_last and last_agent_reward_entries_ref[0] is not None:
-        # FULL zero-sum: agent sees negative of opponent reward
-        agent_penalty = -float(oppo_reward) * OPPO_PENALTY_FACTOR 
-        if done: agent_penalty = env.LOSS_PENALTY   #if we use penalty factor, this one is not factored!
+        agent_penalty = -float(oppo_reward) * OPPO_PENALTY_FACTOR
+
+        # Only force LOSS_PENALTY if opponent actually won (not draw)
+        if done and getattr(env, "winner", None) == -1:
+            agent_penalty = float(loss_penalty)
+
         if agent_penalty != 0.0:
             buffer.add_penalty_to_entries(
                 last_agent_reward_entries_ref[0],
-                agent_penalty,
+                float(agent_penalty),
                 scale_raw=True,
             )
-            penalty_to_agent = agent_penalty
+            penalty_to_agent = float(agent_penalty)
 
-    return done, ply_idx + 1, penalty_to_agent
+    return bool(done), int(ply_idx + 1), float(penalty_to_agent)
 
 
 def ppo_maybe_opponent_opening(
@@ -200,14 +223,12 @@ def ppo_maybe_opponent_opening(
 ) -> tuple[bool, int, float]:
     """
     If the opponent should start (odd episodes), play exactly one opponent turn.
-
-    Returns:
-        done (bool), new_ply_idx (int)
+    Returns: (done, new_ply_idx, penalty)
     """
     ply_idx = 0
-    oppo_reward = 0
+    penalty = 0.0
     if episode % 2 == 1:
-        done, ply_idx, oppo_reward = ppo_opponent_step(
+        done, ply_idx, penalty = ppo_opponent_step(
             env=env,
             policy=policy,
             lookahead_mode=lookahead_mode,
@@ -220,21 +241,12 @@ def ppo_maybe_opponent_opening(
             openings=openings,
             attr_loss_to_last=attr_loss_to_last,
         )
-        return done, ply_idx, oppo_reward
+        return done, ply_idx, penalty
 
-    # Agent starts; no moves yet
-    return False, ply_idx, oppo_reward
+    return False, ply_idx, penalty
 
 
 def ppo_finalize_if_done(env: Connect4Env) -> tuple[bool, Optional[float], float]:
-    """
-    DQN-style finalization helper.
-
-    Returns:
-        is_done (bool),
-        final_result (1 win, -1 loss, 0.5 draw, or None),
-        total_reward (mapped WIN/DRAW/LOSS reward)
-    """
     if env.done:
         final_result = evaluate_final_result(env, agent_player=+1)
         total_reward = map_final_result_to_reward(final_result)
