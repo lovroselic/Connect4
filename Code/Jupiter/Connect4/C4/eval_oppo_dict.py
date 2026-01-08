@@ -30,4 +30,4 @@ EVAL_CFG = {
     "Lookahead-7": 4,
     } 
 
-OPENING_NOISE_K = {0:0.70, 1:0.20, 2:0.10}
+OPENING_NOISE_K = {0:0.85, 1:0.10, 2:0.05}

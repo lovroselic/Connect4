@@ -1,13 +1,14 @@
 # PPO/ppo_training_phases_config.py
 
 TRAINING_PHASES = {
-
-    "POP": {
-        "duration": 300,
+    
+    
+    "Random": {
+        "duration": 100,
         "opponent_mix": {
-            "POP": 0.65,
-            "SP": 0.30,
-            "R": 0.05,
+            "POP": 0.05,
+            "SP": 0.05,
+            "R": 0.90,
         },
         "params": {
             "lr": 1.2e-4,
@@ -15,7 +16,59 @@ TRAINING_PHASES = {
             "entropy": 0.012,
             "epochs": 3,
             "batch_size": 256,
-            "steps_per_update": 256, #256
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.02,
+            "temperature": 1.03,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+
+    "POP": {
+        "duration": 200,
+        "opponent_mix": {
+            "POP": 0.60,
+            "SP": 0.30,
+            "R": 0.10,
+        },
+        "params": {
+            "lr": 1.2e-4,
+            "clip": 0.20,
+            "entropy": 0.012,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.02,
+            "temperature": 1.03,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+    
+    "L1_Intro": {
+        "duration": 200,
+        "opponent_mix": {
+            "POP": 0.20,
+            "SP": 0.20,
+            "L1": 0.60,
+        },
+        "params": {
+            "lr": 1.2e-4,
+            "clip": 0.20,
+            "entropy": 0.012,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
             "vf_clip": 0.20,
             "max_grad_norm": 0.5,
             "target_kl": 0.02,
@@ -43,7 +96,62 @@ TRAINING_PHASES = {
             "entropy": 0.012,
             "epochs": 3,
             "batch_size": 256,
-            "steps_per_update": 256, #256
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.02,
+            "temperature": 1.03,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+    
+    "L2L3L4": {
+        "duration": 100,
+        "opponent_mix": {
+            "L2": 0.20,
+            "L3": 0.20,
+            "L4": 0.40,
+            "POP": 0.10,
+            "SP": 0.10
+        },
+        "params": {
+            "lr": 1.2e-4,
+            "clip": 0.20,
+            "entropy": 0.012,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.02,
+            "temperature": 1.03,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+    
+    "L3": {
+        "duration": 100,
+        "opponent_mix": {
+            "L1": 0.20,
+            "L3": 0.60,
+            "POP": 0.10,
+            "SP": 0.10
+        },
+        "params": {
+            "lr": 1.2e-4,
+            "clip": 0.20,
+            "entropy": 0.012,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
             "vf_clip": 0.20,
             "max_grad_norm": 0.5,
             "target_kl": 0.02,
@@ -72,7 +180,65 @@ TRAINING_PHASES = {
             "entropy": 0.012,
             "epochs": 3,
             "batch_size": 256,
-            "steps_per_update": 256, #256
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.02,
+            "temperature": 1.03,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+    
+    "L5": {
+        "duration": 200,
+        "opponent_mix": {
+            "L1": 0.10,
+            "L3": 0.20,
+            "L5": 0.50,
+            "POP": 0.10,
+            "SP": 0.10
+        },
+        "params": {
+            "lr": 1.2e-4,
+            "clip": 0.20,
+            "entropy": 0.012,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.02,
+            "temperature": 1.03,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+    
+    "L4L5L6": {
+        "duration": 100,
+        "opponent_mix": {
+            "L1": 0.025,
+            "L2": 0.025,
+            "L4": 0.20,
+            "L5": 0.20,
+            "L6": 0.35,
+            "POP": 0.10,
+            "SP": 0.10
+        },
+        "params": {
+            "lr": 1.2e-4,
+            "clip": 0.20,
+            "entropy": 0.012,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
             "vf_clip": 0.20,
             "max_grad_norm": 0.5,
             "target_kl": 0.02,
@@ -102,7 +268,66 @@ TRAINING_PHASES = {
             "entropy": 0.012,
             "epochs": 3,
             "batch_size": 256,
-            "steps_per_update": 256, #256
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.02,
+            "temperature": 1.03,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+    
+    "L6L7L8": {
+        "duration": 100,
+        "opponent_mix": {
+            "L1": 0.025,
+            "L3": 0.025, 
+            "L6": 0.20,
+            "L7": 0.20,
+            "L8": 0.35,
+            "POP": 0.10,
+            "SP": 0.10
+        },
+        "params": {
+            "lr": 1.2e-4,
+            "clip": 0.20,
+            "entropy": 0.012,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.02,
+            "temperature": 1.03,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+    
+    "L7": {
+        "duration": 200,
+        "opponent_mix": {
+            "L1": 0.05,
+            "L3": 0.05, 
+            "L5": 0.20,
+            "L7": 0.50,
+            "POP": 0.10,
+            "SP": 0.10
+        },
+        "params": {
+            "lr": 1.2e-4,
+            "clip": 0.20,
+            "entropy": 0.012,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
             "vf_clip": 0.20,
             "max_grad_norm": 0.5,
             "target_kl": 0.02,
@@ -133,7 +358,7 @@ TRAINING_PHASES = {
             "entropy": 0.012,
             "epochs": 3,
             "batch_size": 256,
-            "steps_per_update": 256, #256
+            "steps_per_update": 512, #256
             "vf_clip": 0.20,
             "max_grad_norm": 0.5,
             "target_kl": 0.02,
@@ -165,7 +390,7 @@ TRAINING_PHASES = {
             "entropy": 0.0115,
             "epochs": 3,
             "batch_size": 256,
-            "steps_per_update": 256, #256
+            "steps_per_update": 512, #256
             "vf_clip": 0.20,
             "max_grad_norm": 0.5,
             "target_kl": 0.02,
@@ -198,7 +423,7 @@ TRAINING_PHASES = {
             "entropy": 0.0110,
             "epochs": 3,
             "batch_size": 256,
-            "steps_per_update": 256, #256
+            "steps_per_update": 512, #256
             "vf_clip": 0.20,
             "max_grad_norm": 0.5,
             "target_kl": 0.02,
@@ -211,9 +436,10 @@ TRAINING_PHASES = {
         },
     },
     
-    "Finale": {
-        "duration": 600,
+    "Finale_A": {
+        "duration": 200,
         "opponent_mix": {
+            "L1": 0.01,
             "L3": 0.05,
             "L5": 0.10,
             "L7": 0.20,
@@ -221,7 +447,7 @@ TRAINING_PHASES = {
             "L11": 0.20,
             "L13": 0.20,
             "POP": 0.01,
-            "SP": 0.04,
+            "SP": 0.03,
         },
         "params": {
             "lr": 1.1e-4,
@@ -229,7 +455,38 @@ TRAINING_PHASES = {
             "entropy": 0.0105,
             "epochs": 3,
             "batch_size": 256,
-            "steps_per_update": 256, #256
+            "steps_per_update": 512, #256
+            "vf_clip": 0.20,
+            "max_grad_norm": 0.5,
+            "target_kl": 0.019,
+            "temperature": 1.02,
+            
+            #deprecated
+            "center_start": 0.0, "guard_prob": 0.0, "win_now_prob": 0.0,
+            "guard_ply_min": 5, "guard_ply_max": 13,
+            "distill_coef": 0.0, "mentor_depth": 1, "mentor_prob": 0.0, "mentor_coef": 0.0
+        },
+    },
+    
+    "Finale_B": {
+        "duration": 300,
+        "opponent_mix": {
+            "L1": 0.01,
+            "L3": 0.08,
+            "L5": 0.13,
+            "L7": 0.18,
+            "L9": 0.15,
+            "L11": 0.15,
+            "L13": 0.15,
+            "SP": 0.15,
+        },
+        "params": {
+            "lr": 1.1e-4,
+            "clip": 0.20,
+            "entropy": 0.0105,
+            "epochs": 3,
+            "batch_size": 256,
+            "steps_per_update": 512, #256
             "vf_clip": 0.20,
             "max_grad_norm": 0.5,
             "target_kl": 0.019,

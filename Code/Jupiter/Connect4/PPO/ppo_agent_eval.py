@@ -66,7 +66,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 import os
 import random
 import time
-
+import re
 import numpy as np
 import pandas as pd
 import torch
@@ -83,6 +83,60 @@ from C4.connect4_env import (
 NEG_INF = -1e9
 
 OpponentFn = Callable[[np.ndarray, int, np.uint64], int]
+
+
+
+def opponent_weight(
+    label: str,
+    base: float = 1.4,
+    random_weight: float = 1.0,
+    default_weight: float = 1.0,
+) -> float:
+    """
+    Exponential-ish weight by opponent depth.
+
+    - 'Random' gets random_weight.
+    - 'Lookahead-k' (or anything with a number) gets base**k.
+    - Anything else falls back to default_weight.
+    """
+    s = str(label)
+
+    if "random" in s.lower():
+        return float(random_weight)
+
+    m = re.search(r"(\d+)", s)
+    if m:
+        depth = int(m.group(1))
+        return float(base) ** depth
+
+    return float(default_weight)
+
+
+def global_score_from_suite_df(
+    suite_df: pd.DataFrame,
+    base: float = 1.4,
+) -> float:
+    """
+    Compute global score in [0,1] from evaluate_suite() output:
+
+        G = sum_i w_i * WR_i / sum_i w_i
+
+    where WR_i is win_rate vs opponent i and w_i = opponent_weight(opponent_label).
+    """
+    if suite_df is None or suite_df.empty:
+        return float("nan")
+
+    num = 0.0
+    den = 0.0
+    for _, r in suite_df.iterrows():
+        label = str(r.get("opponent", ""))
+        wr = float(r.get("win_rate", 0.0))
+        w = opponent_weight(label, base=float(base))
+        num += w * wr
+        den += w
+
+    return float(num / den) if den > 1e-12 else float("nan")
+
 
 
 # ----------------------------- internal helpers -----------------------------
@@ -621,16 +675,21 @@ def suite_df_to_row(
     suite_df: pd.DataFrame,
     elapsed_h: float,
     episodes: Optional[int] = None,
+    global_base: float = 1.4,
 ) -> pd.DataFrame:
-    """Convert evaluate_suite() DataFrame into a single-row DataFrame with win_rates."""
+    """Convert evaluate_suite() DataFrame into a single-row DataFrame with win_rates + global score."""
     row: Dict[str, Any] = {
         "TRAINING_SESSION": str(run_tag),
         "TIME [h]": round(float(elapsed_h), 6),
         "EPISODES": episodes,
     }
 
+    # per-opponent win rates
     for _, r in suite_df.iterrows():
         row[str(r["opponent"])] = float(r["win_rate"])
+
+    # depth-weighted global score (DQN-style)
+    row["GLOBAL_SCORE"] = float(global_score_from_suite_df(suite_df, base=float(global_base)))
 
     return pd.DataFrame([row]).set_index("TRAINING_SESSION")
 
@@ -664,8 +723,9 @@ def evaluate_and_log_to_excel(
     policy_temperature: float = 1.0,
     episodes: Optional[int] = None,
     progress: bool = True,
+    global_base: float = 1.4,   # <-- NEW
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """One-call convenience: evaluate suite + append win-rates row into Excel."""
+    """One-call convenience: evaluate suite + append win-rates row into Excel (includes GLOBAL_SCORE)."""
     t0 = time.time()
 
     suite_df = evaluate_suite(
@@ -681,10 +741,19 @@ def evaluate_and_log_to_excel(
     )
 
     elapsed_h = (time.time() - t0) / 3600.0
-    row_df = suite_df_to_row(run_tag=run_tag, suite_df=suite_df, elapsed_h=elapsed_h, episodes=episodes)
+
+    row_df = suite_df_to_row(
+        run_tag=run_tag,
+        suite_df=suite_df,
+        elapsed_h=elapsed_h,
+        episodes=episodes,
+        global_base=float(global_base),   # <-- NEW
+    )
+
     append_eval_row_to_excel(row_df, excel_path)
 
     return suite_df, row_df
+
 
 
 # ----------------------------- exploitation histogram + plots -----------------------------

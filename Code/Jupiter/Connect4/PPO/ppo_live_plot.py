@@ -210,7 +210,7 @@ def plot_live_training_ppo(
             10.0,  # 4 benchmarks raw
             2.3,   # 5 benchmarks MA3
             2.3,   # 6 benchmarks MA7
-            2.3,   # 7 benchmarks MA15
+            10.0,   # 7 benchmarks MA15
             2.4,   # 8 global score
             2.6,   # 9 H2H
             2.6,   # 10 ensemble H2H
@@ -230,7 +230,7 @@ def plot_live_training_ppo(
             10.0,  # 4 benchmarks raw
             2.3,   # 5 benchmarks MA3
             2.3,   # 6 benchmarks MA7
-            2.3,   # 7 benchmarks MA15
+            10.0,   # 7 benchmarks MA15
             2.4,   # 8 global score
             2.6,   # 9 H2H
             2.6,   # 10 ensemble H2H

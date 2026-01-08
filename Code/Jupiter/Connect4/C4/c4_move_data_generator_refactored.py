@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 from C4.connect4_env import Connect4Env
-from C4.numba_connect4_lookahead import Connect4Lookahead
+from C4.fast_connect4_lookahead import Connect4Lookahead
 
 
 # --------------------------- Row / DF helpers ---------------------------
