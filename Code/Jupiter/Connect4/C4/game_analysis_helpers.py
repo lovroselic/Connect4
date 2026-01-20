@@ -4,6 +4,53 @@ import numpy as np
 from matplotlib.patches import Circle
 import matplotlib.pyplot as plt
 from C4.fast_connect4_lookahead import Connect4Lookahead  
+import pandas as pd
+
+
+def export_boards_for_ply(df: pd.DataFrame, ply: int, cols=("board_before",), as_numpy: bool = True):
+    """
+    Prints pasteable Python (and JSON) for the requested board columns at a given ply.
+    - df: your per-ply dataframe
+    - ply: integer ply to fetch
+    - cols: tuple/list of column names to export (default: ("board_before",))
+    - as_numpy: if True, prints np.array(...) pasteable too (requires numpy imported as np)
+    """
+    if "ply" not in df.columns:
+        raise KeyError("df must have a 'ply' column")
+
+    sub = df.loc[df["ply"] == int(ply)]
+    if sub.empty:
+        raise ValueError(f"No row found for ply={ply}. Available ply range: {int(df['ply'].min())}..{int(df['ply'].max())}")
+    if len(sub) > 1:
+        print(f"Warning: multiple rows for ply={ply}, using the first one.")
+
+    row = sub.iloc[0]
+
+    for col in cols:
+        if col not in df.columns:
+            raise KeyError(f"Missing column '{col}' in df")
+        board = row[col]
+        if board is None:
+            print(f"{col} is None at ply={ply}")
+            continue
+
+        # normalize: if it's already a numpy array, convert to nested lists for stable printing
+        try:
+            board_list = board.tolist()
+        except AttributeError:
+            board_list = board
+
+        print("\n" + "=" * 80)
+        print(f"# ply={ply} | col={col}")
+
+        py_literal = repr(board_list)
+
+        # Pasteable numpy array (nice for quick ops)
+        if as_numpy:
+            print(f"{col} = np.array({py_literal}, dtype=np.int8)")
+
+
+
 
 ROWS, COLS = 6,7
 la = Connect4Lookahead()
@@ -378,49 +425,70 @@ def root_bias_components(la, board, player, col):
         "opp_threats": int(opp_threats),
     }
 
-def child_search_value(la, board, player, depth, col):
+def child_search_value(la, board, player, depth, col) -> float:
     """
-    Compute the 'search part' used at root for a move:
-      val_search = -negamax(next_pos, nm, depth-1, ...)    (no root bias)
-    This matches root_select_fixed's 'val = -v + bias'.
+    Pure search value for a specific child (after playing `col`),
+    matching root_select_fixed child semantics (child starts at ply=1).
+    NEW negamax signature ONLY.
     """
     p1, p2, mask = la._parse_board_bitboards(board)
     me_mark = la._p(player)
     me = p1 if me_mark == 1 else p2
 
+    col = int(col)
+
+    # illegal
+    if (mask & la.TOP_MASK[col]) != 0:
+        return float("-inf")
+
+    # immediate win
+    if la._is_winning_move_py(me, mask, col):
+        return float(la.MATE_SCORE)
+
+    mv = la._play_bit_py(mask, col)
+    nm = mask | mv
+    next_pos = nm ^ (me | mv)
+
+    # weights array for Numba eval
+    WARR = np.zeros(la.K + 1, dtype=np.float64)
+    for k in (2, 3, 4):
+        WARR[k] = float(la.weights.get(k, 0.0))
+
+    # parity flags (same convention as root_select_fixed)
     role_first_mark, parity_enabled = la._role_first_from_center(mask, p1, p2)
     root_pos_is_first = np.int8(1 if (parity_enabled and me_mark == role_first_mark) else 0)
     parity_enabled_i8 = np.int8(1 if parity_enabled else 0)
 
-    mv = la._play_bit_py(mask, col)
-    nm = mask | mv
-    next_pos = nm ^ (me | mv)  # opponent to move in negamax convention
-
-    WARR = _build_WARR_from_la(la)
+    # NEW tactical guard flags (must exist in the new build)
+    double_guard_i8 = np.int8(1 if bool(getattr(la, "DOUBLE_THREAT_GUARD", False)) else 0)
+    fork_guard_i8   = np.int8(1 if bool(getattr(la, "FORK_REPLY_GUARD", False)) else 0)
 
     killers = np.full((64, 2), -1, dtype=np.int8)
     history = np.zeros(la.COLS, dtype=np.int32)
 
     TT_SIZE = 1 << 16
-    TT_pos = np.zeros(TT_SIZE, dtype=np.uint64)
+    TT_pos  = np.zeros(TT_SIZE, dtype=np.uint64)
     TT_mask = np.zeros(TT_SIZE, dtype=np.uint64)
     TT_depth = np.full(TT_SIZE, -1, dtype=np.int16)
-    TT_flag = np.zeros(TT_SIZE, dtype=np.int8)
-    TT_val = np.zeros(TT_SIZE, dtype=np.float64)
-    TT_move = np.full(TT_SIZE, -1, dtype=np.int8)
+    TT_flag  = np.zeros(TT_SIZE, dtype=np.int8)
+    TT_val   = np.zeros(TT_SIZE, dtype=np.float64)
+    TT_move  = np.full(TT_SIZE, -1, dtype=np.int8)
 
     node_counter = np.zeros(1, dtype=np.int64)
     max_nodes = np.int64(9_000_000_000_000)
 
+    # NEW signature (includes double_guard + fork_guard)
     v, _ = la._N["negamax"](
         np.uint64(next_pos),
         np.uint64(nm),
         np.int16(depth - 1),
         -float(la.MATE_SCORE),
         float(la.MATE_SCORE),
-        np.int16(1),  # root_select_fixed starts child at ply=1
+        np.int16(1),  # child ply = 1 (root_select_fixed starts child at ply=1)
         root_pos_is_first,
         parity_enabled_i8,
+        double_guard_i8,
+        fork_guard_i8,
         node_counter,
         max_nodes,
         float(la.MATE_SCORE),
@@ -460,6 +528,7 @@ def child_search_value(la, board, player, depth, col):
         TT_val,
         TT_move,
     )
+
     return -float(v)
 
 # -------------------- Nudge dominance warning --------------------

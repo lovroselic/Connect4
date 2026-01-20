@@ -1,112 +1,60 @@
 # C4/fast_connect4_lookahead.py
-# Drop-in Numba-accelerated version of your bitboard lookahead class.
-# Public API:
-#   - get_heuristic, is_terminal, minimax, n_step_lookahead
-#   - has_four / check_win
-#   - count_immediate_wins, compute_fork_signals
-#   - count_pure, count_pure_block_delta
-#
-# Internals:
-#   - Pascal Pons bitboard layout: bit = c*(ROWS+1) + r (rows are bottom-based)
-#   - Numba-compiled evaluation + search (negamax + alpha-beta + tiny TT)
-#   - Center-first ordering + killer/history ordering
-#   - Gravity-aware heuristic (FLOATING_NEAR/FAR) + DEFENSIVE factor
-#
-# Improvements:
-#   Opening book (depth-independent, now deterministic by default for optimization stability):
-#     a) P1: play center bottom (D1)
-#     b) P2: if P1 played D1, play adjacent C1 (col 2) if available else E1 (col 4); else play D1 if available
-#     c) If P1 then plays D2, P2 responds with D3 (if available)
-#
-#   Parity preference (odd/even rows):
-#     - First player (the one owning center-bottom) prefers ODD rows (1,3,5 from bottom => r%2==0)
-#     - Second player prefers EVEN rows (2,4,6 from bottom => r%2==1)
-#     - If center-bottom is NOT occupied, parity bonus is disabled.
-#
-# Added "core Allis-ish" concepts (cheap, search-friendly):
-#   - Vertical threat bias: vertical windows are worth more (gravity makes them nastier).
-#   - Tempo / zugzwang proxy: "safe-move" mobility term squeezes opponent options.
-#   - Root-only parity move/unlock: don't just "like my parity", actively avoid gifting theirs.
-#   - Root-only threat-space: prefer moves that create more immediate wins (next-turn threats).
-#   - Root-only win-in-2 forcing: detect true 2-ply forced wins before deeper search.
-#
-# Patch notes (this version):
-#   1) Corrected FLOATING model in evaluate(): per-empty multiplicative penalty
-#      using FN for dh==1 and FF for dh>=2
-#   2) Added win-in-2 forcing pre-pass in root_select_fixed().
+# Numba-accelerated bitboard alpha-beta (negamax) + heuristic evaluation.
+# Includes hard tactical guards:
+#   - DOUBLE_THREAT_GUARD: avoid moves that give opponent >=2 win-in-1 replies
+#   - FORK_REPLY_GUARD: avoid moves where opponent has a reply that creates >=2 win-in-1 threats
+# https://www.kaggleusercontent.com/episodes/#.json
 
 from typing import List, Tuple, Dict, Optional
 import numpy as np
 from numba import njit
 
 
-# ============================ Heuristic Defaults ============================
+# ============================ Defaults ============================
+
+WIN2_CHECK = True
+
+# Hard tactical guards (global + per-instance toggles)
+DOUBLE_THREAT_GUARD = True
+FORK_REPLY_GUARD = True
 
 C4_WIN = 100000.0
 C4_IMMEDIATE_W = C4_WIN
 C4_FORK_W = C4_WIN
 
-# DEFENSIVE > 1 means opponent threats hurt more than your threats help.
-# Too high and the agent becomes a professional coward (blocks ghosts, loses initiative).
-C4_DEFENSIVE = 1.4  # 1.4
+C4_DEFENSIVE = 1.55             #1.55
+C4_FLOATING_NEAR = 0.25         #0.25
+C4_FLOATING_FAR = 0.125         #0.125
+C4_CENTER_BONUS = 3.0           #3
+C4_PARITY_BONUS = 0.75          #0.75
 
-# Floating penalties: discourage patterns that require "miracle levitation".
-# Too high and it refuses to build diagonals like diagonals are a moral failing.
-C4_FLOATING_NEAR = 0.225  # 0.225
-C4_FLOATING_FAR = 0.09    # 0.09
+C4_VERT_MUL = 0.80              #0.875
+C4_VERT_3_READY_BONUS = 0.0     # 0 keep 0!
+C4_TEMPO_W = 75                 #75
+C4_PARITY_MOVE_W = 0.5          # 0.5
+C4_PARITY_UNLOCK_W = 0.25       # 0.25
+C4_THREATSPACE_W = 9            # 8.75
 
-# Center bonus: steady positional bias.
-# Too high and it plays center even when it's on fire.
-C4_CENTER_BONUS = 7.0  # 10
-
-# Board-global parity preference (only when center-bottom is occupied).
-# Too high and it starts playing "parity cosplay" instead of winning.
-C4_PARITY_BONUS = 1.0
-
-# Vertical windows are inherently more forcing (gravity + zugzwang structure).
-# Too high and it becomes a "stacking simulator" and forgets diagonals exist.
-C4_VERT_MUL = 1.1
-
-# Extra bump for a vertical-3 whose winning square is playable now.
-# Too high and it overchases vertical 3s even when tactically unsound.
-C4_VERT_3_READY_BONUS = 0  # 2500.0
-
-# Tempo / zugzwang proxy: reward having more "safe" moves and/or reducing opponent safe moves.
-C4_TEMPO_W = 0.25  # 2.0
-
-# Root-only parity move preference (what row you land on).
-C4_PARITY_MOVE_W = 0.2
-
-# Root-only parity unlock penalty (what row you unlock above the placed disc).
-C4_PARITY_UNLOCK_W = 0.1
-
-# Root-only threat-space: prefer moves that increase your immediate-win count (if you moved again).
-C4_THREATSPACE_W = 0.5  # 0.6
-
-# Default eval weights (immutable); copied per instance into a dict.
 C4_DEFAULT_WEIGHTS_ITEMS = (
-    (2, 1.0),
+    (2, 10.0),  #1.0
     (3, 1000.0),
     (4, C4_WIN),
 )
 
-# Mate scale multipliers (single source)
 C4_SOFT_MATE_MULT = 100.0
 C4_MATE_SCORE_MULT = 1000.0
 
 
-# ============================ Numba Core & Cache ============================
+# ============================ Numba cache ============================
 
-_NUMBA_C4_CLASS_CACHE = {}  # built once, reused by all instances
+_NUMBA_C4_CLASS_CACHE = {}
 
 
 def _ensure_numba_cache():
-    """Build & JIT-compile once; stash in _NUMBA_C4_CLASS_CACHE."""
     global _NUMBA_C4_CLASS_CACHE
     if _NUMBA_C4_CLASS_CACHE:
         return _NUMBA_C4_CLASS_CACHE
 
-    # ---------- constants ----------
     ROWS, COLS, K = 6, 7, 4
     STRIDE = ROWS + 1
     UINT = np.uint64
@@ -114,18 +62,7 @@ def _ensure_numba_cache():
     CENTER_COL = 3
     CENTER_ORDER = np.array([3, 4, 2, 5, 1, 6, 0], dtype=np.int8)
 
-    # NOTE:
-    # We keep defaults here only for caching/reporting; all tunable knobs are passed
-    # as runtime parameters into Numba functions.
-    CENTER_BONUS = float(C4_CENTER_BONUS)
-    DEFENSIVE = float(C4_DEFENSIVE)
-    FLOATING_NEAR = float(C4_FLOATING_NEAR)
-    FLOATING_FAR = float(C4_FLOATING_FAR)
-    VERT_MUL = float(C4_VERT_MUL)
-    VERT_3_READY_BONUS = float(C4_VERT_3_READY_BONUS)
-    TEMPO_W = float(C4_TEMPO_W)
-
-    # Bitboard columns & masks
+    # Column masks
     COL_MASK = np.zeros(COLS, dtype=UINT)
     TOP_MASK = np.zeros(COLS, dtype=UINT)
     BOTTOM_MASK = np.zeros(COLS, dtype=UINT)
@@ -140,8 +77,7 @@ def _ensure_numba_cache():
         FULL_MASK |= col_bits
     CENTER_MASK = COL_MASK[CENTER_COL]
 
-    # Row parity masks (bottom-based rows):
-    # bottom row r=0 is "row 1" (odd), so odd rows are r%2==0.
+    # Row parity masks (bottom-based): odd rows are r%2==0 (r=0 is "row 1")
     ODD_MASK = UINT(0)
     EVEN_MASK = UINT(0)
     for c in range(COLS):
@@ -155,8 +91,7 @@ def _ensure_numba_cache():
     def _bit_at(c, r):
         return UINT(1) << UINT(c * STRIDE + r)
 
-    # Windows (69 of length 4)
-    # WIN_KIND: 0=horiz, 1=vert, 2=diag up-right, 3=diag up-left
+    # Windows (69 x 4) + kind
     _win_bits, _win_cols, _win_rows, _WIN_MASKS, _WIN_KIND = [], [], [], [], []
 
     def _add_window(cells, kind: int):
@@ -197,8 +132,6 @@ def _ensure_numba_cache():
     WIN_R = np.array(_win_rows, dtype=np.int8)     # (W,4)
     WIN_KIND = np.array(_WIN_KIND, dtype=np.int8)  # (W,)
 
-    # ---------- Numba core ----------
-
     @njit(cache=True, fastmath=True)
     def popcount64(x: UINT) -> np.int32:
         x = x - ((x >> 1) & np.uint64(0x5555555555555555))
@@ -208,16 +141,16 @@ def _ensure_numba_cache():
 
     @njit(cache=True, fastmath=True)
     def has_won(bb: UINT, stride_i: np.int32) -> bool:
-        m = bb & (bb >> UINT(1))  # vertical
+        m = bb & (bb >> UINT(1))
         if (m & (m >> UINT(2))) != UINT(0):
             return True
-        m = bb & (bb >> UINT(stride_i))  # horizontal
+        m = bb & (bb >> UINT(stride_i))
         if (m & (m >> UINT(2 * stride_i))) != UINT(0):
             return True
-        m = bb & (bb >> UINT(stride_i + 1))  # diag up-right
+        m = bb & (bb >> UINT(stride_i + 1))
         if (m & (m >> UINT(2 * (stride_i + 1)))) != UINT(0):
             return True
-        m = bb & (bb >> UINT(stride_i - 1))  # diag up-left
+        m = bb & (bb >> UINT(stride_i - 1))
         if (m & (m >> UINT(2 * (stride_i - 1)))) != UINT(0):
             return True
         return False
@@ -232,25 +165,17 @@ def _ensure_numba_cache():
 
     @njit(cache=True, fastmath=True)
     def is_winning_move(
-        pos_: UINT,
-        mask_: UINT,
-        c: np.int32,
-        BOTTOM_MASK_: np.ndarray,
-        COL_MASK_: np.ndarray,
-        stride_i: np.int32,
+        pos_: UINT, mask_: UINT, c: np.int32,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
     ) -> bool:
         mv = play_bit(mask_, c, BOTTOM_MASK_, COL_MASK_)
         return has_won(pos_ | mv, stride_i)
 
     @njit(cache=True, fastmath=True)
     def count_immediate_wins_bits(
-        pos_: UINT,
-        mask_: UINT,
-        CENTER_ORDER_: np.ndarray,
-        TOP_MASK_: np.ndarray,
-        BOTTOM_MASK_: np.ndarray,
-        COL_MASK_: np.ndarray,
-        stride_i: np.int32,
+        pos_: UINT, mask_: UINT,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
     ) -> np.int32:
         cnt = 0
         for i in range(CENTER_ORDER_.shape[0]):
@@ -259,16 +184,162 @@ def _ensure_numba_cache():
                 cnt += 1
         return cnt
 
+    # -------- Hard guard helpers --------
+
+    @njit(cache=True, fastmath=True)
+    def has_any_immediate_win_bits(
+        pos_: UINT, mask_: UINT,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
+    ) -> bool:
+        for i in range(CENTER_ORDER_.shape[0]):
+            c = np.int32(CENTER_ORDER_[i])
+            if can_play(mask_, c, TOP_MASK_) and is_winning_move(pos_, mask_, c, BOTTOM_MASK_, COL_MASK_, stride_i):
+                return True
+        return False
+
+    @njit(cache=True, fastmath=True)
+    def has_two_immediate_wins_bits(
+        pos_: UINT, mask_: UINT,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
+    ) -> bool:
+        cnt = 0
+        for i in range(CENTER_ORDER_.shape[0]):
+            c = np.int32(CENTER_ORDER_[i])
+            if can_play(mask_, c, TOP_MASK_) and is_winning_move(pos_, mask_, c, BOTTOM_MASK_, COL_MASK_, stride_i):
+                cnt += 1
+                if cnt >= 2:
+                    return True
+        return False
+
+    @njit(cache=True, fastmath=True)
+    def opp_has_double_threat_after_my_move(
+        pos_: UINT, mask_: UINT, c: np.int32,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
+    ) -> bool:
+        mv = play_bit(mask_, c, BOTTOM_MASK_, COL_MASK_)
+        nm = mask_ | mv
+        my_after = pos_ | mv
+        if has_won(my_after, stride_i):
+            return False
+        opp_after = nm ^ my_after
+        return has_two_immediate_wins_bits(opp_after, nm, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i)
+
+    @njit(cache=True, fastmath=True)
+    def opp_can_reply_create_double_threat(
+        pos_: UINT, mask_: UINT, c: np.int32,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
+    ) -> bool:
+        mv = play_bit(mask_, c, BOTTOM_MASK_, COL_MASK_)
+        nm = mask_ | mv
+        my_after = pos_ | mv
+        if has_won(my_after, stride_i):
+            return False
+
+        opp_pos = nm ^ my_after
+        for j in range(CENTER_ORDER_.shape[0]):
+            oc = np.int32(CENTER_ORDER_[j])
+            if not can_play(nm, oc, TOP_MASK_):
+                continue
+            mv2 = play_bit(nm, oc, BOTTOM_MASK_, COL_MASK_)
+            nm2 = nm | mv2
+            opp_after = opp_pos | mv2
+
+            if has_won(opp_after, stride_i):
+                return True
+
+            if has_any_immediate_win_bits(my_after, nm2, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i):
+                continue
+
+            if has_two_immediate_wins_bits(opp_after, nm2, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i):
+                return True
+
+        return False
+
+    # -------- Root tactical helpers (fork + true win-in-2) --------
+
+    @njit(cache=True, fastmath=True)
+    def threat_count_after_move(
+        pos_: UINT, mask_: UINT, c: np.int32,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
+    ) -> np.int32:
+        mv = play_bit(mask_, c, BOTTOM_MASK_, COL_MASK_)
+        nm = mask_ | mv
+        my_after = pos_ | mv
+        opp_after = nm ^ my_after
+        if count_immediate_wins_bits(opp_after, nm, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i) != 0:
+            return np.int32(-1)
+        return count_immediate_wins_bits(my_after, nm, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i)
+
+    @njit(cache=True, fastmath=True)
+    def find_fork_move_root(
+        pos_: UINT, mask_: UINT, legal_: np.ndarray, L: np.int32,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
+    ) -> np.int32:
+        best_c = np.int32(-1)
+        best_t = np.int32(1)
+        for i in range(L):
+            c = np.int32(legal_[i])
+            t = threat_count_after_move(pos_, mask_, c, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i)
+            if t >= 2 and t > best_t:
+                best_t = t
+                best_c = c
+        return best_c
+
+    @njit(cache=True, fastmath=True)
+    def is_forced_win_in_2_bits(
+        pos_: UINT, mask_: UINT, c: np.int32,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
+    ) -> bool:
+        mv = play_bit(mask_, c, BOTTOM_MASK_, COL_MASK_)
+        nm = mask_ | mv
+        my_after = pos_ | mv
+        opp_after = nm ^ my_after
+        if count_immediate_wins_bits(opp_after, nm, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i) != 0:
+            return False
+
+        any_reply = False
+        for j in range(CENTER_ORDER_.shape[0]):
+            oc = np.int32(CENTER_ORDER_[j])
+            if not can_play(nm, oc, TOP_MASK_):
+                continue
+            any_reply = True
+            mv2 = play_bit(nm, oc, BOTTOM_MASK_, COL_MASK_)
+            nm2 = nm | mv2
+
+            win1 = False
+            for k in range(CENTER_ORDER_.shape[0]):
+                cc = np.int32(CENTER_ORDER_[k])
+                if can_play(nm2, cc, TOP_MASK_) and is_winning_move(my_after, nm2, cc, BOTTOM_MASK_, COL_MASK_, stride_i):
+                    win1 = True
+                    break
+            if not win1:
+                return False
+        return any_reply
+
+    @njit(cache=True, fastmath=True)
+    def find_forced_win_in_2_move_root(
+        pos_: UINT, mask_: UINT, legal_: np.ndarray, L: np.int32,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
+    ) -> np.int32:
+        for i in range(L):
+            c = np.int32(legal_[i])
+            if is_forced_win_in_2_bits(pos_, mask_, c, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i):
+                return c
+        return np.int32(-1)
+
     @njit(cache=True, fastmath=True)
     def is_immediate_blunder(
-        pos_: UINT,
-        mask_: UINT,
-        c: np.int32,
-        CENTER_ORDER_: np.ndarray,
-        TOP_MASK_: np.ndarray,
-        BOTTOM_MASK_: np.ndarray,
-        COL_MASK_: np.ndarray,
-        stride_i: np.int32,
+        pos_: UINT, mask_: UINT, c: np.int32,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
     ) -> bool:
         mv = play_bit(mask_, c, BOTTOM_MASK_, COL_MASK_)
         nm = mask_ | mv
@@ -281,15 +352,10 @@ def _ensure_numba_cache():
 
     @njit(cache=True, fastmath=True)
     def count_safe_moves(
-        pos_: UINT,
-        mask_: UINT,
-        CENTER_ORDER_: np.ndarray,
-        TOP_MASK_: np.ndarray,
-        BOTTOM_MASK_: np.ndarray,
-        COL_MASK_: np.ndarray,
-        stride_i: np.int32,
+        pos_: UINT, mask_: UINT,
+        CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray,
+        BOTTOM_MASK_: np.ndarray, COL_MASK_: np.ndarray, stride_i: np.int32
     ) -> np.int32:
-        # "Safe" = legal and does not hand opponent a win-in-1 immediately.
         s = 0
         for i in range(CENTER_ORDER_.shape[0]):
             c = np.int32(CENTER_ORDER_[i])
@@ -336,7 +402,6 @@ def _ensure_numba_cache():
     ) -> float:
         opp = mask_ ^ pos_
 
-        # heights (for floating penalties + playability)
         H = np.empty(cols_i, dtype=np.int16)
         for c in range(cols_i):
             H[c] = popcount64(mask_ & COL_MASK_[c])
@@ -355,14 +420,11 @@ def _ensure_numba_cache():
             if (p + o) < 2:
                 continue
 
-            # Corrected floating/gravity realism:
-            # - per empty cell: dh==1 -> *FN_, dh>=2 -> *FF_
-            # - multiple empties compound multiplicatively
             mul = 1.0
             ready_vertical3 = False
 
+            # Correct floating model: per empty multiplicative penalty
             if p == 0 or o == 0:
-                # only compute floating for pure windows (one side only)
                 for k2 in range(4):
                     b = WIN_B_[idx, k2]
                     if (mask_ & b) == UINT(0):
@@ -374,11 +436,9 @@ def _ensure_numba_cache():
                         elif dh >= 2:
                             mul *= FF_
                         else:
-                            # dh==0 => playable now
                             if WIN_KIND_[idx] == np.int8(1) and p == 3 and o == 0:
                                 ready_vertical3 = True
 
-            # Vertical windows get a multiplier (gravity makes them more forcing).
             if WIN_KIND_[idx] == np.int8(1):
                 mul *= vert_mul_
 
@@ -389,7 +449,6 @@ def _ensure_numba_cache():
             elif p == 0:
                 score -= DEF_ * mul * (WARR_[o] if o <= 4 else 0.0)
 
-        # immediate wins / forks
         my_imm = count_immediate_wins_bits(pos_, mask_, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK2_, stride_i)
         opp_imm = count_immediate_wins_bits(opp, mask_, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK2_, stride_i)
         score += immediate_w_ * (my_imm - DEF_ * opp_imm)
@@ -399,23 +458,16 @@ def _ensure_numba_cache():
         if opp_imm >= 2:
             score -= DEF_ * (fork_w_ * (opp_imm - 1))
 
-        # center occupancy
         score += center_bonus_ * (popcount64(pos_ & CENTER_MASK_) - popcount64(opp & CENTER_MASK_))
 
-        # parity preference (from POV of pos_)
         if parity_enabled_ != np.int8(0):
-            # pos_ is always "player to move" stones in this negamax convention.
             is_root_turn = (ply_ & np.int16(1)) == np.int16(0)
             pos_is_first = (root_pos_is_first_ == np.int8(1)) if is_root_turn else (root_pos_is_first_ != np.int8(1))
-
             if pos_is_first:
-                # first-role prefers odd rows; second-role prefers even
                 score += parity_bonus_ * (float(popcount64(pos_ & ODD_MASK_)) - DEF_ * float(popcount64(opp & EVEN_MASK_)))
             else:
-                # second-role prefers even; first-role prefers odd
                 score += parity_bonus_ * (float(popcount64(pos_ & EVEN_MASK_)) - DEF_ * float(popcount64(opp & ODD_MASK_)))
 
-        # tempo / zugzwang proxy: safe-move mobility
         if tempo_w_ != 0.0:
             my_safe = count_safe_moves(pos_, mask_, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK2_, stride_i)
             opp_safe2 = count_safe_moves(opp, mask_, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK2_, stride_i)
@@ -424,14 +476,8 @@ def _ensure_numba_cache():
         return score
 
     @njit(cache=True, fastmath=True)
-    def order_moves(
-        mask_: UINT,
-        ply: np.int32,
-        killers_: np.ndarray,
-        history_: np.ndarray,
-        CENTER_ORDER_: np.ndarray,
-        TOP_MASK_: np.ndarray,
-    ) -> (np.ndarray, np.int32):
+    def order_moves(mask_: UINT, ply: np.int32, killers_: np.ndarray, history_: np.ndarray,
+                    CENTER_ORDER_: np.ndarray, TOP_MASK_: np.ndarray) -> (np.ndarray, np.int32):
         moves = np.empty(7, dtype=np.int8)
         scores = np.empty(7, dtype=np.int32)
         m = 0
@@ -448,8 +494,6 @@ def _ensure_numba_cache():
                 moves[m] = np.int8(c)
                 scores[m] = s
                 m += 1
-
-        # insertion sort (desc)
         for i in range(1, m):
             km, ks = moves[i], scores[i]
             j = i - 1
@@ -468,19 +512,9 @@ def _ensure_numba_cache():
         return np.int32(h & np.uint64(size_mask_i))
 
     @njit(cache=True, fastmath=True)
-    def tt_lookup(
-        pos_: UINT,
-        mask_: UINT,
-        depth: np.int16,
-        alpha: float,
-        beta: float,
-        TT_pos_: np.ndarray,
-        TT_mask_: np.ndarray,
-        TT_depth_: np.ndarray,
-        TT_flag_: np.ndarray,
-        TT_val_: np.ndarray,
-        TT_move_: np.ndarray,
-    ) -> (bool, float, np.int8, float, float):
+    def tt_lookup(pos_: UINT, mask_: UINT, depth: np.int16, alpha: float, beta: float,
+                  TT_pos_: np.ndarray, TT_mask_: np.ndarray, TT_depth_: np.ndarray,
+                  TT_flag_: np.ndarray, TT_val_: np.ndarray, TT_move_: np.ndarray) -> (bool, float, np.int8, float, float):
         size_mask = np.int32(TT_pos_.shape[0] - 1)
         idx = tt_hash_local(pos_, mask_, size_mask)
         for _ in range(32):
@@ -488,11 +522,10 @@ def _ensure_numba_cache():
                 return False, 0.0, np.int8(-1), alpha, beta
             if TT_pos_[idx] == pos_ and TT_mask_[idx] == mask_:
                 d = TT_depth_[idx]
-                flag = TT_flag_[idx]
+                flag = TT_flag_[idx]  # EXACT=0, LOWER=1, UPPER=2
                 val = TT_val_[idx]
                 mv = TT_move_[idx]
                 if d >= depth:
-                    # EXACT=0, LOWER=1, UPPER=2
                     if flag == 0:
                         return True, val, mv, alpha, beta
                     if flag == 1 and val > alpha:
@@ -506,28 +539,14 @@ def _ensure_numba_cache():
         return False, 0.0, np.int8(-1), alpha, beta
 
     @njit(cache=True, fastmath=True)
-    def tt_store(
-        pos_: UINT,
-        mask_: UINT,
-        depth: np.int16,
-        val: float,
-        alpha0: float,
-        beta: float,
-        best_mv: np.int8,
-        TT_pos_: np.ndarray,
-        TT_mask_: np.ndarray,
-        TT_depth_: np.ndarray,
-        TT_flag_: np.ndarray,
-        TT_val_: np.ndarray,
-        TT_move_: np.ndarray,
-    ) -> None:
-        # EXACT=0, LOWER=1, UPPER=2
-        flag = 0
+    def tt_store(pos_: UINT, mask_: UINT, depth: np.int16, val: float, alpha0: float, beta: float,
+                 best_mv: np.int8, TT_pos_: np.ndarray, TT_mask_: np.ndarray, TT_depth_: np.ndarray,
+                 TT_flag_: np.ndarray, TT_val_: np.ndarray, TT_move_: np.ndarray) -> None:
+        flag = 0  # EXACT
         if val <= alpha0:
-            flag = 2
+            flag = 2  # UPPER
         elif val >= beta:
-            flag = 1
-
+            flag = 1  # LOWER
         size_mask = np.int32(TT_pos_.shape[0] - 1)
         idx = tt_hash_local(pos_, mask_, size_mask)
         victim = -1
@@ -541,7 +560,6 @@ def _ensure_numba_cache():
             if victim == -1 or TT_depth_[idx] < TT_depth_[victim]:
                 victim = idx
             idx = (idx + 1) & size_mask
-
         TT_pos_[victim] = pos_
         TT_mask_[victim] = mask_
         TT_depth_[victim] = depth
@@ -564,6 +582,8 @@ def _ensure_numba_cache():
         ply: np.int16,
         root_pos_is_first_: np.int8,
         parity_enabled_: np.int8,
+        double_threat_guard_: np.int8,
+        fork_reply_guard_: np.int8,
         node_counter: np.ndarray,
         max_nodes: np.int64,
         MATE_SCORE_i: float,
@@ -607,38 +627,11 @@ def _ensure_numba_cache():
         if should_stop(node_counter, max_nodes):
             return (
                 evaluate(
-                    pos_,
-                    mask_,
-                    COL_MASK_,
-                    WIN_MASKS_,
-                    WIN_KIND_,
-                    WIN_B_,
-                    WIN_C_,
-                    WIN_R_,
-                    WARR_,
-                    DEF_,
-                    FN_,
-                    FF_,
-                    CENTER_MASK_,
-                    ODD_MASK_,
-                    EVEN_MASK_,
-                    parity_bonus_,
-                    parity_enabled_,
-                    root_pos_is_first_,
-                    ply,
-                    immediate_w_,
-                    fork_w_,
-                    center_bonus_,
-                    vert_mul_,
-                    vert3_ready_bonus_,
-                    tempo_w_,
-                    CENTER_ORDER_,
-                    TOP_MASK_,
-                    BOTTOM_MASK_,
-                    COL_MASK_,
-                    stride_i,
-                    rows_i,
-                    cols_i,
+                    pos_, mask_, COL_MASK_, WIN_MASKS_, WIN_KIND_, WIN_B_, WIN_C_, WIN_R_, WARR_,
+                    DEF_, FN_, FF_, CENTER_MASK_, ODD_MASK_, EVEN_MASK_, parity_bonus_, parity_enabled_,
+                    root_pos_is_first_, ply, immediate_w_, fork_w_, center_bonus_, vert_mul_,
+                    vert3_ready_bonus_, tempo_w_, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_,
+                    stride_i, rows_i, cols_i
                 ),
                 np.int8(-1),
             )
@@ -662,38 +655,11 @@ def _ensure_numba_cache():
         if depth == 0:
             return (
                 evaluate(
-                    pos_,
-                    mask_,
-                    COL_MASK_,
-                    WIN_MASKS_,
-                    WIN_KIND_,
-                    WIN_B_,
-                    WIN_C_,
-                    WIN_R_,
-                    WARR_,
-                    DEF_,
-                    FN_,
-                    FF_,
-                    CENTER_MASK_,
-                    ODD_MASK_,
-                    EVEN_MASK_,
-                    parity_bonus_,
-                    parity_enabled_,
-                    root_pos_is_first_,
-                    ply,
-                    immediate_w_,
-                    fork_w_,
-                    center_bonus_,
-                    vert_mul_,
-                    vert3_ready_bonus_,
-                    tempo_w_,
-                    CENTER_ORDER_,
-                    TOP_MASK_,
-                    BOTTOM_MASK_,
-                    COL_MASK_,
-                    stride_i,
-                    rows_i,
-                    cols_i,
+                    pos_, mask_, COL_MASK_, WIN_MASKS_, WIN_KIND_, WIN_B_, WIN_C_, WIN_R_, WARR_,
+                    DEF_, FN_, FF_, CENTER_MASK_, ODD_MASK_, EVEN_MASK_, parity_bonus_, parity_enabled_,
+                    root_pos_is_first_, ply, immediate_w_, fork_w_, center_bonus_, vert_mul_,
+                    vert3_ready_bonus_, tempo_w_, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_,
+                    stride_i, rows_i, cols_i
                 ),
                 np.int8(-1),
             )
@@ -703,7 +669,7 @@ def _ensure_numba_cache():
 
         moves, m = order_moves(mask_, ply, killers_, history_, CENTER_ORDER_, TOP_MASK_)
 
-        # prune immediate handovers if possible
+        # prefer safe moves if any
         safe = np.empty(7, dtype=np.int8)
         s = 0
         for j in range(m):
@@ -713,6 +679,29 @@ def _ensure_numba_cache():
                 s += 1
         use_moves, use_len = (safe, s) if s > 0 else (moves, m)
 
+        # hard guards (cheap prune)
+        if double_threat_guard_ != np.int8(0):
+            tmp = np.empty(7, dtype=np.int8)
+            t = 0
+            for jj in range(use_len):
+                cc = np.int32(use_moves[jj])
+                if not opp_has_double_threat_after_my_move(pos_, mask_, cc, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i):
+                    tmp[t] = np.int8(cc)
+                    t += 1
+            if t > 0:
+                use_moves, use_len = tmp, t
+
+        if fork_reply_guard_ != np.int8(0):
+            tmp2 = np.empty(7, dtype=np.int8)
+            t2 = 0
+            for jj in range(use_len):
+                cc = np.int32(use_moves[jj])
+                if not opp_can_reply_create_double_threat(pos_, mask_, cc, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i):
+                    tmp2[t2] = np.int8(cc)
+                    t2 += 1
+            if t2 > 0:
+                use_moves, use_len = tmp2, t2
+
         for j in range(use_len):
             c = np.int32(use_moves[j])
             mv = play_bit(mask_, c, BOTTOM_MASK_, COL_MASK_)
@@ -720,52 +709,17 @@ def _ensure_numba_cache():
             next_pos = nm ^ (pos_ | mv)
 
             child_val, _ = negamax(
-                next_pos,
-                nm,
-                np.int16(depth - 1),
-                -beta,
-                -alpha,
-                np.int16(ply + 1),
-                root_pos_is_first_,
-                parity_enabled_,
-                node_counter,
-                max_nodes,
-                MATE_SCORE_i,
-                COL_MASK_,
-                WIN_MASKS_,
-                WIN_KIND_,
-                WIN_B_,
-                WIN_C_,
-                WIN_R_,
-                WARR_,
-                DEF_,
-                FN_,
-                FF_,
-                CENTER_MASK_,
-                ODD_MASK_,
-                EVEN_MASK_,
-                parity_bonus_,
-                immediate_w_,
-                fork_w_,
-                center_bonus_,
-                vert_mul_,
-                vert3_ready_bonus_,
-                tempo_w_,
-                CENTER_ORDER_,
-                TOP_MASK_,
-                BOTTOM_MASK_,
-                stride_i,
-                rows_i,
-                cols_i,
-                killers_,
-                history_,
-                FULL_MASK_,
-                TT_pos_,
-                TT_mask_,
-                TT_depth_,
-                TT_flag_,
-                TT_val_,
-                TT_move_,
+                next_pos, nm, np.int16(depth - 1),
+                -beta, -alpha, np.int16(ply + 1),
+                root_pos_is_first_, parity_enabled_,
+                double_threat_guard_, fork_reply_guard_,
+                node_counter, max_nodes, MATE_SCORE_i,
+                COL_MASK_, WIN_MASKS_, WIN_KIND_, WIN_B_, WIN_C_, WIN_R_,
+                WARR_, DEF_, FN_, FF_, CENTER_MASK_, ODD_MASK_, EVEN_MASK_,
+                parity_bonus_, immediate_w_, fork_w_, center_bonus_, vert_mul_,
+                vert3_ready_bonus_, tempo_w_, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_,
+                stride_i, rows_i, cols_i, killers_, history_, FULL_MASK_,
+                TT_pos_, TT_mask_, TT_depth_, TT_flag_, TT_val_, TT_move_
             )
             val = -child_val
 
@@ -781,10 +735,7 @@ def _ensure_numba_cache():
                 history_[c] += int(depth) * int(depth)
                 break
 
-        tt_store(
-            pos_, mask_, depth, best_val, alpha0, beta, best_col,
-            TT_pos_, TT_mask_, TT_depth_, TT_flag_, TT_val_, TT_move_
-        )
+        tt_store(pos_, mask_, depth, best_val, alpha0, beta, best_col, TT_pos_, TT_mask_, TT_depth_, TT_flag_, TT_val_, TT_move_)
         return best_val, best_col
 
     @njit(cache=True, fastmath=True)
@@ -794,6 +745,8 @@ def _ensure_numba_cache():
         depth: np.int16,
         root_pos_is_first_: np.int8,
         parity_enabled_: np.int8,
+        double_threat_guard_: np.int8,
+        fork_reply_guard_: np.int8,
         COL_MASK_: np.ndarray,
         WIN_MASKS_: np.ndarray,
         WIN_KIND_: np.ndarray,
@@ -835,7 +788,6 @@ def _ensure_numba_cache():
         TT_move_: np.ndarray,
     ) -> np.int32:
 
-        # legal moves
         legal = np.empty(7, dtype=np.int8)
         L = 0
         for i in range(CENTER_ORDER_.shape[0]):
@@ -876,52 +828,37 @@ def _ensure_numba_cache():
         if S > 0:
             legal, L = safe, S
 
-        # -------------------------------------------------------------
-        # Root tactical pre-pass: WIN-IN-2 / forcing threat detection
-        #
-        # True 2-ply forced win:
-        #   After my move c, for every opponent reply oc, I have a win-in-1.
-        #
-        # This catches classic forks AND "hanging" forcing threats that can
-        # slip through noisy eval or shallow-ish depths.
-        # -------------------------------------------------------------
-        for i in range(L):
-            c = np.int32(legal[i])
-            mv = play_bit(mask_, c, BOTTOM_MASK_, COL_MASK_)
-            nm = mask_ | mv
-            my_after = pos_ | mv
-            opp_after = nm ^ my_after
+        # hard guards at root
+        if double_threat_guard_ != np.int8(0):
+            tmp = np.empty(7, dtype=np.int8)
+            t = 0
+            for i in range(L):
+                c = np.int32(legal[i])
+                if not opp_has_double_threat_after_my_move(pos_, mask_, c, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i):
+                    tmp[t] = np.int8(c)
+                    t += 1
+            if t > 0:
+                legal, L = tmp, t
 
-            # If opponent has any immediate win now, it's not a clean win-in-2.
-            if count_immediate_wins_bits(opp_after, nm, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i) != 0:
-                continue
+        if fork_reply_guard_ != np.int8(0):
+            tmp2 = np.empty(7, dtype=np.int8)
+            t2 = 0
+            for i in range(L):
+                c = np.int32(legal[i])
+                if not opp_can_reply_create_double_threat(pos_, mask_, c, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i):
+                    tmp2[t2] = np.int8(c)
+                    t2 += 1
+            if t2 > 0:
+                legal, L = tmp2, t2
 
-            forced = True
-            any_reply = False
-
-            for j in range(CENTER_ORDER_.shape[0]):
-                oc = np.int32(CENTER_ORDER_[j])
-                if not can_play(nm, oc, TOP_MASK_):
-                    continue
-                any_reply = True
-
-                mv2 = play_bit(nm, oc, BOTTOM_MASK_, COL_MASK_)
-                nm2 = nm | mv2
-
-                # Do I have a win-in-1 after this reply?
-                win1 = False
-                for k in range(CENTER_ORDER_.shape[0]):
-                    cc = np.int32(CENTER_ORDER_[k])
-                    if can_play(nm2, cc, TOP_MASK_) and is_winning_move(my_after, nm2, cc, BOTTOM_MASK_, COL_MASK_, stride_i):
-                        win1 = True
-                        break
-
-                if not win1:
-                    forced = False
-                    break
-
-            if any_reply and forced:
-                return np.int32(c)
+        # root tactical pre-pass (optional)
+        if WIN2_CHECK:
+            fork_mv = find_fork_move_root(pos_, mask_, legal, np.int32(L), CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i)
+            if fork_mv != np.int32(-1):
+                return np.int32(fork_mv)
+            win2_mv = find_forced_win_in_2_move_root(pos_, mask_, legal, np.int32(L), CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i)
+            if win2_mv != np.int32(-1):
+                return np.int32(win2_mv)
 
         best_move = np.int32(legal[0])
         best_val = -1e100
@@ -929,33 +866,22 @@ def _ensure_numba_cache():
         node_counter = np.zeros(1, dtype=np.int64)
         max_nodes = np.int64(9_000_000_000_000)
 
-        # Root-only helpers: compute column heights once
+        # root-only heights
         H = np.empty(cols_i, dtype=np.int16)
         for c0 in range(cols_i):
             H[c0] = popcount64(mask_ & COL_MASK_[c0])
 
-        # Root role parity preferences
-        # first-role prefers odd rows (r%2==0), second-role prefers even (r%2==1)
         root_is_first = (root_pos_is_first_ == np.int8(1))
         pref_parity_root = np.int16(0) if root_is_first else np.int16(1)
         pref_parity_opp = np.int16(1) if root_is_first else np.int16(0)
 
         for i in range(L):
             c = np.int32(legal[i])
-
-            # Root-only small biases (do not replace search, just nudge it).
             bias = 0.0
+            r = np.int16(H[c])
 
-            # Determine landing row for this move at root.
-            r = np.int16(H[c])  # next free row in this column (0-based)
             if parity_enabled_ != np.int8(0):
-                # move parity preference
-                if (r & np.int16(1)) == pref_parity_root:
-                    bias += parity_move_w_
-                else:
-                    bias -= parity_move_w_
-
-                # parity unlock: playing at r unlocks r+1 (if within board)
+                bias += parity_move_w_ if ((r & np.int16(1)) == pref_parity_root) else -parity_move_w_
                 r2 = np.int16(r + 1)
                 if r2 < np.int16(rows_i):
                     if (r2 & np.int16(1)) == pref_parity_opp:
@@ -966,65 +892,28 @@ def _ensure_numba_cache():
             my_after = pos_ | mv
             opp_after = nm ^ my_after
 
-            # Root-only threat-space approximation:
             if threatspace_w_ != 0.0:
                 my_threats = count_immediate_wins_bits(my_after, nm, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i)
                 bias += threatspace_w_ * float(my_threats)
-
                 opp_threats = count_immediate_wins_bits(opp_after, nm, CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_, COL_MASK_, stride_i)
                 bias -= DEF_ * threatspace_w_ * 0.25 * float(opp_threats)
 
-            next_pos = opp_after  # opponent to move in negamax convention
-
+            next_pos = opp_after
             v, _ = negamax(
-                next_pos,
-                nm,
-                np.int16(depth - 1),
-                -MATE_SCORE_i,
-                MATE_SCORE_i,
-                np.int16(1),
-                root_pos_is_first_,
-                parity_enabled_,
-                node_counter,
-                max_nodes,
-                MATE_SCORE_i,
-                COL_MASK_,
-                WIN_MASKS_,
-                WIN_KIND_,
-                WIN_B_,
-                WIN_C_,
-                WIN_R_,
-                WARR_,
-                DEF_,
-                FN_,
-                FF_,
-                CENTER_MASK_,
-                ODD_MASK_,
-                EVEN_MASK_,
-                parity_bonus_,
-                immediate_w_,
-                fork_w_,
-                center_bonus_,
-                vert_mul_,
-                vert3_ready_bonus_,
-                tempo_w_,
-                CENTER_ORDER_,
-                TOP_MASK_,
-                BOTTOM_MASK_,
-                stride_i,
-                rows_i,
-                cols_i,
-                killers_,
-                history_,
-                FULL_MASK_,
-                TT_pos_,
-                TT_mask_,
-                TT_depth_,
-                TT_flag_,
-                TT_val_,
-                TT_move_,
+                next_pos, nm, np.int16(depth - 1),
+                -MATE_SCORE_i, MATE_SCORE_i, np.int16(1),
+                root_pos_is_first_, parity_enabled_,
+                double_threat_guard_, fork_reply_guard_,
+                node_counter, max_nodes, MATE_SCORE_i,
+                COL_MASK_, WIN_MASKS_, WIN_KIND_, WIN_B_, WIN_C_, WIN_R_,
+                WARR_, DEF_, FN_, FF_, CENTER_MASK_, ODD_MASK_, EVEN_MASK_,
+                parity_bonus_, immediate_w_, fork_w_, center_bonus_, vert_mul_,
+                vert3_ready_bonus_, tempo_w_,
+                CENTER_ORDER_, TOP_MASK_, BOTTOM_MASK_,
+                stride_i, rows_i, cols_i,
+                killers_, history_, FULL_MASK_,
+                TT_pos_, TT_mask_, TT_depth_, TT_flag_, TT_val_, TT_move_
             )
-
             val = -v + bias
             if val > best_val:
                 best_val = val
@@ -1033,32 +922,11 @@ def _ensure_numba_cache():
         return best_move
 
     _NUMBA_C4_CLASS_CACHE = dict(
-        ROWS=ROWS,
-        COLS=COLS,
-        STRIDE=STRIDE,
-        UINT=UINT,
-        CENTER_ORDER=CENTER_ORDER,
-        CENTER_MASK=CENTER_MASK,
-        COL_MASK=COL_MASK,
-        TOP_MASK=TOP_MASK,
-        BOTTOM_MASK=BOTTOM_MASK,
-        FULL_MASK=FULL_MASK,
-        ODD_MASK=ODD_MASK,
-        EVEN_MASK=EVEN_MASK,
-        WIN_MASKS=WIN_MASKS,
-        WIN_KIND=WIN_KIND,
-        WIN_B=WIN_B,
-        WIN_C=WIN_C,
-        WIN_R=WIN_R,
-        # defaults (not binding)
-        DEFENSIVE=DEFENSIVE,
-        FLOATING_NEAR=FLOATING_NEAR,
-        FLOATING_FAR=FLOATING_FAR,
-        CENTER_BONUS=CENTER_BONUS,
-        VERT_MUL=VERT_MUL,
-        VERT_3_READY_BONUS=VERT_3_READY_BONUS,
-        TEMPO_W=TEMPO_W,
-        # functions
+        ROWS=ROWS, COLS=COLS, STRIDE=STRIDE, UINT=UINT,
+        CENTER_ORDER=CENTER_ORDER, CENTER_MASK=CENTER_MASK,
+        COL_MASK=COL_MASK, TOP_MASK=TOP_MASK, BOTTOM_MASK=BOTTOM_MASK,
+        FULL_MASK=FULL_MASK, ODD_MASK=ODD_MASK, EVEN_MASK=EVEN_MASK,
+        WIN_MASKS=WIN_MASKS, WIN_KIND=WIN_KIND, WIN_B=WIN_B, WIN_C=WIN_C, WIN_R=WIN_R,
         has_won=has_won,
         count_immediate_wins_bits=count_immediate_wins_bits,
         count_safe_moves=count_safe_moves,
@@ -1068,11 +936,15 @@ def _ensure_numba_cache():
         order_moves=order_moves,
         negamax=negamax,
         root_select_fixed=root_select_fixed,
+        opp_has_double_threat_after_my_move=opp_has_double_threat_after_my_move,
+        opp_can_reply_create_double_threat=opp_can_reply_create_double_threat,
+        has_two_immediate_wins_bits=has_two_immediate_wins_bits,
+        has_any_immediate_win_bits=has_any_immediate_win_bits,
     )
     return _NUMBA_C4_CLASS_CACHE
 
 
-# ================================ The Class =================================
+# ============================ Public class ============================
 
 class Connect4Lookahead:
     ROWS = 6
@@ -1080,9 +952,10 @@ class Connect4Lookahead:
     K = 4
     STRIDE = ROWS + 1
     CENTER_COL = 3
-    OPENING_BOOK = True
 
-    # Heuristic knobs (instance-overridable; notebook can mutate per variant)
+    OPENING_BOOK = True
+    OPENING_RANDOM = True  # set False for deterministic sweeps
+
     immediate_w = C4_IMMEDIATE_W
     fork_w = C4_FORK_W
     DEFENSIVE = C4_DEFENSIVE
@@ -1091,7 +964,6 @@ class Connect4Lookahead:
     CENTER_BONUS = C4_CENTER_BONUS
     PARITY_BONUS = C4_PARITY_BONUS
 
-    # New knobs
     VERT_MUL = C4_VERT_MUL
     VERT_3_READY_BONUS = C4_VERT_3_READY_BONUS
     TEMPO_W = C4_TEMPO_W
@@ -1099,9 +971,8 @@ class Connect4Lookahead:
     PARITY_UNLOCK_W = C4_PARITY_UNLOCK_W
     THREATSPACE_W = C4_THREATSPACE_W
 
-    # Opening book determinism (important for weight sweeps / round-robin stability)
-    # For stochasticity, set instance field OPENING_RANDOM = True.
-    OPENING_RANDOM = True  # False
+    DOUBLE_THREAT_GUARD = True
+    FORK_REPLY_GUARD = True
 
     _CENTER_ORDER = [3, 4, 2, 5, 1, 6, 0]
 
@@ -1115,69 +986,43 @@ class Connect4Lookahead:
     WIN_CELLS: List[List[Tuple[int, int, int]]] = []
 
     def __init__(self, weights=None):
-        if weights is None:
-            self.weights: Dict[int, float] = dict(C4_DEFAULT_WEIGHTS_ITEMS)
-        else:
-            self.weights = dict(weights)
-
+        self.weights: Dict[int, float] = dict(C4_DEFAULT_WEIGHTS_ITEMS) if weights is None else dict(weights)
         self.SOFT_MATE = float(C4_SOFT_MATE_MULT) * float(self.weights[4])
         self.MATE_SCORE = float(C4_MATE_SCORE_MULT) * float(self.weights[4])
-
         if not Connect4Lookahead._PRECOMP_DONE:
             self._build_precomp()
-
         self._N = _ensure_numba_cache()
 
-    # ============================== Public API ===============================
+    # ---------------- Public API ----------------
 
     def get_heuristic(self, board, player) -> float:
         p1, p2, mask = self._parse_board_bitboards(board)
         me_mark = self._p(player)
         me = p1 if me_mark == 1 else p2
 
-        # weights -> WARR
         WARR = np.zeros(self.K + 1, dtype=np.float64)
         for k in (2, 3, 4):
             WARR[k] = float(self.weights.get(k, 0.0))
 
-        # parity role anchor: center-bottom owner, else disabled
         role_first_mark, parity_enabled = self._role_first_from_center(mask, p1, p2)
         root_pos_is_first = np.int8(1 if (parity_enabled and me_mark == role_first_mark) else 0)
 
         return float(
             self._N["evaluate"](
-                np.uint64(me),
-                np.uint64(mask),
-                self._N["COL_MASK"],
-                self._N["WIN_MASKS"],
-                self._N["WIN_KIND"],
-                self._N["WIN_B"],
-                self._N["WIN_C"],
-                self._N["WIN_R"],
+                np.uint64(me), np.uint64(mask),
+                self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_KIND"],
+                self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
                 WARR,
-                float(self.DEFENSIVE),
-                float(self.FLOATING_NEAR),
-                float(self.FLOATING_FAR),
-                np.uint64(self._N["CENTER_MASK"]),
-                np.uint64(self._N["ODD_MASK"]),
-                np.uint64(self._N["EVEN_MASK"]),
+                float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+                np.uint64(self._N["CENTER_MASK"]), np.uint64(self._N["ODD_MASK"]), np.uint64(self._N["EVEN_MASK"]),
                 float(self.PARITY_BONUS),
                 np.int8(1 if parity_enabled else 0),
                 root_pos_is_first,
                 np.int16(0),
-                float(self.immediate_w),
-                float(self.fork_w),
-                float(self.CENTER_BONUS),
-                float(self.VERT_MUL),
-                float(self.VERT_3_READY_BONUS),
-                float(self.TEMPO_W),
-                self._N["CENTER_ORDER"],
-                self._N["TOP_MASK"],
-                self._N["BOTTOM_MASK"],
-                self._N["COL_MASK"],
-                np.int32(self.STRIDE),
-                np.int32(self.ROWS),
-                np.int32(self.COLS),
+                float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
+                float(self.VERT_MUL), float(self.VERT_3_READY_BONUS), float(self.TEMPO_W),
+                self._N["CENTER_ORDER"], self._N["TOP_MASK"], self._N["BOTTOM_MASK"], self._N["COL_MASK"],
+                np.int32(self.STRIDE), np.int32(self.ROWS), np.int32(self.COLS),
             )
         )
 
@@ -1216,92 +1061,54 @@ class Connect4Lookahead:
         role_first_mark, parity_enabled = self._role_first_from_center(mask, p1, p2)
         root_pos_is_first = np.int8(1 if (parity_enabled and to_move == role_first_mark) else 0)
 
-        ply0 = np.int16(0)
-
         v, _ = self._N["negamax"](
-            np.uint64(pos),
-            np.uint64(mask),
+            np.uint64(pos), np.uint64(mask),
             np.int16(depth),
-            float(alpha),
-            float(beta),
-            ply0,
+            float(alpha), float(beta),
+            np.int16(0),
             root_pos_is_first,
             np.int8(1 if parity_enabled else 0),
-            node_counter,
-            max_nodes,
+            np.int8(1 if (self.DOUBLE_THREAT_GUARD and DOUBLE_THREAT_GUARD) else 0),
+            np.int8(1 if (self.FORK_REPLY_GUARD and FORK_REPLY_GUARD) else 0),
+            node_counter, max_nodes,
             float(self.MATE_SCORE),
-            self._N["COL_MASK"],
-            self._N["WIN_MASKS"],
-            self._N["WIN_KIND"],
-            self._N["WIN_B"],
-            self._N["WIN_C"],
-            self._N["WIN_R"],
+            self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_KIND"],
+            self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
             WARR,
-            float(self.DEFENSIVE),
-            float(self.FLOATING_NEAR),
-            float(self.FLOATING_FAR),
-            np.uint64(self._N["CENTER_MASK"]),
-            np.uint64(self._N["ODD_MASK"]),
-            np.uint64(self._N["EVEN_MASK"]),
+            float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+            np.uint64(self._N["CENTER_MASK"]), np.uint64(self._N["ODD_MASK"]), np.uint64(self._N["EVEN_MASK"]),
             float(self.PARITY_BONUS),
-            float(self.immediate_w),
-            float(self.fork_w),
-            float(self.CENTER_BONUS),
-            float(self.VERT_MUL),
-            float(self.VERT_3_READY_BONUS),
-            float(self.TEMPO_W),
-            self._N["CENTER_ORDER"],
-            self._N["TOP_MASK"],
-            self._N["BOTTOM_MASK"],
-            np.int32(self.STRIDE),
-            np.int32(self.ROWS),
-            np.int32(self.COLS),
-            killers,
-            history,
-            np.uint64(self._N["FULL_MASK"]),
-            TT_pos,
-            TT_mask,
-            TT_depth,
-            TT_flag,
-            TT_val,
-            TT_move,
+            float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
+            float(self.VERT_MUL), float(self.VERT_3_READY_BONUS), float(self.TEMPO_W),
+            self._N["CENTER_ORDER"], self._N["TOP_MASK"], self._N["BOTTOM_MASK"],
+            np.int32(self.STRIDE), np.int32(self.ROWS), np.int32(self.COLS),
+            killers, history, np.uint64(self._N["FULL_MASK"]),
+            TT_pos, TT_mask, TT_depth, TT_flag, TT_val, TT_move,
         )
         val = float(v)
         return val if to_move == root_pov else -val
 
     def n_step_lookahead(self, board, player, depth=3) -> int:
-
-        def _pick_side(cols=(2, 4)):
-            legal = [c for c in cols if self._can_play_py(mask, c)]
-            if not legal:
-                return None
-            if len(legal) == 1:
-                return int(legal[0])
-            if bool(getattr(self, "OPENING_RANDOM", False)):
-                return int(np.random.default_rng().choice(np.array(legal, dtype=np.int8)))
-            return int(legal[0])  # deterministic: prefer 2 then 4
-
         p1, p2, mask = self._parse_board_bitboards(board)
         stones = int(np.count_nonzero(board))
         me_mark = self._p(player)
 
-        # ---------- opening book (depth-independent) ----------
+        # Small opening book (kept compatible with your earlier logic)
         if stones == 0 and me_mark == 1:
             return self.CENTER_COL
 
         if stones == 1 and me_mark == -1:
             b_d1 = 1 << (self.CENTER_COL * self.STRIDE + 0)
             if mask & b_d1:
-                choices = [2, 4]  # C1/E1
+                choices = [2, 4]
                 if bool(getattr(self, "OPENING_RANDOM", False)):
                     return int(np.random.default_rng().choice(np.array(choices, dtype=np.int8)))
-                return int(choices[0])  # deterministic: C1
+                return int(choices[0])
 
         if stones == 2 and me_mark == 1:
             b_d1 = 1 << (self.CENTER_COL * self.STRIDE + 0)
             if mask & b_d1:
                 b_d2 = 1 << (self.CENTER_COL * self.STRIDE + 1)
-
                 b_a1 = 1 << (0 * self.STRIDE + 0)
                 b_b1 = 1 << (1 * self.STRIDE + 0)
                 b_c1 = 1 << (2 * self.STRIDE + 0)
@@ -1309,43 +1116,31 @@ class Connect4Lookahead:
                 b_f1 = 1 << (5 * self.STRIDE + 0)
                 b_g1 = 1 << (6 * self.STRIDE + 0)
 
-                # If P2 stacked center: 1.d1 d2 -> P1 plays d3 (center again)
                 if mask & b_d2:
                     if self._can_play_py(mask, self.CENTER_COL):
                         return self.CENTER_COL
-
-                # If P2 replied C1/E1: 1.d1 c1 -> 2.f1 ; 1.d1 e1 -> 2.b1
                 if mask & b_c1:
-                    return 5  # F1
+                    return 5
                 if mask & b_e1:
-                    return 1  # B1
-
-                # Corner replies: vs A1 -> E1, vs G1 -> C1
+                    return 1
                 if mask & b_a1:
-                    return 4  # E1
+                    return 4
                 if mask & b_g1:
-                    return 2  # C1
-
-                # B1/F1 replies: mirror
+                    return 2
                 if mask & b_b1:
-                    return 5  # F1
+                    return 5
                 if mask & b_f1:
-                    return 1  # B1
-
-                # Fallback: take center (D2) if legal
+                    return 1
                 if self._can_play_py(mask, self.CENTER_COL):
                     return self.CENTER_COL
 
         if stones == 3 and me_mark == -1:
-            # If the stacked-center line happened: D1, D2, D3 are filled -> P2 plays D4
             b_d1 = 1 << (self.CENTER_COL * self.STRIDE + 0)
             b_d2 = 1 << (self.CENTER_COL * self.STRIDE + 1)
             b_d3 = 1 << (self.CENTER_COL * self.STRIDE + 2)
             if (mask & b_d1) and (mask & b_d2) and (mask & b_d3):
                 if self._can_play_py(mask, self.CENTER_COL):
                     return self.CENTER_COL
-
-        # ---------------------------------------------------------------------------
 
         me = p1 if me_mark == 1 else p2
 
@@ -1368,50 +1163,25 @@ class Connect4Lookahead:
         root_pos_is_first = np.int8(1 if (parity_enabled and me_mark == role_first_mark) else 0)
 
         mv = self._N["root_select_fixed"](
-            np.uint64(me),
-            np.uint64(mask),
-            np.int16(depth),
-            root_pos_is_first,
-            np.int8(1 if parity_enabled else 0),
-            self._N["COL_MASK"],
-            self._N["WIN_MASKS"],
-            self._N["WIN_KIND"],
-            self._N["WIN_B"],
-            self._N["WIN_C"],
-            self._N["WIN_R"],
+            np.uint64(me), np.uint64(mask), np.int16(depth),
+            root_pos_is_first, np.int8(1 if parity_enabled else 0),
+            np.int8(1 if (self.DOUBLE_THREAT_GUARD and DOUBLE_THREAT_GUARD) else 0),
+            np.int8(1 if (self.FORK_REPLY_GUARD and FORK_REPLY_GUARD) else 0),
+            self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_KIND"],
+            self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
             WARR,
-            float(self.DEFENSIVE),
-            float(self.FLOATING_NEAR),
-            float(self.FLOATING_FAR),
-            np.uint64(self._N["CENTER_MASK"]),
-            np.uint64(self._N["ODD_MASK"]),
-            np.uint64(self._N["EVEN_MASK"]),
+            float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+            np.uint64(self._N["CENTER_MASK"]), np.uint64(self._N["ODD_MASK"]), np.uint64(self._N["EVEN_MASK"]),
             float(self.PARITY_BONUS),
-            float(self.immediate_w),
-            float(self.fork_w),
-            float(self.CENTER_BONUS),
-            float(self.VERT_MUL),
-            float(self.VERT_3_READY_BONUS),
-            float(self.TEMPO_W),
-            float(self.PARITY_MOVE_W),
-            float(self.PARITY_UNLOCK_W),
-            float(self.THREATSPACE_W),
-            self._N["CENTER_ORDER"],
-            self._N["TOP_MASK"],
-            self._N["BOTTOM_MASK"],
-            np.int32(self.STRIDE),
-            np.int32(self.ROWS),
-            np.int32(self.COLS),
+            float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
+            float(self.VERT_MUL), float(self.VERT_3_READY_BONUS), float(self.TEMPO_W),
+            float(self.PARITY_MOVE_W), float(self.PARITY_UNLOCK_W), float(self.THREATSPACE_W),
+            self._N["CENTER_ORDER"], self._N["TOP_MASK"], self._N["BOTTOM_MASK"],
+            np.int32(self.STRIDE), np.int32(self.ROWS), np.int32(self.COLS),
             np.uint64(self._N["FULL_MASK"]),
             float(self.MATE_SCORE),
-            killers,
-            history,
-            TT_pos,
-            TT_mask,
-            TT_depth,
-            TT_flag,
-            TT_val,
-            TT_move,
+            killers, history,
+            TT_pos, TT_mask, TT_depth, TT_flag, TT_val, TT_move,
         )
         return int(mv)
 
@@ -1425,7 +1195,6 @@ class Connect4Lookahead:
     def count_immediate_wins(self, board, player: int) -> List[int]:
         p1, p2, mask = self._parse_board_bitboards(board)
         me = p1 if self._p(player) == 1 else p2
-
         wins = []
         for c in self._CENTER_ORDER:
             if (mask & self.TOP_MASK[c]) == 0 and self._is_winning_move_py(me, mask, c):
@@ -1433,15 +1202,12 @@ class Connect4Lookahead:
         return wins
 
     def compute_fork_signals(self, board_before, board_after, mover: int) -> Dict[str, int]:
-        # Kept for compatibility with older code, but your env no longer needs it.
         mover = self._p(mover)
         opp = -mover
         my_after = len(self.count_immediate_wins(board_after, mover))
         opp_before = len(self.count_immediate_wins(board_before, opp))
         opp_after = len(self.count_immediate_wins(board_after, opp))
         return {"my_after": my_after, "opp_before": opp_before, "opp_after": opp_after}
-
-    # ---------------- Analytics helpers preserved ----------------
 
     def count_pure(self, board, player, n: int) -> int:
         p1, p2, _ = self._parse_board_bitboards(board)
@@ -1460,7 +1226,7 @@ class Connect4Lookahead:
         after = self.count_pure(after_board, player, n)
         return max(0, before - after)
 
-    # ============================== Internals ===============================
+    # ---------------- Internals ----------------
 
     @classmethod
     def _build_precomp(cls) -> None:
@@ -1482,7 +1248,6 @@ class Connect4Lookahead:
         def bit_at(c, r):
             return 1 << (c * cls.STRIDE + r)
 
-        # horizontal
         for r in range(cls.ROWS):
             for c in range(cls.COLS - cls.K + 1):
                 cells = [(r, c + i) for i in range(cls.K)]
@@ -1494,7 +1259,6 @@ class Connect4Lookahead:
                 cls.WIN_MASKS.append(mask)
                 cls.WIN_CELLS.append(triples)
 
-        # vertical
         for c in range(cls.COLS):
             for r in range(cls.ROWS - cls.K + 1):
                 cells = [(r + i, c) for i in range(cls.K)]
@@ -1506,7 +1270,6 @@ class Connect4Lookahead:
                 cls.WIN_MASKS.append(mask)
                 cls.WIN_CELLS.append(triples)
 
-        # diag up-right
         for r in range(cls.ROWS - cls.K + 1):
             for c in range(cls.COLS - cls.K + 1):
                 cells = [(r + i, c + i) for i in range(cls.K)]
@@ -1518,7 +1281,6 @@ class Connect4Lookahead:
                 cls.WIN_MASKS.append(mask)
                 cls.WIN_CELLS.append(triples)
 
-        # diag up-left
         for r in range(cls.ROWS - cls.K + 1):
             for c in range(cls.K - 1, cls.COLS):
                 cells = [(r + i, c - i) for i in range(cls.K)]
@@ -1534,7 +1296,6 @@ class Connect4Lookahead:
 
     @staticmethod
     def _p(p: int) -> int:
-        # Map {1,2} or {1,-1} to {+1,-1}
         return -1 if p == 2 else int(p)
 
     @classmethod
@@ -1567,15 +1328,11 @@ class Connect4Lookahead:
         return cls._has_won_py(pos | mv)
 
     def _parse_board_bitboards(self, board) -> Tuple[int, int, int]:
-        """
-        Accepts numpy-like 2D board in {0,1,2} or {0,1,-1}, top-based rows.
-        Returns (p1_bb, p2_bb, mask) as Python ints.
-        """
         p1 = 0
         p2 = 0
         mask = 0
         for r_top in range(self.ROWS):
-            r = self.ROWS - 1 - r_top  # flip to bottom-based
+            r = self.ROWS - 1 - r_top  # top->bottom
             for c in range(self.COLS):
                 v = int(board[r_top, c])
                 if v == 0:
@@ -1590,15 +1347,9 @@ class Connect4Lookahead:
 
     @classmethod
     def _role_first_from_center(cls, mask: int, p1: int, p2: int) -> Tuple[int, bool]:
-        """
-        Determine 'first player role' from center-bottom owner (D1).
-        Returns (role_first_mark, enabled).
-          - role_first_mark is +1 or -1
-          - enabled is False if center-bottom is empty
-        """
         b_d1 = 1 << (cls.CENTER_COL * cls.STRIDE + 0)
         if (mask & b_d1) == 0:
-            return 1, False  # disabled; mark irrelevant
+            return 1, False
         if (p1 & b_d1) != 0:
             return 1, True
         return -1, True
@@ -1621,11 +1372,12 @@ class Connect4Lookahead:
         role_first_mark, parity_enabled = self._role_first_from_center(mask, p1, p2)
         root_pos_is_first = np.int8(1 if (parity_enabled and me_mark == role_first_mark) else 0)
         parity_enabled_i8 = np.int8(1 if parity_enabled else 0)
+        double_guard_i8 = np.int8(1 if (self.DOUBLE_THREAT_GUARD and DOUBLE_THREAT_GUARD) else 0)
+        fork_guard_i8 = np.int8(1 if (self.FORK_REPLY_GUARD and FORK_REPLY_GUARD) else 0)
 
         for c in self._CENTER_ORDER:
             if (mask & self.TOP_MASK[c]) != 0:
                 continue
-
             if self._is_winning_move_py(me, mask, c):
                 scores[c] = self.MATE_SCORE
                 continue
@@ -1646,52 +1398,26 @@ class Connect4Lookahead:
             max_nodes = np.int64(9_000_000_000_000)
 
             v, _ = self._N["negamax"](
-                np.uint64(next_pos),
-                np.uint64(nm),
+                np.uint64(next_pos), np.uint64(nm),
                 np.int16(depth - 1),
-                -float(self.MATE_SCORE),
-                float(self.MATE_SCORE),
+                -float(self.MATE_SCORE), float(self.MATE_SCORE),
                 np.int16(1),
-                root_pos_is_first,
-                parity_enabled_i8,
-                node_counter,
-                max_nodes,
+                root_pos_is_first, parity_enabled_i8,
+                double_guard_i8, fork_guard_i8,
+                node_counter, max_nodes,
                 float(self.MATE_SCORE),
-                self._N["COL_MASK"],
-                self._N["WIN_MASKS"],
-                self._N["WIN_KIND"],
-                self._N["WIN_B"],
-                self._N["WIN_C"],
-                self._N["WIN_R"],
+                self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_KIND"],
+                self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
                 WARR,
-                float(self.DEFENSIVE),
-                float(self.FLOATING_NEAR),
-                float(self.FLOATING_FAR),
-                np.uint64(self._N["CENTER_MASK"]),
-                np.uint64(self._N["ODD_MASK"]),
-                np.uint64(self._N["EVEN_MASK"]),
+                float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+                np.uint64(self._N["CENTER_MASK"]), np.uint64(self._N["ODD_MASK"]), np.uint64(self._N["EVEN_MASK"]),
                 float(self.PARITY_BONUS),
-                float(self.immediate_w),
-                float(self.fork_w),
-                float(self.CENTER_BONUS),
-                float(self.VERT_MUL),
-                float(self.VERT_3_READY_BONUS),
-                float(self.TEMPO_W),
-                self._N["CENTER_ORDER"],
-                self._N["TOP_MASK"],
-                self._N["BOTTOM_MASK"],
-                np.int32(self.STRIDE),
-                np.int32(self.ROWS),
-                np.int32(self.COLS),
-                killers,
-                history,
-                np.uint64(self._N["FULL_MASK"]),
-                TT_pos,
-                TT_mask,
-                TT_depth,
-                TT_flag,
-                TT_val,
-                TT_move,
+                float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
+                float(self.VERT_MUL), float(self.VERT_3_READY_BONUS), float(self.TEMPO_W),
+                self._N["CENTER_ORDER"], self._N["TOP_MASK"], self._N["BOTTOM_MASK"],
+                np.int32(self.STRIDE), np.int32(self.ROWS), np.int32(self.COLS),
+                killers, history, np.uint64(self._N["FULL_MASK"]),
+                TT_pos, TT_mask, TT_depth, TT_flag, TT_val, TT_move,
             )
             scores[c] = -float(v)
 
@@ -1720,7 +1446,7 @@ class Connect4Lookahead:
             best_cols = legal_cols
         return int(rng.choice(best_cols))
 
-    # ---------------- Baselines (convenience) ----------------
+    # ---------------- Baselines ----------------
 
     def legal_actions(self, board=None, mask=None) -> List[int]:
         if mask is None:

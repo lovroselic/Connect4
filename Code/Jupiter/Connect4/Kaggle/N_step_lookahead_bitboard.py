@@ -7,16 +7,26 @@
 #   - Root-only parity move/unlock nudges
 #   - Root-only threat-space nudge (immediate-win count after move)
 #
+# https://www.kaggleusercontent.com/episodes/#.json
 # No Numba.
 
 def N_step_lookahead_bitboard(obs, config):
+
     import time
     import random
 
+    def bit_at(c, r):
+        return 1 << (c * STRIDE + r)
+
     # ------------------------------ config ---------------------------------
-    N_STEPS = 9
-    DEBUG = True
+    
+    N_STEPS = 7
+    DEBUG = False
     OPENING_BOOK = True
+    WIN2_CHECK = True
+    DOUBLE_THREAT_GUARD = True   # after my move, opponent has >=2 win-in-1 moves 
+    FORK_REPLY_GUARD    = True   # after my move, opponent has a reply that creates >=2 win-in-1 threats
+
     # ----------------------------------------------------------------------
 
     # --------- global cache (precompute once across calls in same process) -
@@ -28,26 +38,26 @@ def N_step_lookahead_bitboard(obs, config):
         CENTER_COL = 3
         CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
-        # label: bbLA-7 (OB-True D1.4 FN0.225 FF0.09 C7 PB1.0 V1.1 V3R50 T0.25 PM0.2 PU0.1 TS0.6)
+        # sudmission label: bbLA-7 (w2-10) (D1.55 FN0.25 FF0.125 C3 PB0.75 V0.8 T75 PM0.5 PU0.25 TS9)
 
         # Heuristic weights
-        W2, W3, W4 = 1.0, 1000.0, 100000.0
+        W2, W3, W4 = 10.0, 1000.0, 100000.0
         WARR = (0.0, 0.0, W2, W3, W4)
 
         MATE_SCORE    = W4 * 1000.0
         IMMEDIATE_W   = W4
         FORK_W        = W4
-        DEFENSIVE     = 1.4
-        FLOATING_NEAR = 0.225
-        FLOATING_FAR  = 0.09
-        CENTER_BONUS  = 7.0
-        PARITY_BONUS  = 1.0  # only enabled if center-bottom is occupied
-        VERT_MUL = 1.1
-        VERT_3_READY_BONUS = 0.0
-        TEMPO_W = 0.25
-        PARITY_MOVE_W = 0.2
-        PARITY_UNLOCK_W = 0.1
-        THREATSPACE_W = 0.5
+        DEFENSIVE     = 1.55        # 1.55 by optimizer
+        FLOATING_NEAR = 0.25        # 0.25
+        FLOATING_FAR  = 0.125       #  0.125
+        CENTER_BONUS  = 3.0         # 3
+        PARITY_BONUS  = 0.75        # 0,75; only enabled if center-bottom is occupied
+        VERT_MUL = 0.8              #0.875
+        VERT_3_READY_BONUS = 0.0    # 0, keep 0
+        TEMPO_W = 75                #75
+        PARITY_MOVE_W = 0.5         # 0.5
+        PARITY_UNLOCK_W = 0.25      # 0.25
+        THREATSPACE_W = 9           # 8.75 
 
         # Column masks
         COL_MASK = [0] * COLS
@@ -79,9 +89,6 @@ def N_step_lookahead_bitboard(obs, config):
                     ODD_MASK |= b
                 else:
                     EVEN_MASK |= b
-
-        def bit_at(c, r):
-            return 1 << (c * STRIDE + r)
 
         # Precompute all windows (69)
         # WIN_KIND: 0=horiz, 1=vert, 2=diag up-right, 3=diag up-left
@@ -172,11 +179,8 @@ def N_step_lookahead_bitboard(obs, config):
     PARITY_UNLOCK_W = _CACHE["PARITY_UNLOCK_W"]
     THREATSPACE_W = _CACHE["THREATSPACE_W"]
 
-    # Ensure bit_at exists on every call (cache path must not break it).
-    def bit_at(c, r):
-        return 1 << (c * STRIDE + r)
-
     # -------------------------- time budget --------------------------------
+    
     DEADLINE = time.perf_counter() + 2 - 0.05
 
     # -------------------------- obs access ---------------------------------
@@ -210,7 +214,7 @@ def N_step_lookahead_bitboard(obs, config):
     b_d1 = 1 << (CENTER_COL * STRIDE + 0)
     parity_enabled = (mask & b_d1) != 0
     if parity_enabled:
-        role_first_mark = 1 if (pos1 & b_d1) != 0 else 2  # 1 or 2 in Kaggle marks
+        role_first_mark = 1 if (pos1 & b_d1) != 0 else 2
         root_pos_is_first = (MARK == role_first_mark)
     else:
         root_pos_is_first = False
@@ -226,46 +230,37 @@ def N_step_lookahead_bitboard(obs, config):
         b_f1 = 1 << (5 * STRIDE + 0)
         b_g1 = 1 << (6 * STRIDE + 0)
 
-        # P1: ply 0 -> play D1
         if stones == 0 and MARK == 1:
             return CENTER_COL
 
-        # P2: ply 1 -> if P1 played D1, reply C1 or E1
         if stones == 1 and MARK == 2:
             if mask & b_d1:
-                return random.choice([2, 4])  # C1/E1
+                return random.choice([2, 4])
 
-        # P1: ply 2 -> responses after 1.d1 + (P2 reply)
         if stones == 2 and MARK == 1:
             if mask & b_d1:
-                # If P2 stacked center: 1.d1 d2 -> P1 should play d3
                 if mask & b_d2:
                     if (mask & TOP_MASK[CENTER_COL]) == 0:
-                        return CENTER_COL  # D3
+                        return CENTER_COL
 
-                # If P2 replied C1/E1: answer with far-side mirror
                 if mask & b_c1:
-                    return 5  # F1
+                    return 5
                 if mask & b_e1:
-                    return 1  # B1
+                    return 1
 
-                # Corner replies: vs A1 -> E1, vs G1 -> C1
                 if mask & b_a1:
-                    return 4  # E1
+                    return 4
                 if mask & b_g1:
-                    return 2  # C1
+                    return 2
 
-                # B1/F1 replies: mirror it
                 if mask & b_b1:
-                    return 5  # F1
+                    return 5
                 if mask & b_f1:
-                    return 1  # B1
+                    return 1
 
-                # Fallback: if center is still legal, take it (D2)
                 if (mask & TOP_MASK[CENTER_COL]) == 0:
                     return CENTER_COL
 
-        # P2: ply 3 -> if P1 played d3 in stacked-center line, reply d4
         if stones == 3 and MARK == 2:
             if (mask & b_d1) and (mask & b_d2) and (mask & b_d3):
                 if (mask & TOP_MASK[CENTER_COL]) == 0:
@@ -307,6 +302,69 @@ def N_step_lookahead_bitboard(obs, config):
                 cnt += 1
         return cnt
 
+    # Early-exit variants (faster in the fork-guard loops)
+    def has_any_immediate_win(pos_, mask_):
+        for c in CENTER_ORDER:
+            if can_play(mask_, c) and is_winning_move(pos_, mask_, c):
+                return True
+        return False
+
+    def has_two_immediate_wins(pos_, mask_):
+        cnt = 0
+        for c in CENTER_ORDER:
+            if can_play(mask_, c) and is_winning_move(pos_, mask_, c):
+                cnt += 1
+                if cnt >= 2:
+                    return True
+        return False
+
+    def opp_immediate_wins_after_my_move(pos_, mask_, c):
+        """After I play column c, how many immediate wins does opponent have on their turn?"""
+        mv = play_bit(mask_, c)
+        nm = mask_ | mv
+        my_after = pos_ | mv
+        if has_won(my_after):
+            return 0
+        opp_after = nm ^ my_after
+        return count_immediate_wins(opp_after, nm)
+
+    def opp_can_reply_create_double_threat(pos_, mask_, c):
+        """
+        2-ply tactical guard:
+        After I play c, does opponent have a reply oc such that after oc,
+        opponent has >=2 immediate wins on the next turn (fork),
+        AND I do not have an immediate win right after oc?
+        """
+        mv = play_bit(mask_, c)
+        nm = mask_ | mv
+        my_after = pos_ | mv
+        if has_won(my_after):
+            return False
+
+        opp_pos = nm ^ my_after  # opponent stones after my move (before their reply)
+
+        for oc in CENTER_ORDER:
+            if not can_play(nm, oc):
+                continue
+
+            mv2 = play_bit(nm, oc)
+            nm2 = nm | mv2
+            opp_after = opp_pos | mv2
+
+            # If their reply wins immediately, then c is losing anyway.
+            if has_won(opp_after):
+                return True
+
+            # If we can win immediately now, their fork attempt is irrelevant (they won't choose it).
+            if has_any_immediate_win(my_after, nm2):
+                continue
+
+            # Fork: opponent threatens two different win-in-1 moves next.
+            if has_two_immediate_wins(opp_after, nm2):
+                return True
+
+        return False
+
     def is_immediate_blunder(pos_, mask_, c):
         mv = play_bit(mask_, c)
         nm = mask_ | mv
@@ -333,15 +391,22 @@ def N_step_lookahead_bitboard(obs, config):
                 return True
         return False
 
-    # --- NEW: true win-in-2 forcing check (root tactical pre-pass) ---
+    # true win-in-2 forcing check (root tactical pre-pass) ---
     def is_forced_win_in_2(pos_, mask_, c):
-        # After playing c, for every opponent reply, we have a win-in-1.
         mv = play_bit(mask_, c)
         nm = mask_ | mv
         my_after = pos_ | mv
         opp_after = nm ^ my_after
 
-        # If opponent already has a win-in-1 immediately, this is not a clean forced win-in-2.
+        my_imm = count_immediate_wins(my_after, nm)
+        if my_imm < 2:
+            replies = 0
+            for oc in CENTER_ORDER:
+                if can_play(nm, oc):
+                    replies += 1
+                    if replies >= 2:
+                        return False
+
         if count_immediate_wins(opp_after, nm) != 0:
             return False
 
@@ -354,7 +419,6 @@ def N_step_lookahead_bitboard(obs, config):
             mv2 = play_bit(nm, oc)
             nm2 = nm | mv2
 
-            # Do we have a win-in-1 now?
             win1 = False
             for cc in CENTER_ORDER:
                 if can_play(nm2, cc) and is_winning_move(my_after, nm2, cc):
@@ -384,7 +448,6 @@ def N_step_lookahead_bitboard(obs, config):
             if (p + o) < 2:
                 continue
 
-            # --- FLOATING FIX: per-empty multiplicative penalty ---
             mul = 1.0
             ready_vertical3 = False
 
@@ -404,11 +467,9 @@ def N_step_lookahead_bitboard(obs, config):
                         elif dh >= 2:
                             mul *= FLOATING_FAR
                         else:
-                            # dh == 0 => playable now
                             if kind == 1 and p == 3 and o == 0:
                                 ready_vertical3 = True
 
-            # Vertical windows are more forcing
             if WIN_KIND[idx] == 1:
                 mul *= VERT_MUL
 
@@ -430,8 +491,6 @@ def N_step_lookahead_bitboard(obs, config):
 
         score += CENTER_BONUS * ((me & CENTER_MASK).bit_count() - (opp & CENTER_MASK).bit_count())
 
-        # Parity preference (enabled only if D1 occupied).
-        # Convention: pos_ is "player to move" stones in negamax.
         if parity_enabled:
             pos_is_first = root_pos_is_first if (ply & 1) == 0 else (not root_pos_is_first)
             if pos_is_first:
@@ -443,7 +502,6 @@ def N_step_lookahead_bitboard(obs, config):
                     (me & EVEN_MASK).bit_count() - DEFENSIVE * (opp & ODD_MASK).bit_count()
                 )
 
-        # Tempo / zugzwang proxy: safe-move mobility
         if TEMPO_W:
             my_safe = count_safe_moves(me, mask_)
             opp_safe = count_safe_moves(opp, mask_)
@@ -480,10 +538,22 @@ def N_step_lookahead_bitboard(obs, config):
     if non_handover:
         legal = non_handover
 
-    # --- NEW: win-in-2 forcing (hanging threat forcing) ---
-    for c in legal:
-        if is_forced_win_in_2(pos, mask, c):
-            return c
+    # Root guards (cheap + helps before search even starts)
+    if DOUBLE_THREAT_GUARD:
+        guarded = [c for c in legal if opp_immediate_wins_after_my_move(pos, mask, c) < 2]
+        if guarded:
+            legal = guarded
+
+    if FORK_REPLY_GUARD:
+        guarded = [c for c in legal if not opp_can_reply_create_double_threat(pos, mask, c)]
+        if guarded:
+            legal = guarded
+
+    # win-in-2 forcing (root tactical pre-pass)
+    if WIN2_CHECK:
+        for c in legal:
+            if is_forced_win_in_2(pos, mask, c):
+                return c
 
     # ----------------- TT, killers, history & ordering ---------------------
     TT = {}
@@ -540,10 +610,9 @@ def N_step_lookahead_bitboard(obs, config):
     node_counter = [0]
     TIME_CHECK_MASK = 0x3FF
 
-    # Root-only parity preferences (used as nudges at ply==0)
     if parity_enabled:
         root_is_first = bool(root_pos_is_first)
-        pref_parity_root = 0 if root_is_first else 1  # 0=>odd rows (r%2==0), 1=>even rows (r%2==1)
+        pref_parity_root = 0 if root_is_first else 1
         pref_parity_opp  = 1 if root_is_first else 0
     else:
         pref_parity_root = 0
@@ -579,6 +648,17 @@ def N_step_lookahead_bitboard(obs, config):
         safe = [c for c in moves if not is_immediate_blunder(pos_, mask_, c)]
         use_moves = safe if safe else moves
 
+        # Hard tactical filtering (keep at all plies; it prunes losing lines fast)
+        if DOUBLE_THREAT_GUARD:
+            guarded = [c for c in use_moves if opp_immediate_wins_after_my_move(pos_, mask_, c) < 2]
+            if guarded:
+                use_moves = guarded
+
+        if FORK_REPLY_GUARD:
+            guarded = [c for c in use_moves if not opp_can_reply_create_double_threat(pos_, mask_, c)]
+            if guarded:
+                use_moves = guarded
+
         # Root-only: precompute heights once (for parity move/unlock)
         if ply == 0 and parity_enabled:
             H0 = heights(mask_)
@@ -590,13 +670,13 @@ def N_step_lookahead_bitboard(obs, config):
             nm = mask_ | mv
             my_after = pos_ | mv
             opp_after = nm ^ my_after
-            next_pos = opp_after  # opponent to move in negamax convention
+            next_pos = opp_after
 
-            # Root-only nudges (cheap biases, do NOT replace search)
+            # Root-only nudges
             bias = 0.0
             if ply == 0:
                 if parity_enabled and H0 is not None:
-                    r = H0[c]  # landing row (0..5)
+                    r = H0[c]
                     if (r & 1) == pref_parity_root:
                         bias += PARITY_MOVE_W
                     else:
@@ -641,9 +721,6 @@ def N_step_lookahead_bitboard(obs, config):
 
     depth = 0
     for depth in range(1, N_STEPS + 1):
-        if time.perf_counter() > DEADLINE:
-            break
-
         node_counter[0] = 0
         alpha = max(-MATE_SCORE, best_val - ASP_INIT)
         beta  = min( MATE_SCORE, best_val + ASP_INIT)
@@ -661,8 +738,14 @@ def N_step_lookahead_bitboard(obs, config):
             best_move = mv
             best_val = v
 
+        if time.perf_counter() >= DEADLINE:
+            if DEBUG:
+                print("----- OVER TIME: stopping early -----")
+            break
+
     if DEBUG:
         print("DEBUG depth_end best_move", best_move, "best_val", best_val)
-        print("Depth reached", depth, "time remaining", DEADLINE - time.perf_counter())
+        tr = DEADLINE - time.perf_counter()
+        print("Depth reached", depth, "time remaining", tr, "OVER", tr < 0)
 
     return int(best_move)

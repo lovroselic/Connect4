@@ -30,11 +30,131 @@ import random
 import numpy as np
 import pandas as pd
 
+
 from C4.connect4_env import Connect4Env
 from C4.fast_connect4_lookahead import Connect4Lookahead
+import torch
+from PPO.actor_critic import ActorCritic
 
 
 # --------------------------- Row / DF helpers ---------------------------
+
+def _is_ppo_path(x: Any) -> bool:
+    return isinstance(x, str) and x.strip().lower().endswith(".pt") and (not _is_random_spec(x))
+
+
+# --- PPO support (lazy import so pure-LA notebooks still work) ---
+_PPO_CACHE: Dict[str, Any] = {}
+
+def _env_board_to_pov_robust(board: np.ndarray, player_to_move: int) -> np.ndarray:
+    """
+    Robust env board -> 1ch POV board in {-1,0,+1}.
+    Supports env boards in {0,1,2} or {-1,0,+1}.
+    """
+    b = np.asarray(board, dtype=np.int8)
+
+    # Already looks like {-1,0,+1}
+    if b.min() >= -1 and b.max() <= 1 and np.any(b < 0):
+        # player_to_move: 1 => keep, 2 => flip
+        sign = 1 if int(player_to_move) == 1 else -1
+        return (b * sign).astype(np.int8)
+
+    # Assume {0,1,2}
+    p = int(player_to_move)
+    me, opp = (1, 2) if p == 1 else (2, 1)
+
+    pov = np.zeros_like(b, dtype=np.int8)
+    pov[b == me] = 1
+    pov[b == opp] = -1
+    return pov
+
+
+def load_ppo_actor_critic(path: str, device=None):
+    """
+    Loads ActorCritic from a .pt checkpoint.
+    Supports:
+      1) CNet192 checkpoint with {'model_state_dict','cfg'} via ActorCritic.from_cnet192_checkpoint
+      2) raw state_dict / dict{'state_dict': ...}
+    Cached by path.
+    """
+    path = str(path)
+    if path in _PPO_CACHE:
+        return _PPO_CACHE[path]
+
+    
+
+    dev = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+    ckpt = torch.load(path, map_location=dev, weights_only=True)
+
+    # Format 1: CNet192 checkpoint
+    if isinstance(ckpt, dict) and ("model_state_dict" in ckpt) and ("cfg" in ckpt):
+        ac = ActorCritic.from_cnet192_checkpoint(path=path, device=dev)
+        ac.eval()
+        _PPO_CACHE[path] = ac
+        return ac
+
+    # Format 2: state_dict
+    ac = ActorCritic().to(dev)
+
+    if isinstance(ckpt, dict) and "state_dict" in ckpt:
+        state = ckpt["state_dict"]
+    else:
+        state = ckpt
+
+    ac.load_state_dict(state, strict=False)
+    ac.eval()
+    _PPO_CACHE[path] = ac
+    return ac
+
+
+def ppo_probs_and_action(
+    ac,
+    env_board: np.ndarray,
+    player_to_move: int,
+    legal_actions: List[int],
+    *,
+    temperature: float = 1.0,
+    action_mode: str = "sample",
+) -> Tuple[int, np.ndarray]:
+    """
+    Return (action, probs[7]) for PPO policy, masked to legal actions.
+    """
+
+
+    NEG_INF = -1e9
+
+    pov = _env_board_to_pov_robust(env_board, player_to_move)
+
+    dev = next(ac.parameters()).device
+    x = torch.as_tensor(pov, dtype=torch.float32, device=dev)
+
+    logits, _ = ac.forward(x)
+    if logits.dim() == 1:
+        logits = logits.unsqueeze(0)
+
+    mask = torch.zeros_like(logits, dtype=torch.bool)
+    mask[0, legal_actions] = True
+
+    T = max(float(temperature), 1e-6)
+    masked_logits = logits.masked_fill(~mask, NEG_INF) / T
+    probs_t = torch.softmax(masked_logits, dim=-1)[0]
+    probs = probs_t.detach().cpu().numpy().astype(np.float64, copy=False)
+
+    if action_mode.lower() == "argmax":
+        a = int(np.argmax(probs))
+    else:
+        # sample
+        r = random.random()
+        c = 0.0
+        a = int(np.argmax(probs))
+        for i, p in enumerate(probs):
+            c += float(p)
+            if r <= c:
+                a = int(i)
+                break
+
+    return a, probs
+
 
 def _is_random_spec(x: Any) -> bool:
     if isinstance(x, str):
@@ -69,11 +189,16 @@ def choose_move_mixed(
     rng: random.Random,
     teacher_mode: str = "scores",
     return_policy_probs: bool = False,
+    *,
+    ppo_model=None,
+    ppo_temperature: float = 1.0,
+    ppo_action: str = "sample",
 ) -> Tuple[int, Optional[np.ndarray]]:
     """
     spec:
       - int depth => lookahead teacher (optionally noisy)
       - "R"/"Random" => uniform random legal move
+      - "....pt" => PPO model checkpoint (ActorCritic)
 
     Returns:
       action, teacher_probs (optional)
@@ -82,7 +207,6 @@ def choose_move_mixed(
     if _is_random_spec(spec):
         legal_cols = _legal_cols_from_board_toprow(env.board)
         if len(legal_cols) == 0:
-            # defensive fallback
             a = 3
             probs = None
         else:
@@ -90,7 +214,25 @@ def choose_move_mixed(
             probs = _uniform_legal_probs(legal_cols) if return_policy_probs else None
         return a, probs
 
-    # --- Lookahead agent (your existing logic) ---
+    # --- PPO agent ---
+    if _is_ppo_path(spec):
+        ac = ppo_model or load_ppo_actor_critic(str(spec))
+        legal_cols = _legal_cols_from_board_toprow(env.board)
+        legal = [int(c) for c in legal_cols.tolist()]
+        if len(legal) == 0:
+            return 3, (np.zeros(7, dtype=np.float64) if return_policy_probs else None)
+
+        a, probs = ppo_probs_and_action(
+            ac,
+            env.board,
+            int(env.current_player),
+            legal,
+            temperature=float(ppo_temperature),
+            action_mode=str(ppo_action),
+        )
+        return int(a), (probs if return_policy_probs else None)
+
+    # --- Lookahead agent ---
     depth = int(spec)
     a, probs = choose_move_noisy(
         env, la, depth=depth,
@@ -100,6 +242,7 @@ def choose_move_mixed(
     if not return_policy_probs:
         probs = None
     return int(a), probs
+
 
 
 def _board_to_cells(board: np.ndarray) -> Dict[str, int]:
@@ -336,13 +479,15 @@ def _play_one_game_rows(
     """
     CFG = CFG or {}
     rng = random.Random(seed)
+    
+    
 
     noiseA = float(CFG.get("noiseA", 0.0))
     noiseB = float(CFG.get("noiseB", 0.0))
     forceLoss = float(CFG.get("forceLoss", 0.0))
 
     teacher_mode = str(CFG.get("teacher_mode", "scores")).lower()
-    state_mode = str(CFG.get("state_mode", "after")).lower()
+    state_mode = str(CFG.get("state_mode", "before")).lower()
 
     store_action = bool(CFG.get("store_action", True))
     store_player = bool(CFG.get("store_player", True))
@@ -351,6 +496,10 @@ def _play_one_game_rows(
 
     env = Connect4Env()
     la = Connect4Lookahead()
+    
+    acA = load_ppo_actor_critic(lookA) if _is_ppo_path(lookA) else None
+    acB = load_ppo_actor_critic(lookB) if _is_ppo_path(lookB) else None
+
 
     # diversity overrides (your existing knobs)
     #la.C4_CENTER_BONUS = 7.5           # 5-10+
@@ -362,6 +511,12 @@ def _play_one_game_rows(
     #env.STEP_PENALTY = 0.5               # 0 - 2
 
     _ = env.reset()
+    
+    if acA is not None:
+        acA.begin_episode()
+    if acB is not None:
+        acB.begin_episode()
+
 
     rows: List[Dict[str, Any]] = []
     ply = 0
@@ -381,6 +536,10 @@ def _play_one_game_rows(
             board_before = np.array(env.board, copy=True)
 
         # Choose action. If Random turn, we do not request policy probs at all.
+        ppo_T = float(CFG.get("ppo_temperature", 1.0))
+        ppo_mode = str(CFG.get("ppo_action", "sample")).lower()
+
+
         action, teacher_probs = choose_move_mixed(
             env,
             la,
@@ -390,7 +549,11 @@ def _play_one_game_rows(
             rng=rng,
             teacher_mode=teacher_mode,
             return_policy_probs=(store_probs and (not is_random_turn)),
+            ppo_model=(acA if player == 1 else acB),
+            ppo_temperature=ppo_T,
+            ppo_action=ppo_mode,
         )
+
 
         step_out = env.step(int(action))
         if isinstance(step_out, (tuple, list)):
@@ -463,9 +626,9 @@ def generate_dataset(
         games = int(spec.get("games", 1))
 
         # normalize A/B: keep "R" as-is, cast others to int
-        if not _is_random_spec(lookA):
+        if (not _is_random_spec(lookA)) and (not _is_ppo_path(lookA)):
             lookA = int(lookA)
-        if not _is_random_spec(lookB):
+        if (not _is_random_spec(lookB)) and (not _is_ppo_path(lookB)):
             lookB = int(lookB)
 
         for g in range(games):
