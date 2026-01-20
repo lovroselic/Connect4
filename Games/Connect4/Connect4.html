@@ -37,10 +37,14 @@
                     one. But it beats Random player all the time. What a surprise.</p>
                 <p><span class="fw-bold">Smarty:</span> 5-step lookahead algorithm. This feels like a real human (if
                     slightly drunk)
-                    opponent. It beats Silly in 60% of cases, the rest were mostly ties.</p>
-                <p><span class="fw-bold">Prophet:</span> 7-step lookahead algorithm. It's the maximum javascript can
-                    take before blocking the thread. It takes 0.5-1.5 seconds to calculate the move in the early stage
-                    of the match. It beats Smarty and Silly in 100% of cases. She is a nasty player.</p>
+                    opponent. It beats Silly in 60% of cases.</p>
+                <p><span class="fw-bold">Prophet:</span> 7-step lookahead algorithm. It beats Smarty and Silly in 100%
+                    of cases. She is a nasty player.</p>
+                <p><span class="fw-bold">Goddess:</span> 9-step lookahead algorithm. She has Prophet for breakfast.</p>
+                <p><span class="fw-bold">Bitch:</span> 11-step lookahead algorithm. She nevers loses against Goddess,
+                    but it will tie if playing second.</p>
+                <p>Bit-board optimization would allow to use 13 or 15 step lookahead before blocking the JS thread, but
+                    I run out of names ...</p>
 
                 <hr class="crimson-hr">
 
@@ -130,20 +134,18 @@
                     About:
                 </legend>
                 <div class="row">
-                    <div class="col-12 col-lg-3 my-2 d-flex align-items-center justify-content-center">
-                        <image src="" alt="" class="img-fluid  border-dark rounded-2" title="">
-                        </image>
-                    </div>
-                    <div class="col-12 col-lg-6 my-2">
+
+                    <div class="col-12 col-lg-12 my-2">
                         <p>The game was written as a break from working on 'Haunting the Hauntessa', using my Python <a
                                 href="https://www.kaggle.com/code/lovroselic/connectx-ls" target="_blank">submission to
                                 Kaggle competition</a> as the source. One day, I will find the time to implement also
                             reinforced learning agent ... hopefully.</p>
+                        <p>Bit-board idea taken from <a
+                                href="http://blog.gamesolver.org/solving-connect-four/06-bitboard/"
+                                target="_blank">Pascal Pons</a>. You should check it, I use 49 bits (yes bits) to
+                            represent the board.</p>
                     </div>
-                    <div class="col-12 col-lg-3 my-2 d-flex align-items-center justify-content-center">
-                        <image src="" alt="" class="img-fluid  border-dark rounded-2" title="">
-                        </image>
-                    </div>
+
                 </div>
             </fieldset>
         </div>
@@ -171,5 +173,6 @@
     <script src="/Code/JS/Library/Engine/SUBTITLE_1_00.js" type="text/javascript"></script>
     <script src="/Assets/Definitions/Connect4/assets_connect4.js" type="text/javascript"></script>
     <script src="/Games/Connect4/Connect4_class_extensions.js" type="text/javascript"></script>
+    <script src="/Games/Connect4/Connect4Lookahead.js" type="text/javascript"></script>
     <script src="/Games/Connect4/Connect4.js" type="text/javascript"></script>
 </body>

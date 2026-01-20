@@ -49,22 +49,27 @@ const INI = {
     LEFT_X: -1,
     RADIUS_FACTOR: 0.4,
     RADIUS: null,
-    OVER_TURN: 6 * 7 + 1,
-    MIN_END_TURN: 4 + 3,
     INROW2: 1,
-    INROW3: 200, //
+    INROW3: 100,
     INROW4: 10000,
-    IMMEDIATE_WIN: 500,
-    FORK_BONUS: 150,
-    DEFENSIVE_FACTOR: 1.5,
-    FLOATING_NEAR: 0.750, //0.50
-    FLOATING_FAR: 0.50, //0.25
+    OVER_TURN: 43,
 };
 
+const LOOKAHEAD = new Connect4LookaheadJS(
+    { 2: 10.0, 3: 1000.0, 4: 100000.0 },
+    {
+        DOUBLE_THREAT_GUARD: true,
+        FORK_REPLY_GUARD: true,
+        WIN2_CHECK: true,
+        OPENING_BOOK: true,
+        OPENING_RANDOM: true,
+    }
+);
+
 const PRG = {
-    VERSION: "1.3.16",
+    VERSION: "1.4.0",
     NAME: "Connect-4",
-    YEAR: "2025",
+    YEAR: "2025, 2026",
     SG: null,
     CSS: "color: #239AFF;",
     INIT() {
@@ -511,13 +516,19 @@ const AGENT = {
         return legal_moves.chooseRandom();
     },
     Silly(playerIndex) {
-        return AGENT_MANAGER.N_step_lookahead(playerIndex, 3);
+        return LOOKAHEAD.n_step_lookahead(GAME.map, playerIndex, 3);
     },
     Smarty(playerIndex) {
-        return AGENT_MANAGER.N_step_lookahead(playerIndex, 5);
+        return LOOKAHEAD.n_step_lookahead(GAME.map, playerIndex, 5);
     },
     Prophet(playerIndex) {
-        return AGENT_MANAGER.N_step_lookahead(playerIndex, 7);
+        return LOOKAHEAD.n_step_lookahead(GAME.map, playerIndex, 7);
+    },
+    Goddess(playerIndex) {
+        return LOOKAHEAD.n_step_lookahead(GAME.map, playerIndex, 9);
+    },
+    Bitch(playerIndex) {
+        return LOOKAHEAD.n_step_lookahead(GAME.map, playerIndex, 11);
     }
 };
 
@@ -548,36 +559,6 @@ const AGENT_MANAGER = {
     getDestination(move) {
         return this.getEmptyRow(GAME.map, move);
     },
-    N_step_lookahead(playerIndex, N) {
-        let moves = this.getLegalCentreOrderedMoves();
-
-        // if we can win now, do it
-        for (const c of moves) {
-            const leaf = this.dropPiece(GAME.map, c, playerIndex);
-            if (this.hasFour(leaf, playerIndex)) return c;
-        }
-
-        // if opponent has a win-in-1, block it (same column)
-        const opp = (playerIndex % 2) + 1;
-        for (const c of moves) {
-            const leaf = this.dropPiece(GAME.map, c, opp);
-            if (this.hasFour(leaf, opp)) return c;
-        }
-
-        const scores = {};
-        for (const move of moves) {
-            scores[move] = this.scoreMove(GAME.map, move, playerIndex, N);
-        }
-        const maxScore = Math.max(...Object.values(scores));
-        const bestMoves = Object.entries(scores)
-            .filter(([_, score]) => score === maxScore)
-            .map(([move]) => parseInt(move));
-
-        const innermost = this.innermost(bestMoves);
-        const selectedMove = innermost.chooseRandom();
-
-        return selectedMove;
-    },
     scoreMove(grid, move, playerIndex, N) {
         const nextGrid_GA = this.dropPiece(grid, move, playerIndex);
         return this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity);
@@ -589,118 +570,14 @@ const AGENT_MANAGER = {
         if (DEBUG.drawToConsole) BOARD.printBoardToConsole(nextGrid);
         return nextGrid;
     },
-    minimax(GA, depth, maximizingPlayer, playerIndex, A, B) {
-        if (depth === 0 || this.isTerminalNode(GA)) {
-            return this.getHeuristic(playerIndex, GA); // signature preserved
-        }
-        const validMoves = this.getLegalCentreOrderedMoves(GA);
-
-        if (maximizingPlayer) {
-            let value = -Infinity;
-            for (const col of validMoves) {
-                const childGA = this.dropPiece(GA, col, playerIndex);
-                const newValue = this.minimax(childGA, depth - 1, false, playerIndex, A, B);
-                value = Math.max(value, newValue);
-                if (value >= B) break;
-                A = Math.max(A, value);
-            }
-            return value;
-        } else {
-            let value = Infinity;
-            const opponent = (playerIndex % 2) + 1;
-            for (const col of validMoves) {
-                const childGA = this.dropPiece(GA, col, opponent);
-                const newValue = this.minimax(childGA, depth - 1, true, playerIndex, A, B);
-                value = Math.min(value, newValue);
-                if (value <= A) break;
-                B = Math.min(B, value);
-            }
-            return value;
-        }
-    },
-    // gravity-aware heuristic with soft discount for floating windows (no gravity support)
-    getHeuristic(playerIndex, currentBoard) {
-        const GA = currentBoard;
-        const DEF = INI.DEFENSIVE_FACTOR;
-        const NEAR = INI.FLOATING_NEAR;
-        const FAR = INI.FLOATING_FAR;
-        const opp = (playerIndex % 2) + 1;
-
-        const w = [0.0, 0.0, Number(INI.INROW2), Number(INI.INROW3), Number(INI.INROW4)];
-
-        // column heights (bottom-based y: 0..5). Fast and enough for 7x6.
-        const heights = new Array(7);
-        for (let x = 0; x < 7; x++) {
-            let h = 0;
-            while (h < 6 && BOARD._val(GA, x, h) !== 0) h++;
-            heights[x] = h; // number of filled cells in column x
-        }
-
-        let score = 0.0;
-
-        for (const win of BOARD._ALL_WINDOWS) {
-            let p = 0, o = 0;
-            let need = 0; // total fillers required across empties to make all playable
-
-            for (let k = 0; k < 4; k++) {
-                const x = win[k][0], y = win[k][1];
-                const v = BOARD._val(GA, x, y);
-
-                if (v === 0) {
-                    // if y>0, cell is playable only if y-1 < heights[x]
-                    if (y > 0) {
-                        const deficit = y - heights[x];         // how many tokens must be dropped first
-                        if (deficit > 0) need += deficit;
-                    }
-                } else if (v === playerIndex) {
-                    p++;
-                } else if (v === opp) o++;
-            }
-
-            if ((p + o) < 2) continue;
-            const mul = (need === 0) ? 1.0 : (need === 1 ? NEAR : FAR);
-
-            if (o === 0) {
-                score += mul * w[p];                // pure-us window
-            } else if (p === 0) {
-                score -= mul * DEF * w[o];          // pure-them window
-            }
-        }
-
-        // Immediate wins & forks (exact via simulated drops)
-        const myImm = this.countImmediateWins(GA, playerIndex).length;
-        const oppImm = this.countImmediateWins(GA, opp).length;
-
-        score += INI.IMMEDIATE_WIN * (myImm - DEF * oppImm);
-        if (myImm >= 2) score += INI.FORK_BONUS * (myImm - 1);
-        if (oppImm >= 2) score -= DEF * (INI.FORK_BONUS * (oppImm - 1));
-
-        return Math.ceil(score);
+    getHeuristic(playerIndex, board) {
+        return LOOKAHEAD.get_heuristic(board, playerIndex);
     },
     hasFour(board, playerIndex) {
-        for (const win of BOARD._ALL_WINDOWS) {
-            let ok = true;
-            for (let k = 0; k < 4; k++) {
-                const [x, y] = win[k];
-                if (BOARD._val(board, x, y) !== playerIndex) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (ok) return true;
-        }
-        return false;
+        return LOOKAHEAD.has_four(board, playerIndex);
     },
     countImmediateWins(board, playerIndex) {
-        const wins = [];
-        const legalColumns = this.getLegalMoves(board);
-        for (let column of legalColumns) {
-            const leaf_board = this.dropPiece(board, column, playerIndex);
-            if (this.hasFour(leaf_board, playerIndex)) {
-                wins.push(column);
-            }
-        }
-        return wins;
+        return LOOKAHEAD.count_immediate_wins(board, playerIndex);
     },
     isTerminalNode(GA) {
         if (this.hasFour(GA, 1) || this.hasFour(GA, 2)) return true;
@@ -771,8 +648,12 @@ const TURN_MANAGER = {
         blue: null,
     },
     score: {
-        red: null,
-        blue: null,
+        red: 0,
+        blue: 0,
+    },
+    heuristic_score: {
+        red: 0,
+        blue: 0,
     },
     mode: 1,                        //game (default)
     token: null,
@@ -868,7 +749,7 @@ const TURN_MANAGER = {
             this.switchPlayer();
         } else {
             this.turn++;
-            if (this.turn === INI.OVER_TURN) {
+            if (this.turn >= INI.OVER_TURN) {
                 this.winner = "Tie";
                 GAME.completed = true;
                 return;
@@ -904,15 +785,19 @@ const TURN_MANAGER = {
         GAME.map.setToken(destination, player);
         BOARD.drawContent();
 
-        // win check (window-based)
-        const pid = this.playerPieces[player];                // 1 or 2
-        const winIdx = BOARD.findFourIndices(GAME.map, pid);  // [] or [indices...]
-        if (winIdx.length) return this.gameCompleted(winIdx, player);
+        // win check (bitboard via LOOKAHEAD)
+        const pid = this.playerPieces[player]; // 1 or 2
+        if (LOOKAHEAD.has_four(GAME.map, pid)) {
+            // still need indices for strike drawing
+            const winIdx = BOARD.findFourIndices(GAME.map, pid);
+            return this.gameCompleted(winIdx, player);
+        }
 
         // score (pure 2- and 3-in-a-rows)
-        const inrow2 = BOARD.countPure(GAME.map, pid, 2);
-        const inrow3 = BOARD.countPure(GAME.map, pid, 3);
+        const inrow2 = LOOKAHEAD.count_pure(GAME.map, pid, 2);
+        const inrow3 = LOOKAHEAD.count_pure(GAME.map, pid, 3);
         TURN_MANAGER.score[player] = inrow2 * INI.INROW2 + inrow3 * INI.INROW3;
+        TURN_MANAGER.heuristic_score[player] = LOOKAHEAD.get_heuristic(GAME.map, pid).toFixed(1);
         TITLE.score();
 
         // UI
@@ -1035,7 +920,7 @@ const GAME = {
              
             Music: 'There's No There There' written and performed by LaughingSkull, ${"\u00A9"
             } 2018 Lovro Selič. `;
-        text += "     ENGINE, GRID and GAME code by Lovro Selič using JavaScript. ";
+        text += "     ENGINE, GRID and GAME code by Lovro Selič using JavaScript. The brilliant bit-board idea taken from Pascal Pons.";
         text = text.split("").join(String.fromCharCode(8202));
         return text;
     },
@@ -1302,15 +1187,17 @@ const TITLE = {
         CTX.fillText(`Name: ${TURN_MANAGER.name.red}`, X, y);
         CTX.fillText(`Agent: ${TURN_MANAGER.agent.red}`, X, y + 1.5 * fs);
         CTX.fillText(`Score: ${TURN_MANAGER.score.red}`, X, y + 3 * fs);
+        CTX.fillText(`Heuristic: ${TURN_MANAGER.heuristic_score.red}`, X, y + 4.5 * fs);
 
         //blue
         CTX = LAYER.blue;
         CTX.textAlign = "left";
-        CTX.fillStyle = "blue";
+        CTX.fillStyle = "#0000FF";
         CTX.font = `${fs}px CompSmooth`;
         CTX.fillText(`Name: ${TURN_MANAGER.name.blue}`, X, y);
         CTX.fillText(`Agent: ${TURN_MANAGER.agent.blue}`, X, y + 1.5 * fs);
         CTX.fillText(`Score: ${TURN_MANAGER.score.blue}`, X, y + 3 * fs);
+        CTX.fillText(`Heuristic: ${TURN_MANAGER.heuristic_score.blue}`, X, y + 4.5 * fs);
     },
 };
 
