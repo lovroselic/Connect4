@@ -16,7 +16,7 @@
     <?php include_once $GL_root . $GL_path . '/Games/Connect4/Connect4.html.php';?>
     <?php include_once $GL_root . $GL_path . '/Include/footer.php';?>
 
-    <!-- JS -->
+     <!-- JS -->
     <script src='/Code/JS/Library/Engine/Prototype_5_00.js' type="text/javascript"></script>
     <script src='/Code/JS/Library/Engine/ENGINE_5_00.js' type="text/javascript"></script>
     <script src="/Code/JS/Library/Engine/GRID_4_00.js" type="text/javascript"></script>
@@ -24,6 +24,7 @@
     <script src="/Code/JS/Library/Engine/SUBTITLE_1_00.js" type="text/javascript"></script>
     <script src="/Assets/Definitions/Connect4/assets_connect4.js" type="text/javascript"></script>
     <script src="/Games/Connect4/Connect4_class_extensions.js" type="text/javascript"></script>
+    <script src="/Games/Connect4/Connect4Lookahead.js" type="text/javascript"></script>
     <script src="/Games/Connect4/Connect4.js" type="text/javascript"></script>
 
     <!-- JS END -->
