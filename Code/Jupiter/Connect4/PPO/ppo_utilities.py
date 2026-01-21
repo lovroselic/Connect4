@@ -30,6 +30,32 @@ _ROW_PLANE = np.repeat(_ROW_PLANE, 7, axis=2)  # (1, 6, 7)
 _COL_PLANE = np.linspace(-1.0, 1.0, 7, dtype=np.float32).reshape(1, 1, 7)
 _COL_PLANE = np.repeat(_COL_PLANE, 6, axis=1)  # (1, 6, 7)
 
+
+BASE_PARAMS = {
+    "lr": 3.0e-4,
+    "clip": 0.30,
+    "entropy": 0.020,
+    "epochs": 2,
+    "batch_size": 256,
+    "steps_per_update": 512,
+    "vf_clip": 0.20,
+    "max_grad_norm": 0.5,
+    "target_kl": 0.03,
+    "temperature": 0.92,
+}
+
+DEPRECATED_PARAMS = {
+    "center_start": 0.0,
+    "guard_prob": 0.0,
+    "win_now_prob": 0.0,
+    "guard_ply_min": 5,
+    "guard_ply_max": 13,
+    "distill_coef": 0.0,
+    "mentor_depth": 1,
+    "mentor_prob": 0.0,
+    "mentor_coef": 0.0,
+}
+
 # ------------------------------
 # Encoding helpers
 # ------------------------------
@@ -122,33 +148,24 @@ def _cfg_fallback(cfg: PPOUpdateCfg, names: List[str], default):
 
 def params_for_phase(phase_name: str, cfg) -> dict:
     phase = TRAINING_PHASES[phase_name]
-    p_raw = phase.get("params", {})
+    p_raw = phase.get("params", {}) or {}
 
-    p = {
-        "lr":                   p_raw.get("lr",        3e-4),
-        "clip":                 p_raw.get("clip",      0.20),
-        "entropy":              p_raw.get("entropy",   0.0),
-        "epochs":               p_raw.get("epochs",    4),
-        "batch_size":           p_raw.get("batch_size",      256),
-        "steps_per_update":     p_raw.get("steps_per_update", 512),
-        "vf_clip":              p_raw.get("vf_clip",   0.2),
-        "max_grad_norm":        p_raw.get("max_grad_norm", 0.5),
-        "target_kl":            p_raw.get("target_kl", 0.5),
-        "temperature":          p_raw.get("temperature", 1.0),
-        "vf_coef":              p_raw.get("vf_coef",   0.01),
-        "distill_coef":         p_raw.get("distill_coef",   0.00),
-        "mentor_depth":         p_raw.get("mentor_depth",   1),     
-        "mentor_prob":          p_raw.get("mentor_prob",   0.1),   
-        "mentor_coef":          p_raw.get("mentor_coef",   0.1),   
-    }
+    # Start from your canonical defaults
+    p = dict(BASE_PARAMS)
 
-    # --- pass through heuristic knobs untouched ---
-    for k in ("center_start", "guard_prob", "win_now_prob",
-              "guard_ply_min", "guard_ply_max"):
+    # Allow per-phase overrides (only keys you actually recognize)
+    for k in BASE_PARAMS.keys():
         if k in p_raw:
             p[k] = p_raw[k]
 
+    # Always expose deprecated knobs too (defaulting to "off"),
+    # but allow phase-level overrides if you really want them.
+    for k, v in DEPRECATED_PARAMS.items():
+        p[k] = p_raw.get(k, v)
+
+
     return p
+
 
 
 

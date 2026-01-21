@@ -68,6 +68,7 @@ const ENGINE = {
         MAX_PATH: 999,
         MOUSE_IDLE: 3000,
         OVERLAP_TOLERANCE: 4,
+        PREVENT_KEYBOARD_DEFAULTS: true,
         MAX_JOINTS: 160,                  //don't mess with this, it's hardcoded in fragment shader, both needs to be corrected at the same time, 
     },
     verbose: false,
@@ -1121,7 +1122,7 @@ const ENGINE = {
             const code = e.keyCode || e.which;
             if (code in ENGINE.GAME.keymap) {
                 ENGINE.GAME.keymap[code] = true;
-                e.preventDefault();
+                if (ENGINE.INI.PREVENT_KEYBOARD_DEFAULTS) e.preventDefault();
             }
         },
         clearKey(e) {

@@ -125,8 +125,7 @@ def agent(obs, config):
     grid = np.asarray(flat, dtype=np.int8).reshape(6, 7)
 
     legal = [c for c in range(7) if grid[0, c] == 0]
-    if not legal:
-        return 0
+    if not legal: return 0
 
     stones = int(np.count_nonzero(grid))
     if stones == 0 and _CENTER_COL in legal:
@@ -137,17 +136,17 @@ def agent(obs, config):
     pov[grid == mark] = 1
     pov[(grid != 0) & (grid != mark)] = -1
 
-    # 1) win-now
+    # win-now
     for c in legal:
         if _is_winning_drop(pov, c, +1):
             return int(c)
 
-    # 2) must-block (any opp win-in-1)
+    # must-block (any opp win-in-1)
     blocks = [c for c in legal if _is_winning_drop(pov, c, -1)]
     if blocks:
         return int(sorted(blocks, key=lambda c: (abs(c - _CENTER_COL), c))[0])
 
-    # 5) policy argmax (masked)
+    # policy argmax (masked)
     x = torch.from_numpy(pov.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(_DEVICE)
     with torch.inference_mode():
         logits, _ = model(x)

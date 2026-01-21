@@ -67,7 +67,7 @@ const LOOKAHEAD = new Connect4LookaheadJS(
 );
 
 const PRG = {
-    VERSION: "1.4.3",
+    VERSION: "1.4.4",
     NAME: "Connect-4",
     YEAR: "2025, 2026",
     SG: null,
@@ -133,6 +133,8 @@ const PRG = {
 
         INI.LEFT_X = (ENGINE.gameWIDTH - INI.COLS * ENGINE.INI.GRIDPIX) / 2;
         INI.RADIUS = Math.round(INI.RADIUS_FACTOR * ENGINE.INI.GRIDPIX);
+
+        ENGINE.INI.PREVENT_KEYBOARD_DEFAULTS = false;
 
         /**¸DOM setup */
 
