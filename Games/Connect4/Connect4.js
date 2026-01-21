@@ -67,7 +67,7 @@ const LOOKAHEAD = new Connect4LookaheadJS(
 );
 
 const PRG = {
-    VERSION: "1.4.2",
+    VERSION: "1.4.3",
     NAME: "Connect-4",
     YEAR: "2025, 2026",
     SG: null,
@@ -541,14 +541,6 @@ const AGENT_MANAGER = {
         }
         return legalMoves;
     },
-    getLegalCentreOrderedMoves(map = GAME.map) {
-        const legalMoves = [];
-        for (let c = 0; c < INI.COLS; c++) {
-            let grid = new Grid(TURN_MANAGER.order[c], INI.ROWS - 1);
-            if (map.isZero(grid)) legalMoves.push(TURN_MANAGER.order[c]);
-        }
-        return legalMoves;
-    },
     getEmptyRow(map, col) {
         for (let row = 0; row < INI.ROWS; row++) {
             let grid = new Grid(col, row);
@@ -559,47 +551,6 @@ const AGENT_MANAGER = {
     getDestination(move) {
         return this.getEmptyRow(GAME.map, move);
     },
-    scoreMove(grid, move, playerIndex, N) {
-        const nextGrid_GA = this.dropPiece(grid, move, playerIndex);
-        return this.minimax(nextGrid_GA, N - 1, false, playerIndex, -Infinity, Infinity);
-    },
-    dropPiece(grid, move, playerIndex) {
-        let nextGrid = grid.clone();                                                                                        //this is GA!
-        let placedGrid = this.getEmptyRow(nextGrid, move);                                                                  //filtered for valid moves
-        nextGrid.setValue(placedGrid, playerIndex);
-        if (DEBUG.drawToConsole) BOARD.printBoardToConsole(nextGrid);
-        return nextGrid;
-    },
-    getHeuristic(playerIndex, board) {
-        return LOOKAHEAD.get_heuristic(board, playerIndex);
-    },
-    hasFour(board, playerIndex) {
-        return LOOKAHEAD.has_four(board, playerIndex);
-    },
-    countImmediateWins(board, playerIndex) {
-        return LOOKAHEAD.count_immediate_wins(board, playerIndex);
-    },
-    isTerminalNode(GA) {
-        if (this.hasFour(GA, 1) || this.hasFour(GA, 2)) return true;
-        return this.getLegalMoves(GA).length === 0;
-    },
-    innermost(arr) {
-        const mid = (INI.COLS - 1) / 2;
-        let bestMoves = [];
-        let bestScore = -Infinity;
-
-        for (const move of arr) {
-            const score = -Math.abs(move - mid);
-            if (score > bestScore) {
-                bestScore = score;
-                bestMoves = [move];                                 // new best
-            } else if (score === bestScore) {
-                bestMoves.push(move);                               // equally good
-            }
-        }
-
-        return bestMoves;
-    }
 }
 
 class Token {
@@ -1187,7 +1138,7 @@ const TITLE = {
         CTX.fillText(`Name: ${TURN_MANAGER.name.red}`, X, y);
         CTX.fillText(`Agent: ${TURN_MANAGER.agent.red}`, X, y + 1.5 * fs);
         CTX.fillText(`Score: ${TURN_MANAGER.score.red}`, X, y + 3 * fs);
-        CTX.fillText(`Heuristic: ${TURN_MANAGER.heuristic_score.red}`, X, y + 4.5 * fs);
+        CTX.fillText(`Heuristics: ${TURN_MANAGER.heuristic_score.red}`, X, y + 4.5 * fs);
 
         //blue
         CTX = LAYER.blue;
@@ -1197,7 +1148,7 @@ const TITLE = {
         CTX.fillText(`Name: ${TURN_MANAGER.name.blue}`, X, y);
         CTX.fillText(`Agent: ${TURN_MANAGER.agent.blue}`, X, y + 1.5 * fs);
         CTX.fillText(`Score: ${TURN_MANAGER.score.blue}`, X, y + 3 * fs);
-        CTX.fillText(`Heuristic: ${TURN_MANAGER.heuristic_score.blue}`, X, y + 4.5 * fs);
+        CTX.fillText(`Heuristics: ${TURN_MANAGER.heuristic_score.blue}`, X, y + 4.5 * fs);
     },
 };
 

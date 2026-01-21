@@ -24,7 +24,6 @@ class CNet192(nn.Module):
         self.conv_mid = nn.Conv2d(192, 192, kernel_size=3, padding=1)      # 3x4 -> 3x4
         self.conv2 = nn.Conv2d(192, 192, kernel_size=2, padding=0)         # 3x4 -> 2x3
 
-        # fixed for this architecture: 192 * 2 * 3
         self.fc = nn.Linear(192 * 2 * 3, 192)
 
         self.policy_fc = nn.Linear(192, 192)
@@ -54,7 +53,6 @@ def _load_model_once() -> nn.Module:
     if _MODEL is not None:
         return _MODEL
 
-    # model is in same dir as main.py (per your packaging)
     here = os.path.dirname(os.path.abspath(__file__))
     ckpt_path = os.path.join(here, MODEL_FILE)
 
@@ -70,9 +68,8 @@ def _load_model_once() -> nn.Module:
     return _MODEL
 
 
-# ---------- tiny tactics (win/block/handover) ----------
+# ---------- tiny tactics ----------
 def _lowest_empty_row(grid: np.ndarray, col: int) -> int:
-    # grid is (6,7), row 0 = top
     for r in range(5, -1, -1):
         if grid[r, col] == 0:
             return r
@@ -110,36 +107,6 @@ def _is_winning_drop(pov: np.ndarray, col: int, token: int) -> bool:
     pov[r, col] = old
     return win
 
-
-def _hands_over_win_in_1(pov: np.ndarray, my_col: int) -> bool:
-    r = _lowest_empty_row(pov, my_col)
-    if r < 0:
-        return True
-
-    old = pov[r, my_col]
-    pov[r, my_col] = +1
-
-    # opponent reply wins immediately?
-    for oc in range(7):
-        if pov[0, oc] != 0:
-            continue
-        if _is_winning_drop(pov, oc, -1):
-            pov[r, my_col] = old
-            return True
-
-    pov[r, my_col] = old
-    return False
-
-
-def _fallback_move(grid: np.ndarray) -> int:
-    if grid[0, _CENTER_COL] == 0:
-        return _CENTER_COL
-    legal = [c for c in range(7) if grid[0, c] == 0]
-    if not legal:
-        return 0
-    return int(sorted(legal, key=lambda c: (abs(c - _CENTER_COL), c))[0])
-
-
 def _argmax_center_tiebreak(vals: np.ndarray, legal: List[int]) -> int:
     best = max(vals[c] for c in legal)
     tied = [c for c in legal if vals[c] == best]
@@ -150,58 +117,46 @@ def _argmax_center_tiebreak(vals: np.ndarray, legal: List[int]) -> int:
 
 # ---------- Kaggle agent ----------
 def agent(obs, config):
-    try:
-        model = _load_model_once()
+    
+    model = _load_model_once()
 
-        mark = int(obs["mark"]) if isinstance(obs, dict) else int(obs.mark)
-        flat = obs["board"] if isinstance(obs, dict) else obs.board
-        grid = np.asarray(flat, dtype=np.int8).reshape(6, 7)
+    mark = int(obs["mark"]) if isinstance(obs, dict) else int(obs.mark)
+    flat = obs["board"] if isinstance(obs, dict) else obs.board
+    grid = np.asarray(flat, dtype=np.int8).reshape(6, 7)
 
-        legal = [c for c in range(7) if grid[0, c] == 0]
-        if not legal:
-            return 0
+    legal = [c for c in range(7) if grid[0, c] == 0]
+    if not legal:
+        return 0
 
-        stones = int(np.count_nonzero(grid))
-        if stones == 0 and _CENTER_COL in legal:
-            return _CENTER_COL  # opening book
+    stones = int(np.count_nonzero(grid))
+    if stones == 0 and _CENTER_COL in legal:
+        return _CENTER_COL  # opening book
 
-        # POV scalar board: me=+1, opp=-1
-        pov = np.zeros((6, 7), dtype=np.int8)
-        pov[grid == mark] = 1
-        pov[(grid != 0) & (grid != mark)] = -1
+    # POV scalar board: me=+1, opp=-1
+    pov = np.zeros((6, 7), dtype=np.int8)
+    pov[grid == mark] = 1
+    pov[(grid != 0) & (grid != mark)] = -1
 
-        # 1) win-now
-        for c in legal:
-            if _is_winning_drop(pov, c, +1):
-                return int(c)
+    # 1) win-now
+    for c in legal:
+        if _is_winning_drop(pov, c, +1):
+            return int(c)
 
-        # 2) must-block (any opp win-in-1)
-        blocks = [c for c in legal if _is_winning_drop(pov, c, -1)]
-        if blocks:
-            return int(sorted(blocks, key=lambda c: (abs(c - _CENTER_COL), c))[0])
+    # 2) must-block (any opp win-in-1)
+    blocks = [c for c in legal if _is_winning_drop(pov, c, -1)]
+    if blocks:
+        return int(sorted(blocks, key=lambda c: (abs(c - _CENTER_COL), c))[0])
 
-        # 3) handover filter
-        safe_legal = [c for c in legal if not _hands_over_win_in_1(pov, c)]
-        if safe_legal:
-            legal = safe_legal
+    # 5) policy argmax (masked)
+    x = torch.from_numpy(pov.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(_DEVICE)
+    with torch.inference_mode():
+        logits, _ = model(x)
+        logits = logits[0].detach().cpu().numpy().astype(np.float32)
 
-        # 4) policy argmax (masked)
-        x = torch.from_numpy(pov.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(_DEVICE)
-        with torch.inference_mode():
-            logits, _ = model(x)
-            logits = logits[0].detach().cpu().numpy().astype(np.float32)
+    masked = np.full(7, -1e9, dtype=np.float32)
+    for c in legal:
+        masked[c] = logits[c]
 
-        masked = np.full(7, -1e9, dtype=np.float32)
-        for c in legal:
-            masked[c] = logits[c]
+    return int(_argmax_center_tiebreak(masked, legal))
 
-        return int(_argmax_center_tiebreak(masked, legal))
 
-    except Exception:
-        # never crash validation
-        try:
-            flat = obs["board"] if isinstance(obs, dict) else obs.board
-            grid = np.asarray(flat, dtype=np.int8).reshape(6, 7)
-            return _fallback_move(grid)
-        except Exception:
-            return 0
