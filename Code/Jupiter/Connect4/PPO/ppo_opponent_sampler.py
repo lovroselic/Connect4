@@ -1,6 +1,5 @@
 # PPO/ppo_opponent_sampler.py
 from __future__ import annotations
-import re
 import numpy as np
 
 class OpponentSampler:
@@ -48,5 +47,5 @@ class OpponentSampler:
         if k.startswith("L") and k[1:].isdigit():
             return int(k[1:])
         if k == "POP":
-            return "self"   # keeps mode semantics consistent
+            return "POP"   
         raise ValueError(f"Unknown opponent key: {k}")

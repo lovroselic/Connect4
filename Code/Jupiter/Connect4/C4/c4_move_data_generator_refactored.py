@@ -162,6 +162,18 @@ def _is_random_spec(x: Any) -> bool:
         return s == "R" or s == "RANDOM" or s.startswith("R_")
     return False
 
+def _is_center_spec(x: Any) -> bool:
+    if isinstance(x, str):
+        s = x.strip().upper()
+        return s == "C" or s == "CENTER" or s.startswith("C_")
+    return False
+
+def _is_left_spec(x: Any) -> bool:
+    if isinstance(x, str):
+        s = x.strip().upper()
+        return s == "L" or s == "LEFT" or s.startswith("L_")
+    return False
+
 
 def _legal_cols_from_board_toprow(board: np.ndarray) -> np.ndarray:
     """
@@ -178,6 +190,20 @@ def _uniform_legal_probs(legal_cols: np.ndarray, n_actions: int = 7) -> np.ndarr
         return probs
     probs[legal_cols] = 1.0 / float(len(legal_cols))
     return probs
+
+def _uniform_probs_over(cols: Iterable[int], n_actions: int = 7) -> np.ndarray:
+    """
+    probs[7] uniform over given columns.
+    """
+    probs = np.zeros(n_actions, dtype=np.float64)
+    cols = list(cols)
+    if not cols:
+        return probs
+    w = 1.0 / float(len(cols))
+    for c in cols:
+        probs[int(c)] = w
+    return probs
+
 
 
 def choose_move_mixed(
@@ -231,6 +257,36 @@ def choose_move_mixed(
             action_mode=str(ppo_action),
         )
         return int(a), (probs if return_policy_probs else None)
+    
+    # --- Center agent ---
+    if _is_center_spec(spec):
+        legal_cols = _legal_cols_from_board_toprow(env.board)
+        if len(legal_cols) == 0:
+            return 3, (np.zeros(7, dtype=np.float64) if return_policy_probs else None)
+    
+        # pick closest-to-center (3), tie-broken by your usual center-first order
+        CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
+        legal_set = set(int(c) for c in legal_cols.tolist())
+        a = next((c for c in CENTER_ORDER if c in legal_set), int(legal_cols[0]))
+    
+        # policy probs: uniform among all legal cols at minimal distance to center
+        dmin = min(abs(int(c) - 3) for c in legal_cols.tolist())
+        best = [int(c) for c in legal_cols.tolist() if abs(int(c) - 3) == dmin]
+        probs = _uniform_probs_over(best) if return_policy_probs else None
+        return int(a), probs
+    
+    # --- Left agent ---
+    if _is_left_spec(spec):
+        legal_cols = _legal_cols_from_board_toprow(env.board)
+        if len(legal_cols) == 0:
+            return 3, (np.zeros(7, dtype=np.float64) if return_policy_probs else None)
+    
+        # always leftmost legal column
+        a = int(legal_cols.min())
+    
+        # policy probs: one-hot (uniform over the singleton "best" set)
+        probs = _uniform_probs_over([a]) if return_policy_probs else None
+        return int(a), probs
 
     # --- Lookahead agent ---
     depth = int(spec)
@@ -528,12 +584,13 @@ def _play_one_game_rows(
         spec = (lookA if player == 1 else lookB)
         noise_p = noiseA if player == 1 else noiseB
 
-        is_random_turn = _is_random_spec(spec)
+        is_excluded_turn = _is_random_spec(spec) or _is_center_spec(spec) or _is_left_spec(spec)
 
         # Only copy "before" state if we're going to record and we need it
         board_before = None
-        if (not is_random_turn) and (state_mode == "before"):
+        if (not is_excluded_turn) and (state_mode == "before"):
             board_before = np.array(env.board, copy=True)
+
 
         # Choose action. If Random turn, we do not request policy probs at all.
         ppo_T = float(CFG.get("ppo_temperature", 1.0))
@@ -548,7 +605,7 @@ def _play_one_game_rows(
             force_loss_p=forceLoss,
             rng=rng,
             teacher_mode=teacher_mode,
-            return_policy_probs=(store_probs and (not is_random_turn)),
+            return_policy_probs=(store_probs and (not is_excluded_turn)),
             ppo_model=(acA if player == 1 else acB),
             ppo_temperature=ppo_T,
             ppo_action=ppo_mode,
@@ -565,7 +622,7 @@ def _play_one_game_rows(
             reward, done = 0.0, False
 
         # Supervised safety: NEVER emit a row when Random was the mover.
-        if not is_random_turn:
+        if not is_excluded_turn:
             if state_mode == "after":
                 board_store = np.array(env.board, copy=True)
             else:
@@ -626,10 +683,11 @@ def generate_dataset(
         games = int(spec.get("games", 1))
 
         # normalize A/B: keep "R" as-is, cast others to int
-        if (not _is_random_spec(lookA)) and (not _is_ppo_path(lookA)):
+        if (not _is_random_spec(lookA)) and (not _is_center_spec(lookA)) and (not _is_left_spec(lookA)) and (not _is_ppo_path(lookA)):
             lookA = int(lookA)
-        if (not _is_random_spec(lookB)) and (not _is_ppo_path(lookB)):
+        if (not _is_random_spec(lookB)) and (not _is_center_spec(lookB)) and (not _is_left_spec(lookB)) and (not _is_ppo_path(lookB)):
             lookB = int(lookB)
+
 
         for g in range(games):
             s = base_seed + (hash(label) & 0xFFFF) + g * 9973

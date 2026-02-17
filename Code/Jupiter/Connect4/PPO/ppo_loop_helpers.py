@@ -152,10 +152,8 @@ def ppo_opponent_step(
         return True, ply_idx, 0.0
 
     legal = [int(a) for a in legal]
-
     mode = lookahead_mode
-    if mode == "POP":
-        mode = "self"
+
 
     # Choose opponent action
     if mode in (None, "R", "rand", "Random", 0):

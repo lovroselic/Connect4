@@ -29,6 +29,8 @@ EVAL_CFG = {
     "Lookahead-6": 4,
     "Lookahead-7": 4,
     "Lookahead-9": 4,
+    "Lookahead-11": 2,
+    "Lookahead-13": 2,
     } 
 
 #OPENING_NOISE_K = {0:0.85, 1:0.10, 2:0.05}

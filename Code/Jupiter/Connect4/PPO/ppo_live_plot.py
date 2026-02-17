@@ -177,7 +177,7 @@ def plot_live_training_ppo(
     win_count: int,
     loss_count: int,
     draw_count: int,
-    metrics_history: dict,       # dict of lists: episodes, loss_pi, loss_v, entropy, approx_kl, clip_frac, explained_variance
+    metrics_history: dict,       # dict of lists: episodes, loss_pi, loss_v, entropy, approx_kl, approx_kl_ppo, clip_frac, explained_variance
     benchmark_history: dict | None = None,
     title: str = "PPO Training",
     phases: dict | None = None,  # TRAINING_PHASES with 'length' set (cumulative end ep)
@@ -211,7 +211,7 @@ def plot_live_training_ppo(
             2.3,   # 5 benchmarks MA3
             2.3,   # 6 benchmarks MA7
             10.0,   # 7 benchmarks MA15
-            2.4,   # 8 global score
+            10,   # 8 global score
             2.6,   # 9 H2H
             2.6,   # 10 ensemble H2H
             3.0,   # 11 checkpoint score
@@ -231,7 +231,7 @@ def plot_live_training_ppo(
             2.3,   # 5 benchmarks MA3
             2.3,   # 6 benchmarks MA7
             10.0,   # 7 benchmarks MA15
-            2.4,   # 8 global score
+            10,   # 8 global score
             2.6,   # 9 H2H
             2.6,   # 10 ensemble H2H
             3.0,   # 11 checkpoint score
@@ -342,27 +342,46 @@ def plot_live_training_ppo(
 
     # ---------------- 4) Entropy / KL / ClipFrac (split y-axes) ----------------
     if epi_u:
-        kl_vals = metrics_history.get("approx_kl", [])
-        cf_vals = metrics_history.get("clip_frac", [])
-        ent_vals = metrics_history.get("entropy", [])
-
-        # Primary axis: KL + ClipFrac
-        line_kl = ax_stats.plot(epi_u, kl_vals, label="KL", linestyle="--", color="tab:orange")[0]
-        line_cf = ax_stats.plot(epi_u, cf_vals, label="ClipFrac", linestyle=":", color="tab:green")[0]
+        kl_vals      = metrics_history.get("approx_kl", [])
+        kl_ppo_vals  = metrics_history.get("approx_kl_ppo", [])
+        cf_vals      = metrics_history.get("clip_frac", [])
+        ent_vals     = metrics_history.get("entropy", [])
+    
+        # Primary axis: KLs + ClipFrac
+        line_kl = ax_stats.plot(
+            epi_u, kl_vals, label="KL (old-new)", linestyle="--", color="tab:orange"
+        )[0]
+    
+        line_klppo = None
+        if kl_ppo_vals:
+            line_klppo = ax_stats.plot(
+                epi_u, kl_ppo_vals, label="KL (ppo)", linestyle="-.", color="tab:red", alpha=0.85
+            )[0]
+    
+        line_cf = ax_stats.plot(
+            epi_u, cf_vals, label="ClipFrac", linestyle=":", color="tab:green"
+        )[0]
+    
         ax_stats.set_ylabel("KL / ClipFrac")
         ax_stats.grid(True, alpha=0.35)
-
+    
         # Secondary axis: Entropy
         ax_ent = ax_stats.twinx()
-        line_ent = ax_ent.plot(epi_u, ent_vals, label="Entropy", color="tab:blue", alpha=0.7)[0]
+        line_ent = ax_ent.plot(
+            epi_u, ent_vals, label="Entropy", color="tab:blue", alpha=0.7
+        )[0]
         ax_ent.set_ylabel("Entropy")
-
+    
         # Combined legend (lines from both axes)
-        lines = [line_kl, line_cf, line_ent]
+        lines = [line_kl]
+        if line_klppo is not None:
+            lines.append(line_klppo)
+        lines += [line_cf, line_ent]
         labels = [l.get_label() for l in lines]
         ax_stats.legend(lines, labels, loc="upper right", fontsize=8)
     else:
         ax_stats.grid(True, alpha=0.35)
+
 
     # ---------------- 5–8) Benchmarks ----------------
     if benchmark_history and benchmark_history.get("episode"):
@@ -396,6 +415,17 @@ def plot_live_training_ppo(
                 ma_g,
                 label="Global score (MA3)",
                 ls="--",
+                lw=1.6,
+            )
+            
+        ma10_g = _moving_avg(yg, 10)
+        if ma_g is not None and xg.size >= 10:
+            x0 = 9
+            ax_global.plot(
+                xg[x0:x0 + len(ma10_g)],
+                ma10_g,
+                label="Global score (MA10)",
+                ls="..",
                 lw=1.6,
             )
 

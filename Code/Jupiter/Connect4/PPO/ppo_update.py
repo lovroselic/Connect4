@@ -79,6 +79,7 @@ def ppo_update(
     total_distill_kl = 0.0
     total_mentor_ce  = 0.0
     total_steps = 0
+    total_kl_ppo = 0.0
 
     use_distill = (teacher is not None) and (getattr(cfg, "distill_coef", 0.0) > 0.0)
     use_mentor  = (mentor  is not None) and (getattr(cfg, "mentor_coef",  0.0) > 0.0) and (getattr(cfg, "mentor_prob", 0.0) > 0.0)
@@ -116,21 +117,35 @@ def ppo_update(
             entropy      = entropy.flatten()
             values       = values.flatten()
 
-            # ----- PPO ratios -----
-            log_ratio = new_logprobs - mb_old_logprobs
+            # ----- PPO ratios + KL -----
+            log_ratio_raw = (new_logprobs - mb_old_logprobs)
+            
+            with torch.no_grad():
+                # signed diagnostic (can be negative)
+                approx_kl_item = float((mb_old_logprobs - new_logprobs).mean().item())
+            
+                # stable PPO-style KL proxy (>=0 usually); measure on a safe copy
+                log_ratio_meas = torch.clamp(log_ratio_raw, -20.0, 20.0)
+                approx_kl_ppo_item = float((((torch.exp(log_ratio_meas) - 1.0) - log_ratio_meas)).mean().item())
+            
+            kl_used = approx_kl_ppo_item
+            
+            # --- early stop SHOULD happen before backward/step ---
+            if cfg.target_kl is not None and kl_used > (kl_stop_mult * cfg.target_kl):
+                stop_early = True
+                break
+            
+            # training safety for ratio
+            log_ratio = torch.clamp(log_ratio_raw, -20.0, 20.0)
             ratio = torch.exp(log_ratio)
 
-            # ----- KL (use direct for early stop; less jitter) -----
-            approx_kl = torch.mean(mb_old_logprobs - new_logprobs).item()
 
-            # ----- aux fadeout when KL high (only matters for distill/mentor) -----
+            
+            # aux fadeout (distill/mentor)
             if cfg.target_kl is None:
                 aux_scale = 1.0
             else:
-                aux_scale = max(
-                    0.0,
-                    min(1.0, (cfg.target_kl - approx_kl) / max(1e-12, cfg.target_kl))
-                )
+                aux_scale = max(0.0, min(1.0, (cfg.target_kl - kl_used) / max(1e-12, cfg.target_kl)))
 
             # Policy loss (clipped surrogate)
             unclipped = -mb_advantages * ratio
@@ -152,7 +167,6 @@ def ppo_update(
 
             # Entropy bonus (note: we add ent_coef * (-entropy))
             loss_ent = -torch.mean(entropy)
-
             loss = loss_pi + cfg.vf_coef * loss_v + cfg.ent_coef * loss_ent
 
             # ---------- distillation ----------
@@ -224,7 +238,8 @@ def ppo_update(
             total_pi       += loss_pi.item() * bs
             total_v        += loss_v.item() * bs
             total_ent      += entropy.mean().item() * bs
-            total_kl       += approx_kl * bs
+            total_kl     += approx_kl_item * bs
+            total_kl_ppo += approx_kl_ppo_item * bs
             total_clipfrac += clip_frac * bs
             if distill_kl is not None:
                 total_distill_kl += distill_kl.item() * bs
@@ -232,10 +247,10 @@ def ppo_update(
                 total_mentor_ce  += mentor_ce.item() * bs
             total_steps    += bs
 
-            # Softer stop to avoid "flatline by over-pruning updates"
-            if cfg.target_kl is not None and approx_kl > (kl_stop_mult * cfg.target_kl):
-                stop_early = True
-                break
+            # # Softer stop to avoid "flatline by over-pruning updates"
+            # if cfg.target_kl is not None and approx_kl_ppo_item > (kl_stop_mult * cfg.target_kl):
+            #     stop_early = True
+            #     break
 
         if stop_early:
             break
@@ -255,6 +270,7 @@ def ppo_update(
         "loss_v": total_v / max(1, total_steps),
         "entropy": total_ent / max(1, total_steps),
         "approx_kl": total_kl / max(1, total_steps),
+        "approx_kl_ppo": total_kl_ppo / max(1, total_steps),
         "clip_frac": total_clipfrac / max(1, total_steps),
         "explained_variance": ev,
         "updates_samples": total_steps,

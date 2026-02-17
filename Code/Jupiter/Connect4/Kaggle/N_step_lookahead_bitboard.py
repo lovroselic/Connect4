@@ -19,12 +19,12 @@ def N_step_lookahead_bitboard(obs, config):
         return 1 << (c * STRIDE + r)
 
     # ------------------------------ config ---------------------------------
-    
+
     N_STEPS = 7
     DEBUG = False
     OPENING_BOOK = True
     WIN2_CHECK = True
-    DOUBLE_THREAT_GUARD = True   # after my move, opponent has >=2 win-in-1 moves 
+    DOUBLE_THREAT_GUARD = True   # after my move, opponent has >=2 win-in-1 moves
     FORK_REPLY_GUARD    = True   # after my move, opponent has a reply that creates >=2 win-in-1 threats
 
     # ----------------------------------------------------------------------
@@ -38,7 +38,7 @@ def N_step_lookahead_bitboard(obs, config):
         CENTER_COL = 3
         CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
-        # sudmission label: bbLA-7 (w2-10) (D1.55 FN0.25 FF0.125 C3 PB0.75 V0.8 T75 PM0.5 PU0.25 TS9)
+        # submission label: bbLA-7 (w2-10) (D1.55 FN0.25 FF0.125 C3 PB0.75 V0.8 T75 PM0.5 PU0.25 TS9)
 
         # Heuristic weights
         W2, W3, W4 = 10.0, 1000.0, 100000.0
@@ -49,15 +49,15 @@ def N_step_lookahead_bitboard(obs, config):
         FORK_W        = W4
         DEFENSIVE     = 1.55        # 1.55 by optimizer
         FLOATING_NEAR = 0.25        # 0.25
-        FLOATING_FAR  = 0.125       #  0.125
+        FLOATING_FAR  = 0.125       # 0.125
         CENTER_BONUS  = 3.0         # 3
-        PARITY_BONUS  = 0.75        # 0,75; only enabled if center-bottom is occupied
-        VERT_MUL = 0.8              #0.875
-        VERT_3_READY_BONUS = 0.0    # 0, keep 0
-        TEMPO_W = 75                #75
+        PARITY_BONUS  = 0.75        # 0.75; only enabled if center-bottom is occupied
+        VERT_MUL = 0.8              # 0.875
+        VERT_3_READY_BONUS = 0.0    # 0.0, keep 0
+        TEMPO_W = 75                # 75
         PARITY_MOVE_W = 0.5         # 0.5
         PARITY_UNLOCK_W = 0.25      # 0.25
-        THREATSPACE_W = 9           # 8.75 
+        THREATSPACE_W = 9           # 8.75
 
         # Column masks
         COL_MASK = [0] * COLS
@@ -179,8 +179,27 @@ def N_step_lookahead_bitboard(obs, config):
     PARITY_UNLOCK_W = _CACHE["PARITY_UNLOCK_W"]
     THREATSPACE_W = _CACHE["THREATSPACE_W"]
 
+    # ---------------- depth-based FLOATING_NEAR schedule ----------
+    # Root search depth -> FN value (NOT integer division, never use // here).
+    FLOATING_NEAR_BY_DEPTH = (
+        (8,  FLOATING_NEAR),        # depth 1..8: classic FN
+        (10, FLOATING_NEAR / 2.0),  # depth 9..10: light FN
+        (99, FLOATING_NEAR / 8.0),  # depth 11+: very light FN
+    )
+
+    def fn_for_root_depth(root_depth):
+        """Return (FN_eff, bucket_id) for the given root search depth."""
+        d = int(root_depth)
+        for bucket_id, (max_d, fnv) in enumerate(FLOATING_NEAR_BY_DEPTH):
+            if d <= int(max_d):
+                return float(fnv), int(bucket_id)
+        # fallback
+        return float(FLOATING_NEAR_BY_DEPTH[-1][1]), int(len(FLOATING_NEAR_BY_DEPTH) - 1)
+
+    FN_EFF, FN_BUCKET = fn_for_root_depth(1)  # default before first evaluate/aspiration
+    # ----------------------------------------------------------------------
+
     # -------------------------- time budget --------------------------------
-    
     DEADLINE = time.perf_counter() + 2 - 0.05
 
     # -------------------------- obs access ---------------------------------
@@ -463,7 +482,7 @@ def N_step_lookahead_bitboard(obs, config):
                         rr = rows[k]
                         dh = rr - H[cc]
                         if dh == 1:
-                            mul *= FLOATING_NEAR
+                            mul *= FN_EFF      # depth-based FN (root-depth controlled)
                         elif dh >= 2:
                             mul *= FLOATING_FAR
                         else:
@@ -561,8 +580,12 @@ def N_step_lookahead_bitboard(obs, config):
     killers = [[-1, -1] for _ in range(64)]
     history_tbl = [0] * COLS
 
+    # TT key includes FN_BUCKET to prevent mixing TT across FN regimes.
+    # This matters because FN changes at depth 9 and 11 in schedule.
     def tt_key(pos_, mask_):
-        return (pos_ << 64) | mask_
+        # 49-bit-ish boards, this keeps everything separated:
+        # key = (pos << 66) | (mask << 2) | bucket_id
+        return (pos_ << 66) | (mask_ << 2) | FN_BUCKET
 
     def tt_lookup(key, depth, alpha, beta):
         e = TT.get(key)
@@ -623,7 +646,7 @@ def N_step_lookahead_bitboard(obs, config):
         if (node_counter[0] & TIME_CHECK_MASK) == 0 and time.perf_counter() > DEADLINE:
             return evaluate(pos_, mask_, ply), -1
 
-        key = tt_key(pos_, mask_)
+        key = tt_key(pos_, mask_)  # bucket-aware TT key
         alpha0 = alpha
         val_tt, mv_tt, hit, alpha, beta = tt_lookup(key, depth, alpha, beta)
         if hit:
@@ -716,11 +739,14 @@ def N_step_lookahead_bitboard(obs, config):
 
     # -------------------------- iterative deepening ------------------------
     best_move = legal[0]
-    best_val = evaluate(pos, mask, 0)
+    best_val = evaluate(pos, mask, 0)  # uses FN_EFF (currently depth=1 FN)
     ASP_INIT = 10.0 * IMMEDIATE_W
 
     depth = 0
     for depth in range(1, N_STEPS + 1):
+        # update FN_EFF and FN_BUCKET for this root search depth
+        FN_EFF, FN_BUCKET = fn_for_root_depth(depth)
+
         node_counter[0] = 0
         alpha = max(-MATE_SCORE, best_val - ASP_INIT)
         beta  = min( MATE_SCORE, best_val + ASP_INIT)
@@ -747,5 +773,6 @@ def N_step_lookahead_bitboard(obs, config):
         print("DEBUG depth_end best_move", best_move, "best_val", best_val)
         tr = DEADLINE - time.perf_counter()
         print("Depth reached", depth, "time remaining", tr, "OVER", tr < 0)
+        print("FN_EFF", FN_EFF, "FN_BUCKET", FN_BUCKET)
 
     return int(best_move)

@@ -554,9 +554,7 @@ class ActorCritic(nn.Module):
                 mixed = self._renorm(mixed)
                 probs = torch.where(apply_row.unsqueeze(-1), mixed, probs)
 
-        # win_now / guard mix (loop, matches act())
-        # NOTE: If you keep these probs > 0 during training, PPO is "learning a policy + a rulebook".
-        # That can be fine for curriculum bootstrapping, but you'll likely want them -> 0 later.
+        # win_now / guard mix (obsolete)
         if (self.win_now_prob > 0.0) or (self.guard_prob > 0.0):
             x1 = self._to_1ch_pov(states)
             boards = x1[:, 0].detach().cpu().numpy().astype(np.int8)

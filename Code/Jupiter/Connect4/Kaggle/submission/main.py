@@ -1,5 +1,7 @@
 # kaggle: main.py
 # tar -czf submit.tar.gz -C submission main.py PPO_14.pt
+# tar -czf submit.tar.gz -C submission main.py PPO_408.pt
+# tar -czf submit.tar.gz -C submission main.py PPO_404.pt
 
 import os
 from typing import Optional, Tuple, List
@@ -13,6 +15,8 @@ import torch.nn.functional as F
 _DEVICE = torch.device("cpu")
 _MODEL: Optional[nn.Module] = None
 _CENTER_COL = 3
+#MODEL_FILE = "PPO_404.pt"
+#submission name PPO_14_DT
 MODEL_FILE = "PPO_14.pt"
 
 
@@ -48,15 +52,30 @@ class CNet192(nn.Module):
         return pol, val
 
 
+def _find_model_path():
+
+    # submission runtime (tar extracted here)
+    p = f"/kaggle_simulations/agent/{MODEL_FILE}"
+    if os.path.exists(p):
+        return p
+
+    # fallback: current working directory
+    p = MODEL_FILE
+    if os.path.exists(p):
+        return p
+
+    raise FileNotFoundError("Model not found in agent dir, or CWD.")
+
+
 def _load_model_once() -> nn.Module:
     global _MODEL
     if _MODEL is not None:
         return _MODEL
 
-    here = os.path.dirname(os.path.abspath(__file__))
-    ckpt_path = os.path.join(here, MODEL_FILE)
-
+    ckpt_path = _find_model_path()
     ckpt = torch.load(ckpt_path, map_location=_DEVICE)
+
+
     if not (isinstance(ckpt, dict) and "model_state_dict" in ckpt):
         raise RuntimeError("Unexpected checkpoint format: expected dict with 'model_state_dict'")
 
@@ -107,12 +126,65 @@ def _is_winning_drop(pov: np.ndarray, col: int, token: int) -> bool:
     pov[r, col] = old
     return win
 
-def _argmax_center_tiebreak(vals: np.ndarray, legal: List[int]) -> int:
-    best = max(vals[c] for c in legal)
-    tied = [c for c in legal if vals[c] == best]
-    if len(tied) == 1:
-        return int(tied[0])
-    return int(sorted(tied, key=lambda c: (abs(c - _CENTER_COL), c))[0])
+# def _argmax_center_tiebreak(vals: np.ndarray, legal: List[int]) -> int:
+#     best_c = legal[0]
+#     best_v = float(vals[best_c])
+#     best_d = abs(best_c - _CENTER_COL)
+#     for c in legal[1:]:
+#         v = float(vals[c])
+#         if v > best_v:
+#             best_v = v
+#             best_c = c
+#             best_d = abs(c - _CENTER_COL)
+#         elif v == best_v:
+#             d = abs(c - _CENTER_COL)
+#             if d < best_d or (d == best_d and c < best_c):
+#                 best_c = c
+#                 best_d = d
+#     return int(best_c)
+
+def _would_handover_win(pov: np.ndarray, col: int) -> bool:
+    """
+    True if playing 'col' (for +1) gives opponent (-1) any win-in-1 immediately after.
+    Uses in-place move + revert on the POV board.
+    """
+    r = _lowest_empty_row(pov, col)
+    if r < 0:
+        return True  # illegal treated as bad
+
+    # play our move
+    pov[r, col] = +1
+
+    # check if opponent now has a winning drop anywhere
+    for oc in range(7):
+        if pov[0, oc] == 0 and _is_winning_drop(pov, oc, -1):
+            pov[r, col] = 0
+            return True
+
+    pov[r, col] = 0
+    return False
+
+def _would_allow_double_threat(pov: np.ndarray, col: int) -> bool:
+    """
+    True if after we play 'col' (+1), opponent (-1) has >=2 different winning drops.
+    (Fork / double-threat next move)
+    """
+    r = _lowest_empty_row(pov, col)
+    if r < 0:
+        return True
+
+    pov[r, col] = +1
+
+    cnt = 0
+    for oc in range(7):
+        if pov[0, oc] == 0 and _is_winning_drop(pov, oc, -1):
+            cnt += 1
+            if cnt >= 2:
+                pov[r, col] = 0
+                return True
+
+    pov[r, col] = 0
+    return False
 
 
 # ---------- Kaggle agent ----------
@@ -148,14 +220,30 @@ def agent(obs, config):
 
     # policy argmax (masked)
     x = torch.from_numpy(pov.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(_DEVICE)
-    with torch.inference_mode():
+    
+    with torch.no_grad():  # portable replacement for inference_mode
         logits, _ = model(x)
-        logits = logits[0].detach().cpu().numpy().astype(np.float32)
 
-    masked = np.full(7, -1e9, dtype=np.float32)
-    for c in legal:
-        masked[c] = logits[c]
+    logits = logits[0].detach().cpu().numpy().astype(np.float32)
+    logits = np.nan_to_num(logits, nan=-1e9, posinf=1e9, neginf=-1e9)
+    
+    # --- handover filter & DT guard
+    # order legal moves by logits desc
+    ordered = sorted(
+        legal,
+        key=lambda c: (-float(logits[c]), abs(c - _CENTER_COL), c)
+    )
+    
+    first_non_handover = None
+    
+    for c in ordered:
+        if _would_handover_win(pov, c): continue
+        if first_non_handover is None: first_non_handover = c  # best non-handover so far
+        if not _would_allow_double_threat(pov, c): return int(c)
+    
+    if first_non_handover is not None: return int(first_non_handover)
+    return int(ordered[0])
 
-    return int(_argmax_center_tiebreak(masked, legal))
+    
 
 
