@@ -37,6 +37,8 @@ import torch
 from PPO.actor_critic import ActorCritic
 
 
+MIN_LA_DEPTH_STORED = 7
+
 # --------------------------- Row / DF helpers ---------------------------
 
 def _is_ppo_path(x: Any) -> bool:
@@ -549,6 +551,11 @@ def _play_one_game_rows(
     store_player = bool(CFG.get("store_player", True))
     store_done = bool(CFG.get("store_done", False))
     store_probs = bool(CFG.get("store_policy_probs", False))
+    
+    min_supervised_depth = CFG.get("supervised_min_lookahead_depth", MIN_LA_DEPTH_STORED)
+    min_supervised_depth = None if min_supervised_depth is None else int(min_supervised_depth)
+
+    #exclude_ppo_supervised = bool(CFG.get("exclude_ppo_supervised", True))  # optional
 
     env = Connect4Env()
     la = Connect4Lookahead()
@@ -557,14 +564,7 @@ def _play_one_game_rows(
     acB = load_ppo_actor_critic(lookB) if _is_ppo_path(lookB) else None
 
 
-    # diversity overrides (your existing knobs)
-    #la.C4_CENTER_BONUS = 7.5           # 5-10+
-    #la.C4_DEFENSIVE = 1.20             # 1 +-
-    #la.C4_FLOATING_NEAR = 0.70         # 0.6-0.8
-    #la.C4_FLOATING_FAR = 0.30          # 0.1-0.3
-    #env.CENTER_REWARD = 0.01           # 0.01 - 0.2 
-    #env.THREAT3_VALUE = 12             # 10 - 20
-    #env.STEP_PENALTY = 0.5               # 0 - 2
+
 
     _ = env.reset()
     
@@ -583,8 +583,20 @@ def _play_one_game_rows(
 
         spec = (lookA if player == 1 else lookB)
         noise_p = noiseA if player == 1 else noiseB
+        
+        is_weak_lookahead = (
+            (min_supervised_depth is not None)
+            and isinstance(spec, (int, np.integer))
+            and int(spec) < min_supervised_depth
+        )
 
-        is_excluded_turn = _is_random_spec(spec) or _is_center_spec(spec) or _is_left_spec(spec)
+        is_excluded_turn = (
+            _is_random_spec(spec)
+            or _is_center_spec(spec)
+            or _is_left_spec(spec)
+            or is_weak_lookahead
+            or _is_ppo_path(spec)   # NEW: don't emit rows for PPO moves
+        )
 
         # Only copy "before" state if we're going to record and we need it
         board_before = None

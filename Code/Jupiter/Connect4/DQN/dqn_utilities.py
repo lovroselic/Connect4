@@ -16,6 +16,7 @@ from pathlib import Path
 import shutil
 import re
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+from collections import Counter
 
 
 TAU_DEFAULT = 0.006                         # phase controlled
@@ -605,7 +606,7 @@ def update_benchmark_winrates(
     history["score"].append(float(score))
     history["ensemble_score"].append(float(ensemble_score))
     history["global_score"].append(float(gscore))
-    history["center_rate"].append(float(center_rate))   # <-- FIXED (was gscore)
+    history["center_rate"].append(float(center_rate))   
     history["check_score"].append(float(check_score))
     history["check"].append(None)
 
@@ -1048,6 +1049,357 @@ def _plot_h2h_axis(ax, history: dict, training_phases: dict | None = None, title
         draw_phase_vlines(ax, training_phases, up_to=int(x.max()), label=True)
 
 
+def _plot_h2h_dual_axis(
+    ax,
+    base_hist: dict | None,
+    ens_hist: dict | None,
+    training_phases: dict | None = None,
+    title: str = "H2H (±95% CI), baseline + ensemble",
+):
+    import numpy as np
+
+    base_ok = bool(base_hist and base_hist.get("episode"))
+    ens_ok  = bool(ens_hist  and ens_hist.get("episode"))
+
+    if not base_ok and not ens_ok:
+        ax.set_visible(False)
+        return
+
+    ax.axhline(0.5, color="#888", ls="--", lw=1.2, label="even (0.5)")
+
+    def _one(hist: dict, label: str):
+        x  = np.asarray(hist["episode"], dtype=int)
+        y  = np.asarray(hist["score"], dtype=float)
+        lo = np.asarray(hist.get("lo", [np.nan] * len(x)), dtype=float)
+        hi = np.asarray(hist.get("hi", [np.nan] * len(x)), dtype=float)
+
+        line, = ax.plot(x, y, lw=1.8, label=label)
+        col = line.get_color()
+
+        # CI fill if present (and finite)
+        if lo.size == y.size and hi.size == y.size and np.isfinite(lo).any() and np.isfinite(hi).any():
+            ax.fill_between(x, lo, hi, alpha=0.15, color=col)
+
+        if y.size:
+            ax.scatter([x[-1]], [y[-1]], s=22, color=col, zorder=3)
+            ax.annotate(f"{y[-1]:.2f}", (x[-1], y[-1]),
+                        textcoords="offset points", xytext=(6, -6),
+                        ha="left", fontsize=8, color=col)
+
+    if base_ok:
+        _one(base_hist, "vs baseline")
+    if ens_ok:
+        _one(ens_hist, "vs ensemble")
+
+    ax.set_ylim(0.0, 1.0)
+    ax.set_ylabel("H2H score")
+    ax.set_title(title, fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper left", fontsize=8)
+
+    if training_phases:
+        up_to = int(max(
+            max(base_hist["episode"]) if base_ok else 0,
+            max(ens_hist["episode"])  if ens_ok  else 0,
+        ))
+        draw_phase_vlines(ax, training_phases, up_to=up_to, label=True)
+        
+def _plot_global_score_axis(
+    ax,
+    bench_history: dict | None,
+    training_phases: dict | None = None,
+    title: str = "Depth-weighted global benchmark score",
+):
+    import numpy as np
+    from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+
+    if not bench_history or not bench_history.get("episode") or not bench_history.get("global_score"):
+        ax.set_visible(False)
+        return
+
+    x = np.asarray(bench_history["episode"], dtype=float)
+    y = np.asarray(bench_history["global_score"], dtype=float)
+
+    ax.plot(x, y, label="Global score", alpha=0.85)
+
+    def _ma(arr, k: int):
+        k = int(k)
+        if k <= 1 or arr.size < k:
+            return None
+        return np.convolve(arr, np.ones(k, dtype=float) / k, mode="valid")
+
+    ma3 = _ma(y, 3)
+    if ma3 is not None:
+        ax.plot(x[2:], ma3, label="MA3", ls="--", lw=1.6)
+
+    ma10 = _ma(y, 10)
+    if ma10 is not None:
+        ax.plot(x[9:], ma10, label="MA10", ls=":", lw=1.6)
+
+    ax.set_ylabel("Global score")
+    ax.set_ylim(0.0, 1.0)
+
+    ax.yaxis.set_major_locator(MultipleLocator(0.5))
+    ax.yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
+    ax.minorticks_on()
+
+    ax.grid(True, which="major", alpha=0.45, lw=0.9)
+    ax.grid(True, which="minor", alpha=0.25, lw=0.6)
+
+    ax.set_title(title, fontsize=10)
+    ax.legend(loc="lower left", fontsize=8)
+
+    if training_phases:
+        draw_phase_vlines(ax, training_phases, up_to=int(x.max()), label=True)
+        
+
+def plot_is_weights(agent, bins: int = 60, last: int = 4096, return_figs: bool = True):
+    """
+    Histogram of importance-sampling weights.
+    Uses agent.per_w_hist if available (preferred).
+    Falls back to agent.last_replay_stats["is_w"] if present.
+    Returns a matplotlib Figure or None.
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    w = None
+
+    # Preferred: a running history you maintain in the agent
+    if getattr(agent, "per_w_hist", None):
+        w = np.asarray(agent.per_w_hist, dtype=float)
+
+    # Fallback: last replay batch weights (if you store them)
+    elif getattr(agent, "last_replay_stats", None) is not None:
+        st = agent.last_replay_stats
+        if isinstance(st, dict) and "is_w" in st and st["is_w"] is not None:
+            w = np.asarray(st["is_w"], dtype=float).reshape(-1)
+
+    if w is None or w.size == 0:
+        return None
+
+    # keep it sane
+    w = w[np.isfinite(w)]
+    if w.size == 0:
+        return None
+
+    if last is not None and last > 0 and w.size > last:
+        w = w[-last:]
+
+    fig, ax = plt.subplots(figsize=(8.5, 3.5), dpi=120)
+    ax.hist(w, bins=int(bins), alpha=0.85)
+    ax.set_title("Importance-sampling weights (hist)")
+    ax.set_xlabel("w")
+    ax.set_ylabel("count")
+    ax.grid(True, alpha=0.25)
+
+    if return_figs:
+        return fig
+    return None
+
+
+
+def _plot_opponent_usage_axis(
+    ax,
+    opponent_timeline: list[str],
+    up_to_episode: int | None = None,
+    normalize: bool = True,
+):
+    if not opponent_timeline:
+        ax.set_visible(False)
+        return
+
+    if up_to_episode is None:
+        used = opponent_timeline
+    else:
+        used = opponent_timeline[: max(0, min(up_to_episode, len(opponent_timeline)))]
+
+    if not used:
+        ax.set_visible(False)
+        return
+
+    counts = Counter(used)
+    total = sum(counts.values())
+    if total == 0:
+        ax.set_visible(False)
+        return
+
+    def _opp_sort_key(lab: str):
+        if lab == "R": return (0, 0)
+        if lab == "POP": return (1, 0)
+        if lab.startswith("L"):
+            try:
+                return (2, int(lab[1:]))
+            except ValueError:
+                return (3, lab)
+        if lab == "SP": return (4, 0)
+        return (3, lab)
+
+    labels_sorted = sorted(counts.keys(), key=_opp_sort_key)
+
+    base_colors = {
+        "R": "#1f77b4",
+        "POP": "#000000",
+        "SP": "#9467bd",
+    }
+
+    palette = [
+        "#ff7f0e", "#2ca02c", "#d62728", "#8c564b", "#e377c2",
+        "#7f7f7f", "#bcbd22", "#17becf", "#1a9850", "#fee08b",
+        "#e08214", "#543005", "#542788",
+    ]
+
+    color_map: dict[str, str] = dict(base_colors)
+    palette_idx = 0
+    for lab in labels_sorted:
+        if lab in color_map:
+            continue
+        color_map[lab] = palette[palette_idx % len(palette)]
+        palette_idx += 1
+
+    labels, vals, colors = [], [], []
+    for lab in labels_sorted:
+        c = counts.get(lab, 0)
+        if c <= 0:
+            continue
+        v = (c / total) if normalize else float(c)
+        labels.append(lab)
+        vals.append(v)
+        colors.append(color_map.get(lab, "#888888"))
+
+    if not labels:
+        ax.set_visible(False)
+        return
+
+    xs = np.arange(len(labels))
+    ax.bar(xs, vals, color=colors)
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels)
+
+    if normalize:
+        ax.set_ylabel("Fraction of episodes")
+        ax.set_ylim(0.0, 1.0)
+    else:
+        ax.set_ylabel("Episodes")
+
+    ax.set_title("Opponent usage (by episode)", fontsize=10)
+    ax.grid(axis="y", alpha=0.3)
+
+    for x, v in zip(xs, vals):
+        ax.text(
+            x, v,
+            f"{v:.2f}" if normalize else f"{int(v)}",
+            ha="center", va="bottom", fontsize=8,
+        )
+
+def _plot_a0_center_axis(
+    ax,
+    openings,
+    bench_history: dict | None,
+    training_phases: dict | None = None,
+    rate_ylim: tuple[float, float] | None = None,
+):
+    """
+    Robust a0@center panel:
+      - Prefer OpeningTracker time series if it has points
+      - Else fall back to bench_history['center_rate']
+      - Never hides the axis; if no data, shows a placeholder
+      - If rate_ylim clips all points, auto-expands
+    """
+    import numpy as np
+
+    ax.cla()
+    ax.set_title("a0@center over time", fontsize=10)
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Rate")
+    ax.grid(True, alpha=0.35)
+
+    x = None
+    y_agent = None
+    y_opp = None
+    source = None
+
+    # 1) Prefer OpeningTracker if it has points
+    if openings is not None:
+        ep_list = getattr(openings, "episodes", None)
+        ar_list = getattr(openings, "a_center_rates", None)
+        if ep_list is not None and ar_list is not None and len(ep_list) > 0 and len(ar_list) > 0:
+            x = np.asarray(ep_list, dtype=float)
+            y_agent = np.asarray(ar_list, dtype=float)
+            or_list = getattr(openings, "o_center_rates", None)
+            if or_list is not None and len(or_list) == len(ar_list):
+                y_opp = np.asarray(or_list, dtype=float)
+            source = "openings"
+
+    # 2) Fallback to benchmark history
+    if source is None and bench_history is not None:
+        if bench_history.get("episode") and bench_history.get("center_rate") is not None:
+            if len(bench_history["episode"]) > 0 and len(bench_history["center_rate"]) > 0:
+                x = np.asarray(bench_history["episode"], dtype=float)
+                y_agent = np.asarray(bench_history["center_rate"], dtype=float)
+                y_opp = None
+                source = "bench"
+
+    # 3) No data yet -> placeholder (do NOT hide axis)
+    if source is None:
+        ax.set_ylim(0.0, 1.0)
+        ax.text(
+            0.5, 0.5,
+            "No a0@center data yet\nNeed openings.maybe_log(ep) or bench center_rate",
+            transform=ax.transAxes,
+            ha="center", va="center", fontsize=9, alpha=0.75
+        )
+        return
+
+    # Plot main series
+    label_main = "agent a0 center" if source == "openings" else "a0@center (bench)"
+    ax.plot(x, y_agent, lw=1.6, label=label_main, alpha=0.90)
+
+    if y_opp is not None and y_opp.size == y_agent.size:
+        ax.plot(x, y_opp, lw=1.0, label="opp a0 center", alpha=0.70)
+
+    # Moving averages for the agent line
+    def _ma(arr, k: int):
+        k = int(k)
+        if k <= 1 or arr.size < k:
+            return None
+        return np.convolve(arr, np.ones(k, dtype=float) / k, mode="valid")
+
+    ma3 = _ma(y_agent, 3)
+    if ma3 is not None:
+        ax.plot(x[2:], ma3, ls="--", lw=1.6, label="MA3")
+
+    ma10 = _ma(y_agent, 10)
+    if ma10 is not None:
+        ax.plot(x[9:], ma10, ls=":", lw=1.6, label="MA10")
+
+    # Y-lims: apply requested, but auto-expand if it would hide everything
+    if rate_ylim is None:
+        ax.set_ylim(0.0, 1.0)
+    else:
+        lo, hi = float(rate_ylim[0]), float(rate_ylim[1])
+
+        yy = y_agent[np.isfinite(y_agent)]
+        if yy.size > 0:
+            ymin = float(yy.min())
+            ymax = float(yy.max())
+            if (ymax < lo) or (ymin > hi):
+                pad = 0.05
+                lo = min(lo, ymin - pad)
+                hi = max(hi, ymax + pad)
+
+        ax.set_ylim(lo, hi)
+
+    if training_phases:
+        try:
+            draw_phase_vlines(ax, training_phases, up_to=int(np.nanmax(x)), label=True)
+        except Exception:
+            pass
+
+    ax.legend(loc="lower left", fontsize=8)
+
+    
 ### ----- final live plot ----- ###
 
 def plot_live_training(
@@ -1062,151 +1414,290 @@ def plot_live_training(
     height_scale: float = 1.20,
     hspace: float = 0.48,
     dpi: int = 120,
-    openings_ylim: tuple[float, float] | None = (0.70, 1.00),
+    openings_ylim: tuple[float, float] | None = (-0.05, 1.05),
     h2h_history=None,
+    pop_h2h_history=None,
+    opponent_timeline=None,
+    overlay_last: int = 100,
     return_figs=False
 ):
+    import os
+    import numpy as np
+
     use_openings = openings is not None
 
+    # --- layout (KEEP your sizes) ---
     if use_openings:
-        nrows = 16
-        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 3.2,  # up to MA-15
-                        2.6,  # NEW: H2H panel
-                        2.1, 2.1, 2.1, 2.1, 2.6, 3.0]
-        # rows: 0..8 = reward/win/eps/mem/TU/bench/raw/MA3/MA7/MA15
-        #       9     = H2H
-        #       10..15 = action mix triplet + opp eps + openings (2)
+        nrows = 18
+        base_heights = [
+            3.8, 3.4, 2.6, 1.8, 2.6,
+            10.0,
+            3.2, 3.2,
+            10.0,
+            6.0,   # global
+            6.0,   # h2h
+            2.1, 2.1, 2.1, 2.1,  # action mix triplet + opp eps
+            2.6,   # opponent usage
+            2.6,   # openings hist
+            6.0    # a0@center over time
+        ]
     else:
-        nrows = 14
-        base_heights = [3.8, 3.4, 2.6, 1.8, 2.6, 3.2, 3.2, 3.2, 3.2,
-                        2.6,  # NEW: H2H panel
-                        2.1, 2.1, 2.1, 2.1]
+        nrows = 16
+        base_heights = [
+            3.8, 3.4, 2.6, 1.8, 2.6,
+            3.2, 3.2, 3.2,
+            10.0,
+            6.0,   # global
+            2.6,   # h2h
+            2.1, 2.1, 2.1, 2.1,  # action mix triplet + opp eps
+            2.6    # opponent usage
+        ]
 
     heights = [h * height_scale for h in base_heights]
 
     fig_ep = plt.figure(figsize=(12.5, sum(heights) + 1.5), dpi=dpi)
     gs = GridSpec(nrows, 1, height_ratios=heights, hspace=hspace)
 
-    # --- time-series axes ---
+    # --- axes ---
     ax_reward = fig_ep.add_subplot(gs[0, 0])
-    ax_win = fig_ep.add_subplot(gs[1, 0], sharex=ax_reward)
-    ax_eps = fig_ep.add_subplot(gs[2, 0], sharex=ax_reward)
-    ax_mem = fig_ep.add_subplot(gs[3, 0], sharex=ax_reward)
-    ax_tu = fig_ep.add_subplot(gs[4, 0], sharex=ax_reward)
-    ax_bench = fig_ep.add_subplot(gs[5, 0], sharex=ax_reward)
-    ax_bench_s35 = fig_ep.add_subplot(gs[6, 0], sharex=ax_reward)
-    ax_bench_s57 = fig_ep.add_subplot(gs[7, 0], sharex=ax_reward)
-    ax_bench_s15 = fig_ep.add_subplot(gs[8, 0], sharex=ax_reward)
-    ax_h2h = fig_ep.add_subplot(gs[9, 0], sharex=ax_reward)
+    ax_win    = fig_ep.add_subplot(gs[1, 0], sharex=ax_reward)
+    ax_eps    = fig_ep.add_subplot(gs[2, 0], sharex=ax_reward)
+    ax_mem    = fig_ep.add_subplot(gs[3, 0], sharex=ax_reward)
+    ax_tu     = fig_ep.add_subplot(gs[4, 0], sharex=ax_reward)
 
-    # Action-mix triplet + opponent ε-branch (shifted down by one row)
-    ax_mix_explore = fig_ep.add_subplot(gs[10, 0])
-    ax_mix_guard = fig_ep.add_subplot(gs[11, 0])
-    ax_mix_eps = fig_ep.add_subplot(gs[12, 0])
-    ax_opp_eps = fig_ep.add_subplot(gs[13, 0])
+    ax_bench      = fig_ep.add_subplot(gs[5, 0], sharex=ax_reward)
+    ax_bench_s35  = fig_ep.add_subplot(gs[6, 0], sharex=ax_reward)
+    ax_bench_s57  = fig_ep.add_subplot(gs[7, 0], sharex=ax_reward)
+    ax_bench_s15  = fig_ep.add_subplot(gs[8, 0], sharex=ax_reward)
 
-    # Reward
-    plot_moving_averages(ax_reward, reward_history, [10, 25, 100, 500],
-                         colors=['red', 'blue', '#666', '#000'], styles=['-', '-', '--', '--'],
-                         labels=['10-ep', '25-ep', '100-ep', '500-ep'])
-    ax_reward.plot(reward_history, label='Reward', alpha=0.45)
-    ax_reward.set_ylabel('Reward')
-    ax_reward.legend(loc='lower left', fontsize=8)
+    ax_global = fig_ep.add_subplot(gs[9, 0], sharex=ax_reward)
+    ax_h2h    = fig_ep.add_subplot(gs[10, 0], sharex=ax_reward)
+
+    # Action-mix triplet + opponent eps breakdown
+    ax_mix_explore = fig_ep.add_subplot(gs[11, 0])
+    ax_mix_guard   = fig_ep.add_subplot(gs[12, 0])
+    ax_mix_eps     = fig_ep.add_subplot(gs[13, 0])
+    ax_opp_eps     = fig_ep.add_subplot(gs[14, 0])
+
+    # Opponent usage (bar)
+    ax_opp_usage   = fig_ep.add_subplot(gs[15, 0])
+
+    # Openings (ONLY if enabled) - create ONCE and DO NOT overwrite later
+    ax_hist = None
+    ax_rate = None
+    if use_openings:
+        ax_hist = fig_ep.add_subplot(gs[16, 0])
+        ax_rate = fig_ep.add_subplot(gs[17, 0], sharex=ax_reward)
+
+    # ---------------- helpers ----------------
+    def _opp_color(lab: str) -> str:
+        if lab == "R":   return "#1f77b4"
+        if lab == "POP": return "#000000"
+        if lab == "SP":  return "#9467bd"
+        if lab.startswith("L") and lab[1:].isdigit():
+            depth = int(lab[1:])
+            palette = ["#ff7f0e", "#2ca02c", "#d62728", "#8c564b", "#e377c2",
+                       "#7f7f7f", "#bcbd22", "#17becf"]
+            return palette[depth % len(palette)]
+        return "#888888"
+
+    def _moving_avg(arr, k):
+        if k <= 1 or arr is None:
+            return None
+        arr = np.asarray(arr, dtype=float)
+        if arr.size < k:
+            return None
+        w = np.ones(k, dtype=float) / k
+        return np.convolve(arr, w, mode="valid")
+
+    def _plot_center_from_bench(ax, bench):
+        if not bench or not bench.get("episode") or not bench.get("center_rate"):
+            ax.set_visible(False)
+            return
+
+        x = np.asarray(bench["episode"], dtype=float)
+        y = np.asarray(bench["center_rate"], dtype=float)
+
+        ax.plot(x, y, label="a0@center (bench)", alpha=0.85)
+
+        ma3 = _moving_avg(y, 3)
+        if ma3 is not None and x.size >= 3:
+            ax.plot(x[2:2 + len(ma3)], ma3, label="MA3", ls="--", lw=1.6)
+
+        ma10 = _moving_avg(y, 10)
+        if ma10 is not None and x.size >= 10:
+            ax.plot(x[9:9 + len(ma10)], ma10, label="MA10", ls=":", lw=1.6)
+
+        ax.set_title("a0@center over time", fontsize=10)
+        ax.set_ylabel("Rate")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(True, alpha=0.35)
+        ax.legend(loc="lower left", fontsize=8)
+
+    # ---------------- Reward ----------------
+    plot_moving_averages(
+        ax_reward, reward_history, [10, 25, 100, 500],
+        colors=['red', 'blue', '#666', '#000'],
+        styles=['-', '-', '--', '--'],
+        labels=['10-ep', '25-ep', '100-ep', '500-ep']
+    )
+    ax_reward.plot(reward_history, label="Reward", alpha=0.45)
+    ax_reward.set_ylabel("Reward")
+    ax_reward.legend(loc="lower left", fontsize=8)
     ax_reward.grid(True, alpha=0.35)
 
-    # Win rate + epsilon overlay
-    plot_moving_averages(ax_win, win_history, [25, 100, 250, 500],
-                         colors=['green', 'red', '#11F', '#000'], styles=['-', '-', '--', '--'],
-                         labels=['25-ep', '100-ep', '250-ep', '500-ep'])
-    ax_win.plot(epsilon_history, label='Epsilon',
-                color='orange', linestyle='--', alpha=0.8)
-    ax_win.set_ylabel('Win Rate')
-    ax_win.legend(loc='lower left', fontsize=8)
+    # opponent tick overlay on reward (last N episodes)
+    if opponent_timeline:
+        n = len(opponent_timeline)
+        a = max(0, n - int(overlay_last))
+        xs = np.arange(a, n, dtype=int)
+        if xs.size > 0:
+            y0, y1 = ax_reward.get_ylim()
+            y_tick = y0 + 0.03 * (y1 - y0)
+            cols = [_opp_color(opponent_timeline[i]) for i in xs]
+            ax_reward.scatter(
+                xs, np.full(xs.shape, y_tick, dtype=float),
+                marker="|", s=250, c=cols, alpha=0.9, zorder=4
+            )
+
+    # ---------------- Win rate (+ epsilon overlay) ----------------
+    plot_moving_averages(
+        ax_win, win_history, [25, 100, 250, 500],
+        colors=['green', 'red', '#11F', '#000'],
+        styles=['-', '-', '--', '--'],
+        labels=['25-ep', '100-ep', '250-ep', '500-ep']
+    )
+    ax_win.plot(epsilon_history, label="Epsilon", color="orange", linestyle="--", alpha=0.8)
+    ax_win.set_ylabel("Win Rate")
+    ax_win.legend(loc="lower left", fontsize=8)
     ax_win.grid(True, alpha=0.35)
 
-    # Epsilon / guards
-    ax_eps.plot(epsilon_history, label='Epsilon', color='orange')
-    ax_eps.plot(epsilon_min_history, label='Epsilon_min',
-                color='black', linestyle='--')
+    # ---------------- Epsilon / guards ----------------
+    ax_eps.plot(epsilon_history, label="Epsilon", color="orange")
+    ax_eps.plot(epsilon_min_history, label="Epsilon_min", color="black", linestyle="--")
     if guard_prob_history:
-        ax_eps.plot(guard_prob_history,  label='Guard Prob',
-                    color='green', linestyle=':')
+        ax_eps.plot(guard_prob_history, label="Guard Prob", color="green", linestyle=":")
     if center_prob_history:
-        ax_eps.plot(center_prob_history, label='Center Prob',
-                    color='red',   linestyle=':')
-    ax_eps.set_ylabel('Epsilon / Guard')
-    ax_eps.legend(loc='lower left', fontsize=8)
+        ax_eps.plot(center_prob_history, label="Center Prob", color="red", linestyle=":")
+    ax_eps.set_ylabel("Epsilon / Guard")
+    ax_eps.legend(loc="lower left", fontsize=8)
     ax_eps.grid(True, alpha=0.35)
 
-    # Memory prune
-    ax_mem.plot(memory_prune_low_history, label='Memory Prune', color='red')
-    ax_mem.set_ylabel('Mem Prune')
-    ax_mem.legend(loc='lower left', fontsize=8)
+    # ---------------- Memory prune ----------------
+    ax_mem.plot(memory_prune_low_history, label="Memory Prune", color="red")
+    ax_mem.set_ylabel("Mem Prune")
+    ax_mem.legend(loc="lower left", fontsize=8)
     ax_mem.grid(True, alpha=0.35)
 
-    # Target update
-    _plot_tu_axis(ax_tu, tu_interval_history or [],
-                  tau_history or [], tu_mode_history or [])
+    # ---------------- Target update ----------------
+    _plot_tu_axis(ax_tu, tu_interval_history or [], tau_history or [], tu_mode_history or [])
     ax_tu.set_ylabel("Target Update")
     ax_tu.grid(True, alpha=0.35)
 
-    # Benchmarks (raw)
+    # ---------------- Benchmarks ----------------
     _plot_bench_on_axis(
         ax_bench, bench_history, smooth_k=0,
-        training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
+        training_phases=None,
+        epsilon_history=epsilon_history,
+        epsilon_min_history=epsilon_min_history
     )
     ax_bench.set_xlabel("Episode")
     ax_bench.set_title("Benchmarks (raw)", fontsize=10)
 
-    # Benchmarks (MA 3)
     _plot_bench_on_axis(
         ax_bench_s35, bench_history, smooth_k=3,
-        training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
+        training_phases=None,
+        epsilon_history=epsilon_history,
+        epsilon_min_history=epsilon_min_history
     )
     ax_bench_s35.set_xlabel("Episode")
     ax_bench_s35.set_title("Benchmarks (MA 3)", fontsize=10)
 
-    # Benchmarks (MA 7)
     _plot_bench_on_axis(
         ax_bench_s57, bench_history, smooth_k=7,
-        training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
+        training_phases=None,
+        epsilon_history=epsilon_history,
+        epsilon_min_history=epsilon_min_history
     )
     ax_bench_s57.set_xlabel("Episode")
     ax_bench_s57.set_title("Benchmarks (MA 7)", fontsize=10)
 
-    # Benchmarks (MA 15)
     _plot_bench_on_axis(
         ax_bench_s15, bench_history, smooth_k=15,
-        training_phases=None, epsilon_history=epsilon_history, epsilon_min_history=epsilon_min_history
+        training_phases=None,
+        epsilon_history=epsilon_history,
+        epsilon_min_history=epsilon_min_history
     )
     ax_bench_s15.set_xlabel("Episode")
     ax_bench_s15.set_title("Benchmarks (MA 15)", fontsize=10)
 
-    # H2H panel
-    _plot_h2h_axis(ax_h2h, h2h_history or {}, training_phases=TRAINING_PHASES)
+    # ---------------- Global score ----------------
+    _plot_global_score_axis(ax_global, bench_history, training_phases=TRAINING_PHASES)
 
+    # ---------------- H2H (baseline + POP overlay) ----------------
+    _plot_h2h_dual_axis(
+        ax_h2h,
+        h2h_history or {},
+        pop_h2h_history or {},
+        training_phases=TRAINING_PHASES,
+    )
+
+    # ---------------- Action mix triplet + opponent eps breakdown ----------------
     _plot_action_mix_triplet(ax_mix_explore, ax_mix_guard, ax_mix_eps, agent)
     _plot_opp_epsdetail(ax_opp_eps, agent)
 
-    # Openings (hist + rate)
-    if use_openings:
-        ax_hist = fig_ep.add_subplot(gs[14, 0])
-        ax_rate = fig_ep.add_subplot(gs[15, 0], sharex=ax_reward)
-        _draw_openings_on_axes(ax_hist, ax_rate, openings,
-                               training_phases=TRAINING_PHASES, rate_ylim=openings_ylim)
+    # ---------------- Opponent usage ----------------
+    _plot_opponent_usage_axis(
+        ax_opp_usage,
+        opponent_timeline or [],
+        up_to_episode=episode,
+        normalize=True
+    )
 
-    # Phase markers on time-series axes (include new MA-15 axis)
-    axes = [ax_reward, ax_win, ax_eps, ax_mem, ax_tu, ax_bench,
-            ax_bench_s35, ax_bench_s57, ax_bench_s15, ax_h2h]
-    if use_openings:
-        axes += [ax_rate]
+    # ---------------- Openings (hist + center over time) ----------------
+    if use_openings and ax_hist is not None and ax_rate is not None:
+        # try the "classic" openings drawer first (if it has data, great)
+        _draw_openings_on_axes(
+            ax_hist, ax_rate, openings,
+            training_phases=TRAINING_PHASES,
+            rate_ylim=openings_ylim
+        )
+
+        # If the rate panel ended up empty, fall back to benchmark center_rate.
+        has_any_data = False
+        for ln in list(ax_rate.lines):
+            if len(ln.get_xdata()) > 0 and len(ln.get_ydata()) > 0:
+                has_any_data = True
+                break
+        if not has_any_data and getattr(ax_rate, "collections", None):
+            for col in ax_rate.collections:
+                try:
+                    if len(col.get_offsets()) > 0:
+                        has_any_data = True
+                        break
+                except Exception:
+                    pass
+
+        if not has_any_data:
+            ax_rate.cla()
+            _plot_center_from_bench(ax_rate, bench_history)
+
+    # ---------------- Phase vlines (time-series only) ----------------
+    axes = [
+        ax_reward, ax_win, ax_eps, ax_mem, ax_tu,
+        ax_bench, ax_bench_s35, ax_bench_s57, ax_bench_s15,
+        ax_global, ax_h2h
+    ]
+    if use_openings and ax_rate is not None and ax_rate.get_visible():
+        axes.append(ax_rate)
 
     for ax in axes:
         draw_phase_vlines(ax, TRAINING_PHASES, up_to=episode, label=True)
 
+    eps_last = float(epsilon_history[-1]) if epsilon_history else float("nan")
     fig_ep.suptitle(
         f"{title} - Ep {episode} — Phase: {phase} | Wins: {win_count}, "
-        f"Losses: {loss_count}, Draws: {draw_count} | ε={epsilon_history[-1]:.3f}",
+        f"Losses: {loss_count}, Draws: {draw_count} | ε={eps_last:.3f}",
         y=0.995
     )
 
@@ -1225,23 +1716,20 @@ def plot_live_training(
         if getattr(agent, "q_max_hist", None):
             plots.append(("Q |max|",       agent.q_max_hist,       "navy"))
         if getattr(agent, "target_abs_hist", None):
-            plots.append(
-                ("|target| mean", agent.target_abs_hist,  "darkgreen"))
+            plots.append(("|target| mean", agent.target_abs_hist,  "darkgreen"))
         if getattr(agent, "target_lag_hist", None):
             plots.append(("Target Lag",    agent.target_lag_hist,  "orange"))
 
         if plots:
-            fig_step, ax_step = plt.subplots(
-                len(plots), 1, figsize=(12, 3 * len(plots)))
+            fig_step, ax_step = plt.subplots(len(plots), 1, figsize=(12, 3 * len(plots)))
             if len(plots) == 1:
                 ax_step = [ax_step]
             for i, (label, data, color) in enumerate(plots):
                 ax = ax_step[i]
                 ax.plot(data, label=label, color=color, alpha=0.6)
                 if label == "Loss" and len(data) >= 100:
-                    ma = np.convolve(data, np.ones(100)/100, mode='valid')
-                    ax.plot(range(99, len(data)), ma, label='100-ep MA',
-                            color='black', linestyle='--')
+                    ma = np.convolve(np.asarray(data, dtype=float), np.ones(100) / 100, mode="valid")
+                    ax.plot(range(99, len(data)), ma, label="100-ep MA", color="black", linestyle="--")
                 ax.set_ylabel(label)
                 ax.legend()
                 ax.grid(True)

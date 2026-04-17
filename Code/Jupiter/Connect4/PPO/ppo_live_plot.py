@@ -2,6 +2,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 # from matplotlib.gridspec import GridSpec
 from collections import Counter
 from DQN.dqn_utilities import _plot_bench_on_axis, _plot_h2h_axis, draw_phase_vlines, _draw_openings_on_axes
@@ -191,58 +192,171 @@ def plot_live_training_ppo(
     openings=None,
     openings_ylim: tuple[float, float] | None = (0.85, 1.05),
     policy=None,   # PPO policy, for action-mix stats
+    fig_width: float = 26.0,     # inches (18–26 on a big monitor)
+    fig_dpi: int = 140,          # higher = sharper + heavier
+    separate_eval_order=None,    # list[tuple[display_name, source_label]]
+    separate_eval_cols: int = 4,
 ):
     """
     Multi-panel live report.
     Openings panels appear only if `openings` is provided.
+
+    Separate per-opponent eval panels are read from:
+        benchmark_history["by_opponent"][label]
     """
 
     use_openings = openings is not None
 
-    # --- layout ---
+    if separate_eval_order is None:
+        separate_eval_order = [
+            ("Leftmost", "Leftmost"),
+            ("Center", "Center"),
+            ("Random", "Random"),
+            ("L1", "Lookahead-1"),
+            ("L2", "Lookahead-2"),
+            ("L3", "Lookahead-3"),
+            ("L4", "Lookahead-4"),
+            ("L5", "Lookahead-5"),
+            ("L6", "Lookahead-6"),
+            ("L7", "Lookahead-7"),
+            ("L9", "Lookahead-9"),
+            ("L11", "Lookahead-11"),
+            ("L13", "Lookahead-13"),
+        ]
+
+    # ---------------- helpers ----------------
+    def _opp_color(lab: str) -> str:
+        if lab == "R":
+            return "#1f77b4"
+        if lab == "POP":
+            return "#000000"
+        if lab == "SP":
+            return "#9467bd"
+        if lab.startswith("L") and lab[1:].isdigit():
+            depth = int(lab[1:])
+            palette = [
+                "#ff7f0e", "#2ca02c", "#d62728", "#8c564b",
+                "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+            ]
+            return palette[depth % len(palette)]
+        return "#888888"
+
+    def _get_eval_xy(hist, source_label):
+        """
+        Read from benchmark_history['by_opponent'][source_label].
+        Fallback to top-level hist[source_label] only if needed.
+        """
+        if not hist or "episode" not in hist:
+            return None, None
+
+        ys = None
+        by_opp = hist.get("by_opponent", None)
+
+        if isinstance(by_opp, dict) and source_label in by_opp:
+            ys = by_opp[source_label]
+        elif source_label in hist:
+            ys = hist[source_label]
+        else:
+            return None, None
+
+        try:
+            xs = np.asarray(hist["episode"], dtype=float)
+            ys = np.asarray(ys, dtype=float)
+        except Exception:
+            return None, None
+
+        n = min(len(xs), len(ys))
+        if n <= 0:
+            return None, None
+
+        xs = xs[:n]
+        ys = ys[:n]
+
+        mask = np.isfinite(xs) & np.isfinite(ys)
+        if not np.any(mask):
+            return None, None
+
+        return xs[mask], ys[mask]
+
+    def _plot_single_eval_axis(ax, hist, display_name, source_label):
+        xs, ys = _get_eval_xy(hist, source_label)
+        if xs is None or ys is None or len(xs) == 0:
+            ax.set_visible(False)
+            return
+
+        ax.plot(xs, ys, alpha=0.45, lw=1.1)
+
+        ma3 = _moving_avg(ys, 3)
+        if ma3 is not None and len(xs) >= 3:
+            ax.plot(xs[2:2 + len(ma3)], ma3, ls="--", lw=1.3)
+
+        ma10 = _moving_avg(ys, 10)
+        if ma10 is not None and len(xs) >= 10:
+            ax.plot(xs[9:9 + len(ma10)], ma10, ls=":", lw=1.3)
+
+        ax.set_title(display_name, fontsize=8, pad=2)
+        ax.set_ylim(0.0, 1.02)
+        ax.grid(True, alpha=0.28)
+
+    eval_items = []
+    if benchmark_history:
+        for display_name, source_label in separate_eval_order:
+            xs, ys = _get_eval_xy(benchmark_history, source_label)
+            if xs is not None and ys is not None and len(xs) > 0:
+                eval_items.append((display_name, source_label))
+
+    eval_n = len(eval_items)
+    eval_cols = max(1, int(separate_eval_cols))
+    eval_rows = int(np.ceil(eval_n / eval_cols)) if eval_n > 0 else 1
+    eval_block_height = max(5.0, 3.0 * eval_rows)
+
+    # ---------------- layout ----------------
     if use_openings:
-        nrows = 16
+        nrows = 17
         heights = [
             6.0,   # 0 reward
             10.0,  # 1 win rate
             5.0,   # 2 losses
-            10.0,   # 3 entropy / KL / clipfrac (split y-axes)
+            10.0,  # 3 entropy / KL / clipfrac
             10.0,  # 4 benchmarks raw
             2.3,   # 5 benchmarks MA3
             2.3,   # 6 benchmarks MA7
-            10.0,   # 7 benchmarks MA15
-            10,   # 8 global score
+            10.0,  # 7 benchmarks MA15
+            16.0,  # 8 global score
             2.6,   # 9 H2H
             2.6,   # 10 ensemble H2H
             3.0,   # 11 checkpoint score
-            2.1,   # 12 openings hist
-            8.0,   # 13 a0@center
-            2.3,   # 14 action mix
-            2.3,   # 15 opponent usage
+            eval_block_height,  # 12 separate evals
+            2.1,   # 13 openings hist
+            8.0,   # 14 a0@center
+            2.3,   # 15 action mix
+            2.3,   # 16 opponent usage
         ]
     else:
-        nrows = 14
+        nrows = 15
         heights = [
             6.0,   # 0 reward
             10.0,  # 1 win rate
             5.0,   # 2 losses
-            10.0,   # 3 entropy / KL / clipfrac (split y-axes)
+            10.0,  # 3 entropy / KL / clipfrac
             10.0,  # 4 benchmarks raw
             2.3,   # 5 benchmarks MA3
             2.3,   # 6 benchmarks MA7
-            10.0,   # 7 benchmarks MA15
-            10,   # 8 global score
+            10.0,  # 7 benchmarks MA15
+            16.0,  # 8 global score
             2.6,   # 9 H2H
             2.6,   # 10 ensemble H2H
             3.0,   # 11 checkpoint score
-            2.3,   # 12 action mix
-            2.3,   # 13 opponent usage
+            eval_block_height,  # 12 separate evals
+            2.3,   # 13 action mix
+            2.3,   # 14 opponent usage
         ]
 
-    fig = plt.figure(figsize=(12.2, sum(heights) + 1.0))
+    fig = plt.figure(figsize=(fig_width, sum(heights) + 1.0), dpi=fig_dpi)
+    fig.subplots_adjust(left=0.055, right=0.995)
     gs = fig.add_gridspec(nrows, 1, height_ratios=heights, hspace=0.45)
 
-    # --- axes ---
+    # ---------------- axes ----------------
     ax_reward = fig.add_subplot(gs[0, 0])
     ax_win = fig.add_subplot(gs[1, 0], sharex=ax_reward)
     ax_loss = fig.add_subplot(gs[2, 0], sharex=ax_reward)
@@ -256,32 +370,80 @@ def plot_live_training_ppo(
     ax_eh2h = fig.add_subplot(gs[10, 0], sharex=ax_reward)
     ax_chkp = fig.add_subplot(gs[11, 0], sharex=ax_reward)
 
+    eval_axes = []
+
+    # ---------------- separate benchmark grid ----------------
+    # FAIL-SAFE: if anything here breaks, the rest of the plot still renders
+    try:
+        if eval_n > 0:
+            eval_gs = gs[12, 0].subgridspec(eval_rows, eval_cols, hspace=0.35, wspace=0.16)
+
+            first_eval_ax = None
+            for i, (display_name, source_label) in enumerate(eval_items):
+                r = i // eval_cols
+                c = i % eval_cols
+
+                if first_eval_ax is None:
+                    ax = fig.add_subplot(eval_gs[r, c], sharex=ax_reward)
+                    first_eval_ax = ax
+                else:
+                    ax = fig.add_subplot(eval_gs[r, c], sharex=ax_reward, sharey=first_eval_ax)
+
+                _plot_single_eval_axis(ax, benchmark_history, display_name, source_label)
+
+                if r < eval_rows - 1:
+                    ax.tick_params(labelbottom=False)
+
+                if c == 0:
+                    ax.set_ylabel("WR", fontsize=8)
+                else:
+                    ax.tick_params(labelleft=False)
+
+                ax.tick_params(axis="both", labelsize=7)
+                eval_axes.append(ax)
+
+            # hide unused slots
+            for j in range(eval_n, eval_rows * eval_cols):
+                r = j // eval_cols
+                c = j % eval_cols
+                ax_unused = fig.add_subplot(eval_gs[r, c])
+                ax_unused.set_visible(False)
+
+            if eval_axes:
+                eval_axes[0].text(
+                    0.0,
+                    1.18,
+                    "Benchmarks by opponent",
+                    transform=eval_axes[0].transAxes,
+                    fontsize=10,
+                    fontweight="bold",
+                    ha="left",
+                    va="bottom",
+                )
+        else:
+            ax_eval_placeholder = fig.add_subplot(gs[12, 0], sharex=ax_reward)
+            ax_eval_placeholder.set_visible(False)
+
+    except Exception as e:
+        print(f"[plot_live_training_ppo] separate benchmark panels disabled: {e}")
+        try:
+            ax_eval_placeholder = fig.add_subplot(gs[12, 0], sharex=ax_reward)
+            ax_eval_placeholder.set_visible(False)
+        except Exception:
+            pass
+        eval_axes = []
+
+    # ---------------- lower axes ----------------
     if use_openings:
-        ax_hist = fig.add_subplot(gs[12, 0])
-        ax_rate = fig.add_subplot(gs[13, 0], sharex=ax_reward)
-        ax_mix = fig.add_subplot(gs[14, 0])
-        ax_opp = fig.add_subplot(gs[15, 0])
+        ax_hist = fig.add_subplot(gs[13, 0])
+        ax_rate = fig.add_subplot(gs[14, 0], sharex=ax_reward)
+        ax_mix = fig.add_subplot(gs[15, 0])
+        ax_opp = fig.add_subplot(gs[16, 0])
     else:
         ax_hist = None
         ax_rate = None
-        ax_mix = fig.add_subplot(gs[12, 0])
-        ax_opp = fig.add_subplot(gs[13, 0])
-
-    # ---------------- helpers ----------------
-    def _opp_color(lab: str) -> str:
-        # keep consistent with usage bar chart intent
-        if lab == "R":
-            return "#1f77b4"
-        if lab == "POP":
-            return "#000000"
-        if lab == "SP":
-            return "#9467bd"
-        if lab.startswith("L") and lab[1:].isdigit():
-            # stable-ish palette by depth
-            depth = int(lab[1:])
-            palette = ["#ff7f0e", "#2ca02c", "#d62728", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
-            return palette[depth % len(palette)]
-        return "#888888"
+        ax_mix = fig.add_subplot(gs[13, 0])
+        ax_opp = fig.add_subplot(gs[14, 0])
 
     # ---------------- 1) Rewards ----------------
     ax_reward.plot(reward_history, label="Reward", alpha=0.55)
@@ -290,7 +452,13 @@ def plot_live_training_ppo(
         ma = _moving_avg(reward_history, k)
         if ma is not None:
             x0 = k - 1
-            ax_reward.plot(range(x0, x0 + len(ma)), ma, label=f"{k}-ep MA", linewidth=lw, linestyle=ls)
+            ax_reward.plot(
+                range(x0, x0 + len(ma)),
+                ma,
+                label=f"{k}-ep MA",
+                linewidth=lw,
+                linestyle=ls,
+            )
 
     ax_reward.set_ylabel("Reward")
     ax_reward.grid(True, alpha=0.35)
@@ -322,7 +490,13 @@ def plot_live_training_ppo(
             ma = _moving_avg(win_history, k)
             if ma is not None:
                 x0 = k - 1
-                ax_win.plot(range(x0, x0 + len(ma)), ma, label=f"Win Rate ({k})", color=color, linestyle=ls)
+                ax_win.plot(
+                    range(x0, x0 + len(ma)),
+                    ma,
+                    label=f"Win Rate ({k})",
+                    color=color,
+                    linestyle=ls,
+                )
 
     ax_win.set_ylabel("Win Rate")
     if ax_win.lines:
@@ -340,39 +514,36 @@ def plot_live_training_ppo(
         ax_loss.legend(loc="upper right", fontsize=8)
     ax_loss.grid(True, alpha=0.35)
 
-    # ---------------- 4) Entropy / KL / ClipFrac (split y-axes) ----------------
+    # ---------------- 4) Entropy / KL / ClipFrac ----------------
     if epi_u:
-        kl_vals      = metrics_history.get("approx_kl", [])
-        kl_ppo_vals  = metrics_history.get("approx_kl_ppo", [])
-        cf_vals      = metrics_history.get("clip_frac", [])
-        ent_vals     = metrics_history.get("entropy", [])
-    
-        # Primary axis: KLs + ClipFrac
+        kl_vals = metrics_history.get("approx_kl", [])
+        kl_ppo_vals = metrics_history.get("approx_kl_ppo", [])
+        cf_vals = metrics_history.get("clip_frac", [])
+        ent_vals = metrics_history.get("entropy", [])
+
         line_kl = ax_stats.plot(
             epi_u, kl_vals, label="KL (old-new)", linestyle="--", color="tab:orange"
         )[0]
-    
+
         line_klppo = None
         if kl_ppo_vals:
             line_klppo = ax_stats.plot(
                 epi_u, kl_ppo_vals, label="KL (ppo)", linestyle="-.", color="tab:red", alpha=0.85
             )[0]
-    
+
         line_cf = ax_stats.plot(
             epi_u, cf_vals, label="ClipFrac", linestyle=":", color="tab:green"
         )[0]
-    
+
         ax_stats.set_ylabel("KL / ClipFrac")
         ax_stats.grid(True, alpha=0.35)
-    
-        # Secondary axis: Entropy
+
         ax_ent = ax_stats.twinx()
         line_ent = ax_ent.plot(
             epi_u, ent_vals, label="Entropy", color="tab:blue", alpha=0.7
         )[0]
         ax_ent.set_ylabel("Entropy")
-    
-        # Combined legend (lines from both axes)
+
         lines = [line_kl]
         if line_klppo is not None:
             lines.append(line_klppo)
@@ -382,8 +553,7 @@ def plot_live_training_ppo(
     else:
         ax_stats.grid(True, alpha=0.35)
 
-
-    # ---------------- 5–8) Benchmarks ----------------
+    # ---------------- 5–8) Benchmarks aggregate ----------------
     if benchmark_history and benchmark_history.get("episode"):
         _plot_bench_on_axis(ax_bench, benchmark_history, smooth_k=0, training_phases=None)
         ax_bench.set_title("Benchmarks (raw)", fontsize=10)
@@ -406,52 +576,115 @@ def plot_live_training_ppo(
         xg = np.asarray(benchmark_history["episode"], dtype=float)
         yg = np.asarray(benchmark_history["global_score"], dtype=float)
 
+        n = min(xg.size, yg.size)
+        xg = xg[:n]
+        yg = yg[:n]
+
+        # raw + smooth
         ax_global.plot(xg, yg, label="Global score", alpha=0.85)
+
         ma_g = _moving_avg(yg, 3)
         if ma_g is not None and xg.size >= 3:
-            x0 = 2
             ax_global.plot(
-                xg[x0:x0 + len(ma_g)],
+                xg[2:2 + len(ma_g)],
                 ma_g,
                 label="Global score (MA3)",
                 ls="--",
                 lw=1.6,
             )
-            
+
         ma10_g = _moving_avg(yg, 10)
-        if ma_g is not None and xg.size >= 10:
-            x0 = 9
+        if ma10_g is not None and xg.size >= 10:
             ax_global.plot(
-                xg[x0:x0 + len(ma10_g)],
+                xg[9:9 + len(ma10_g)],
                 ma10_g,
                 label="Global score (MA10)",
-                ls="..",
+                ls=":",
                 lw=1.6,
             )
 
+        # baseline = first observed global score
+        first_score = float(yg[0])
+        ax_global.axhline(
+            first_score,
+            color="red",
+            lw=1.4,
+            ls="-",
+            alpha=0.9,
+            label=f"First eval = {first_score:.3f}",
+            zorder=1,
+        )
+
+        # standard axis formatting
         ax_global.set_ylabel("Global score")
         ax_global.set_ylim(0.0, 1.0)
-        ax_global.grid(True, alpha=0.35)
+
+        # full left-axis labels every 0.1
+        yticks_main = np.round(np.arange(0.0, 1.01, 0.1), 2)
+        ax_global.set_yticks(yticks_main)
+        ax_global.set_yticklabels([f"{v:.1f}" for v in yticks_main])
+
+        # keep broader structure visible
+        ax_global.yaxis.set_major_locator(mticker.MultipleLocator(0.1))
+        ax_global.yaxis.set_minor_locator(mticker.MultipleLocator(0.05))
+        ax_global.minorticks_on()
+
+        ax_global.grid(True, which="major", alpha=0.45, lw=0.9)
+        ax_global.grid(True, which="minor", alpha=0.18, lw=0.5)
+
+        # emphasized upper-band guide lines: 0.90 .. 1.00
+        upper_band_ticks = np.round(np.arange(0.90, 1.001, 0.02), 2)
+        for yv in upper_band_ticks:
+            ax_global.axhline(
+                yv,
+                color="crimson",
+                lw=0.8 if yv < 1.0 else 1.0,
+                ls=":" if yv < 1.0 else "--",
+                alpha=0.28,
+                zorder=0,
+            )
+
+        # right-side dense labels for the important region
+        ax_global_hi = ax_global.twinx()
+        ax_global_hi.set_ylim(ax_global.get_ylim())
+        ax_global_hi.set_yticks(upper_band_ticks)
+        ax_global_hi.set_yticklabels([f"{v:.2f}" for v in upper_band_ticks])
+        ax_global_hi.tick_params(axis="y", labelsize=8, pad=2)
+        ax_global_hi.set_ylabel("0.90–1.00 focus")
+
         ax_global.legend(loc="lower left", fontsize=8)
         ax_global.set_title("Depth-weighted global benchmark score", fontsize=10)
     else:
         ax_global.set_visible(False)
 
     # ---------------- 9–10) H2H panels ----------------
-    _plot_h2h_axis(ax_h2h, h2h_history or {}, training_phases=None, title="H2H vs baseline (score ±95% CI)")
-    _plot_h2h_axis(ax_eh2h, ensemble_h2h_history or {}, training_phases=None, title="Ensemble H2H (score ±95% CI)")
+    _plot_h2h_axis(
+        ax_h2h,
+        h2h_history or {},
+        training_phases=None,
+        title="H2H vs baseline (score ±95% CI)",
+    )
+    _plot_h2h_axis(
+        ax_eh2h,
+        ensemble_h2h_history or {},
+        training_phases=None,
+        title="Ensemble H2H (score ±95% CI)",
+    )
 
     # ---------------- 11) CheckPoint score ----------------
     if benchmark_history and benchmark_history.get("episode") and benchmark_history.get("check_score"):
         xc = np.asarray(benchmark_history["episode"], dtype=float)
         yc = np.asarray(benchmark_history["check_score"], dtype=float)
 
+        n = min(xc.size, yc.size)
+        xc = xc[:n]
+        yc = yc[:n]
+
         ax_chkp.plot(xc, yc, label="CheckPoint score", alpha=0.85)
         ma_c = _moving_avg(yc, 3)
         if ma_c is not None and xc.size >= 3:
-            x0 = 2
             ax_chkp.plot(
-                xc[x0:x0 + len(ma_c)],
+                xc[2:2 + len(ma_c)],
                 ma_c,
                 label="MA3",
                 ls="--",
@@ -467,7 +700,6 @@ def plot_live_training_ppo(
 
     # ---------------- Openings panels ----------------
     if use_openings:
-        # clamp openings_ylim to sane [0,1]
         oy = openings_ylim
         if oy is not None:
             oy = (0.85, 1.02)
@@ -491,6 +723,9 @@ def plot_live_training_ppo(
             ax_bench, ax_b3, ax_b7, ax_b15,
             ax_global, ax_h2h, ax_eh2h, ax_chkp,
         ]
+
+        axes_for_vlines.extend(eval_axes)
+
         if use_openings and ax_rate is not None:
             axes_for_vlines.append(ax_rate)
 
@@ -509,6 +744,8 @@ def plot_live_training_ppo(
         f"W/L/D: {win_count}/{loss_count}/{draw_count} | Win%={wr:.3f} | EV={ev_last}",
         y=0.995,
     )
+
+    fig.subplots_adjust(left=0.055, right=0.995)
 
     if save and save_path:
         fname = f"{save_path}{title}__complete_training_plot.png"

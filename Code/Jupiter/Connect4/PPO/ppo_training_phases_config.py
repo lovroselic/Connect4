@@ -1,304 +1,169 @@
 # PPO/ppo_training_phases_config.py
 
-TRAINING_PHASES = {
-    "Intro_POP": {
-        "duration": 100,
-        "opponent_mix": {
-            "L1":  0.030,
-            "L2":  0.015,
-            "L3":  0.030,
-            "L4":  0.015,
-            "L5":  0.075,
-            "L6":  0.030,
-            "L7":  0.075,
-            "L8":  0.030,
-            "L9":  0.075,
-            "L10": 0.030,
-            "L11": 0.075,
-            "L12": 0.030,
-            "L13": 0.090,
+# PPO 
 
-            "POP": 0.30,
-            "SP":  0.10,
-        },
-
-        "params": {
-            "lr": 9.0e-4,               # 3.0e-4
-            "clip": 0.30,
-            "entropy": 0.03,            # 0.020
-            "epochs": 4,
-            "batch_size": 128,          # 256
-            "steps_per_update": 512,   # 512 / 1024
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,        # 0.92
-        },
-    },
-    "Intro_ALL": {
-        "duration": 300,
-        "opponent_mix": {
-            "R":   0.010,
-            "L1":  0.066,
-            "L2":  0.066,
-            "L3":  0.066,
-            "L4":  0.066,
-            "L5":  0.066,
-            "L6":  0.066,
-            "L7":  0.066,
-            "L8":  0.066,
-            "L9":  0.066,
-            "L10": 0.066,
-            "L11": 0.066,
-            "L12": 0.066,
-            "L13": 0.066,
-            
-            "POP": 0.130,
-            "SP":  0.002,
-        },
-        "params": {
-            "lr": 9.0e-4,               # 3.0e-4
-            "clip": 0.30,
-            "entropy": 0.03,            # 0.020
-            "epochs": 4,
-            "batch_size": 128,          # 256
-            "steps_per_update": 512,   # 512 / 1024
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,        # 0.92
-        },
-    },
-
-    "L3+": {
-        "duration": 400,
-        "opponent_mix": {
-            "L1":  0.050,
-            "L2":  0.050,
-            "L3":  0.098,
-            "L4":  0.066,
-            "L5":  0.066,
-            "L6":  0.066,
-            "L7":  0.066,
-            "L8":  0.066,
-            "L9":  0.066,
-            "L10": 0.066,
-            "L11": 0.066,
-            "L12": 0.066,
-            "L13": 0.066,
-            "POP": 0.100,
-            "SP":  0.042,
-        },
-        "params": {
-            "lr": 9.0e-4,
-            "clip": 0.30,
-            "entropy": 0.03,
-            "epochs": 4,
-            "batch_size": 128,
-            "steps_per_update": 512,
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,
-        },
-    },
-
-    "L5+": {
-        "duration": 400,
-        "opponent_mix": {
-            "L1":  0.040,
-            "L2":  0.040,
-            "L3":  0.088,
-            "L4":  0.066,
-            "L5":  0.086,
-            "L6":  0.066,
-            "L7":  0.076,
-            "L8":  0.066,
-            "L9":  0.066,
-            "L10": 0.066,
-            "L11": 0.066,
-            "L12": 0.066,
-            "L13": 0.066,
-            "POP": 0.071,
-            "SP":  0.071,
-        },
-        "params": {
-            "lr": 9.0e-4,
-            "clip": 0.30,
-            "entropy": 0.03,
-            "epochs": 4,
-            "batch_size": 128,
-            "steps_per_update": 512,
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,
-        },
-    },
-
-    "L7+": {
-        "duration": 400,
-        "opponent_mix": {
-            "L1":  0.035,
-            "L2":  0.020,
-            "L3":  0.080,
-            "L4":  0.060,
-            "L5":  0.080,
-            "L6":  0.060,
-            "L7":  0.100,
-            "L8":  0.060,
-            "L9":  0.100,
-            "L10": 0.066,
-            "L11": 0.070,
-            "L12": 0.066,
-            "L13": 0.066,
-            "POP": 0.070,
-            "SP":  0.067,
-        },
-        "params": {
-            "lr": 9.0e-4,
-            "clip": 0.30,
-            "entropy": 0.03,
-            "epochs": 4,
-            "batch_size": 128,
-            "steps_per_update": 512,
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,
-        },
-    },
-
-    "L9+": {
-        "duration": 400,
-        "opponent_mix": {
-            "L1":  0.030,
-            "L2":  0.020,
-            "L3":  0.050,
-            "L4":  0.030,
-            "L5":  0.110,
-            "L6":  0.030,
-            "L7":  0.130,
-            "L8":  0.060,
-            "L9":  0.130,
-            "L10": 0.060,
-            "L11": 0.084,
-            "L12": 0.060,
-            "L13": 0.060,
-            "POP": 0.060,
-            "SP":  0.086,
-        },
-        "params": {
-            "lr": 9.0e-4,
-            "clip": 0.30,
-            "entropy": 0.03,
-            "epochs": 4,
-            "batch_size": 128,
-            "steps_per_update": 512,
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,
-        },
-    },
-
-    "L11+": {
-        "duration": 400,
-        "opponent_mix": {
-            "L1":  0.030,
-            "L2":  0.010,
-            "L3":  0.050,
-            "L4":  0.020,
-            "L5":  0.120,
-            "L6":  0.030,
-            "L7":  0.140,
-            "L8":  0.050,
-            "L9":  0.130,
-            "L10": 0.050,
-            "L11": 0.130,
-            "L12": 0.060,
-            "L13": 0.060,
-            "POP": 0.050,
-            "SP":  0.070,
-        },
-        "params": {
-            "lr": 9.0e-4,
-            "clip": 0.30,
-            "entropy": 0.03,
-            "epochs": 4,
-            "batch_size": 128,
-            "steps_per_update": 512,
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,
-        },
-    },
-
-    "L13+": {
-        "duration": 400,
-        "opponent_mix": {
-            "L1":  0.030,
-            "L2":  0.010,
-            "L3":  0.050,
-            "L4":  0.020,
-            "L5":  0.100,
-            "L6":  0.030,
-            "L7":  0.130,
-            "L8":  0.050,
-            "L9":  0.130,
-            "L10": 0.050,
-            "L11": 0.110,
-            "L12": 0.060,
-            "L13": 0.120,
-            "POP": 0.040,
-            "SP":  0.070,
-        },
-        "params": {
-            "lr": 9.0e-4,
-            "clip": 0.30,
-            "entropy": 0.03,
-            "epochs": 4,
-            "batch_size": 128,
-            "steps_per_update": 512,
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,
-        },
-    },
-
-    "SP": {
-        "duration": 200,
-        "opponent_mix": {
-            "L1":  0.020,
-            "L2":  0.010,
-            "L3":  0.020,
-            "L4":  0.010,
-            "L5":  0.05,
-            "L6":  0.020,
-            "L7":  0.05,
-            "L8":  0.02,
-            "L9":  0.05,
-            "L10": 0.02,
-            "L11": 0.05,
-            "L12": 0.02,
-            "L13": 0.06,
-            "SP":  0.60,
-        },
-        "params": {
-            "lr": 9.0e-4,
-            "clip": 0.30,
-            "entropy": 0.03,
-            "epochs": 4,
-            "batch_size": 128,
-            "steps_per_update": 512,
-            "vf_clip": 0.20,
-            "max_grad_norm": 1.0,
-            "target_kl": 0.03,
-            "temperature": 0.99,
-        },
-    },
+BASE_PARAMS = {
+    "lr": 3.75e-4,                       # 3.5 -> 4.0 -> 5.0 -> 6.0 #7.0 too big??! 5.0 optimal??
+    "clip": 0.275,
+    "entropy": 0.0250,                  #0.025
+    "epochs": 7,                        # 5 -> 6
+    "batch_size": 256,
+    "steps_per_update": 512,            #256
+    "vf_clip": 0.20,
+    "max_grad_norm": 1.0,
+    "target_kl": 0.0275,                # stages I - VI: 0.03;
+    "temperature": 1.00,                # 1.075
 }
 
 
+# Slow anneal
+MID  = dict(BASE_PARAMS, lr=3.50e-4, entropy=0.0225, temperature=0.99)
+LATE = dict(BASE_PARAMS, lr=3.50e-4, entropy=0.0200, temperature=0.97)
+SP   = dict(BASE_PARAMS, lr=3.50e-4, entropy=0.0200, temperature=0.95)
+
+
+TRAINING_PHASES = {
+    "BASE": {
+        "duration": 700,
+        "opponent_mix": {
+            "POP":  0.05,
+            "SP":   0.06,
+            "R":    0.01,
+            "C":    0.01,
+            "LEFT": 0.01,   
+
+            "L1":   0.07,
+            "L2":   0.05,
+            "L3":   0.10,
+            "L4":   0.05,
+            "L5":   0.11,
+            "L6":   0.05,
+            "L7":   0.07,
+            "L8":   0.05,
+            "L9":   0.07,
+            "L10":  0.05,
+            "L11":  0.07,
+            "L12":  0.05,
+            "L13":  0.07,
+        },
+        "params": dict(BASE_PARAMS),
+    },
+    "ODD_MORE": {
+        "duration": 600,
+        "opponent_mix": {
+            "POP":  0.06,
+            "SP":   0.08,
+            "R":    0.01,
+            "C":    0.01,
+            "LEFT": 0.01,   
+
+            "L1":   0.07,
+            "L2":   0.04,
+            "L3":   0.10,
+            "L4":   0.04,
+            "L5":   0.10,
+            "L6":   0.04,
+            "L7":   0.08,
+            "L8":   0.04,
+            "L9":   0.08,
+            "L10":  0.04,
+            "L11":  0.08,
+            "L12":  0.04,
+            "L13":  0.08,
+        },
+        "params": dict(MID),
+    },
+    "FINAL": {
+        "duration": 500,
+        "opponent_mix": {
+            "POP":  0.08,
+            "SP":   0.10,
+ 
+            "L1":   0.07,
+            "L2":   0.03,
+            "L3":   0.10,
+            "L4":   0.03,
+            "L5":   0.10,
+            "L6":   0.05,
+            "L7":   0.08,
+            "L8":   0.03,
+            "L9":   0.09,
+            "L10":  0.04,
+            "L11":  0.08,
+            "L12":  0.04,
+            "L13":  0.08,
+        },
+        "params": dict(LATE),
+    },
+    "SP_FINALE": {
+        "duration": 200,
+        "opponent_mix": {
+            "POP":  0.15,
+            "SP":   0.85,
+        },
+        "params": dict(SP),
+    }
+}
+
+
+# -------------------------------------------------------------------------
+# DQN additions
+# -------------------------------------------------------------------------
+
+# DQN defaults.
+DQN_BASE_PARAMS = {
+    "epsilon": 0.50,
+    "epsilon_min": 0.10,
+    "lr": 1.0e-4,
+
+    # Target network update
+    # - "soft": Polyak update with tau
+    # - "hard": copy every TU updates (loop defines the unit)
+    "TU_mode": "soft",
+    "tau": 35e-4,
+    "TU": 500,
+}
+
+
+def attach_dqn_defaults(training_phases: dict) -> None:
+    """
+    Adds training_phases[phase]["dqn_params"].
+    Each phase gets its own dict. Phase overrides win.
+    """
+    for _name, ph in training_phases.items():
+        overrides = ph.get("dqn_params", {}) or {}
+        dqn = dict(DQN_BASE_PARAMS)
+        dqn.update(overrides)
+        ph["dqn_params"] = dqn
+
+
+attach_dqn_defaults(TRAINING_PHASES)
+
+
+def validate_training_phases(training_phases: dict, tol: float = 1e-6) -> None:
+    """
+    Sanity checks.
+    Raises if opponent_mix does not sum to ~1.0, or if required DQN keys missing.
+    """
+    for name, ph in training_phases.items():
+
+        if "duration" not in ph:
+            raise ValueError(f"Phase '{name}' missing required key: duration")
+        if "opponent_mix" not in ph:
+            raise ValueError(
+                f"Phase '{name}' missing required key: opponent_mix")
+
+        mix = ph["opponent_mix"]
+        s = float(sum(float(x) for x in mix.values()))
+        if abs(s - 1.0) > tol:
+            raise ValueError(
+                f"Phase '{name}' opponent_mix sums to {s:.6f} (expected 1.0)")
+
+        dqn = ph.get("dqn_params", None)
+        if not isinstance(dqn, dict):
+            raise ValueError(
+                f"Phase '{name}' missing required dict: dqn_params")
+
+        for k in ("epsilon", "epsilon_min", "lr", "TU_mode", "tau", "TU"):
+            if k not in dqn:
+                raise ValueError(f"Phase '{name}' dqn_params missing key: {k}")

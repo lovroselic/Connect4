@@ -9,6 +9,19 @@ from PPO.ppo_utilities import select_opponent_action
 from DQN.dqn_utilities import record_first_move, evaluate_final_result, map_final_result_to_reward
 
 
+_CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
+
+def _pick_center_from_legal(legal: List[int]) -> int:
+    s = set(int(x) for x in legal)
+    for c in _CENTER_ORDER:
+        if c in s:
+            return int(c)
+    return int(min(s)) if s else 0
+
+def _pick_leftmost_from_legal(legal: List[int]) -> int:
+    return int(min(int(x) for x in legal)) if legal else 0
+
+
 def encode_single_channel_agent_centric(board: np.ndarray, player: int) -> np.ndarray:
     """
     Single-channel, agent-centric encoding.
@@ -159,6 +172,12 @@ def ppo_opponent_step(
     if mode in (None, "R", "rand", "Random", 0):
         opp_action = int(np.random.choice(legal))
 
+    elif mode in ("C", "center", "Centre", "CENTER"):
+        opp_action = _pick_center_from_legal(legal)
+
+    elif mode in ("LEFT", "left", "leftmost", "LM", "lm"):
+        opp_action = _pick_leftmost_from_legal(legal)
+
     elif mode == "self":
         # --- SINGLE-CHANNEL opponent-centric encoding (player=-1 => opponent stones become +1) ---
         enc_opp = encode_single_channel_agent_centric(env.board, -1)
@@ -173,6 +192,8 @@ def ppo_opponent_step(
     else:
         depth = int(mode)
         opp_action = int(select_opponent_action(env.board.copy(), player=-1, depth=depth))
+    ##
+    
 
     env.current_player = -1
     _, oppo_reward, done = env.step(int(opp_action))  # mover-centric (opponent POV)

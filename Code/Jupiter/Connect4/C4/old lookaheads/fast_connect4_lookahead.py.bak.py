@@ -22,21 +22,21 @@ C4_WIN = 100000.0
 C4_IMMEDIATE_W = C4_WIN
 C4_FORK_W = C4_WIN
 
-C4_DEFENSIVE = 1.55             #1.55
-C4_FLOATING_NEAR = 0.25         #0.25
-C4_FLOATING_FAR = 0.125         #0.125
-C4_CENTER_BONUS = 3.0           #3
-C4_PARITY_BONUS = 0.75          #0.75
+C4_DEFENSIVE = 1.55             # 1.55
+C4_FLOATING_NEAR = 0.25         # 0.25
+C4_FLOATING_FAR = 0.125         # 0.125
+C4_CENTER_BONUS = 3.0           # 3
+C4_PARITY_BONUS = 0.75          # 0.75
 
-C4_VERT_MUL = 0.80              #0.875
-C4_VERT_3_READY_BONUS = 0.0     # 0 keep 0!
-C4_TEMPO_W = 75                 #75
+C4_VERT_MUL = 0.80              # 0.80
+C4_VERT_3_READY_BONUS = 0.0     # keep 0!
+C4_TEMPO_W = 75                 # 75
 C4_PARITY_MOVE_W = 0.5          # 0.5
 C4_PARITY_UNLOCK_W = 0.25       # 0.25
-C4_THREATSPACE_W = 9            # 8.75
+C4_THREATSPACE_W = 9            # 9
 
 C4_DEFAULT_WEIGHTS_ITEMS = (
-    (2, 10.0),  #1.0
+    (2, 10.0),
     (3, 1000.0),
     (4, C4_WIN),
 )
@@ -940,6 +940,7 @@ def _ensure_numba_cache():
         opp_can_reply_create_double_threat=opp_can_reply_create_double_threat,
         has_two_immediate_wins_bits=has_two_immediate_wins_bits,
         has_any_immediate_win_bits=has_any_immediate_win_bits,
+        popcount64=popcount64,  # handy for root height calc reuse elsewhere if needed
     )
     return _NUMBA_C4_CLASS_CACHE
 
@@ -955,6 +956,7 @@ class Connect4Lookahead:
 
     OPENING_BOOK = True
     OPENING_RANDOM = True  # set False for deterministic sweeps
+    DEPTH_BASED_FLOATING = True
 
     immediate_w = C4_IMMEDIATE_W
     fork_w = C4_FORK_W
@@ -985,6 +987,14 @@ class Connect4Lookahead:
     WIN_MASKS: List[int] = []
     WIN_CELLS: List[List[Tuple[int, int, int]]] = []
 
+    # Root search depth -> FN multiplier.
+    FLOATING_NEAR_BY_DEPTH = (
+        (8,  FLOATING_NEAR),  # depth 1..8: classic FN (shallow horizon safety)
+        (10, FLOATING_NEAR / 2),  # depth 9..10: light FN
+        (99, FLOATING_NEAR / 8),  # depth 11+
+    )
+    # ------------------------------------------------------------------
+
     def __init__(self, weights=None):
         self.weights: Dict[int, float] = dict(C4_DEFAULT_WEIGHTS_ITEMS) if weights is None else dict(weights)
         self.SOFT_MATE = float(C4_SOFT_MATE_MULT) * float(self.weights[4])
@@ -992,6 +1002,31 @@ class Connect4Lookahead:
         if not Connect4Lookahead._PRECOMP_DONE:
             self._build_precomp()
         self._N = _ensure_numba_cache()
+
+    # ------------------------------------------------------------------
+    # CHANGED: helper to select (FN, FF) for a given root depth
+    # ------------------------------------------------------------------
+    def _floating_for_depth(self, depth: int) -> Tuple[float, float]:
+        """
+        Return (FN, FF) to use for the requested search depth.
+        Only FN is scheduled by default; FF stays fixed unless you change it.
+        """
+        if not getattr(self, "DEPTH_BASED_FLOATING", True):
+            return float(self.FLOATING_NEAR), float(self.FLOATING_FAR)
+
+        d = int(depth)
+        if d < 0:
+            d = 0
+
+        fn = float(self.FLOATING_NEAR)
+        for max_d, v in getattr(self, "FLOATING_NEAR_BY_DEPTH", ()):
+            if d <= int(max_d):
+                fn = float(v)
+                break
+
+        ff = float(self.FLOATING_FAR)
+        return fn, ff
+    # ------------------------------------------------------------------
 
     # ---------------- Public API ----------------
 
@@ -1007,6 +1042,7 @@ class Connect4Lookahead:
         role_first_mark, parity_enabled = self._role_first_from_center(mask, p1, p2)
         root_pos_is_first = np.int8(1 if (parity_enabled and me_mark == role_first_mark) else 0)
 
+        # NOTE: heuristic-only call has no "search depth" concept. Keep base FN/FF.
         return float(
             self._N["evaluate"](
                 np.uint64(me), np.uint64(mask),
@@ -1061,6 +1097,12 @@ class Connect4Lookahead:
         role_first_mark, parity_enabled = self._role_first_from_center(mask, p1, p2)
         root_pos_is_first = np.int8(1 if (parity_enabled and to_move == role_first_mark) else 0)
 
+        # ------------------------------------------------------------------
+        # CHANGED: depth-based FN/FF selection for this search
+        # ------------------------------------------------------------------
+        fn, ff = self._floating_for_depth(depth)
+        # ------------------------------------------------------------------
+
         v, _ = self._N["negamax"](
             np.uint64(pos), np.uint64(mask),
             np.int16(depth),
@@ -1075,7 +1117,7 @@ class Connect4Lookahead:
             self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_KIND"],
             self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
             WARR,
-            float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+            float(self.DEFENSIVE), float(fn), float(ff),  # CHANGED: pass scheduled FN/FF
             np.uint64(self._N["CENTER_MASK"]), np.uint64(self._N["ODD_MASK"]), np.uint64(self._N["EVEN_MASK"]),
             float(self.PARITY_BONUS),
             float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
@@ -1162,6 +1204,12 @@ class Connect4Lookahead:
         role_first_mark, parity_enabled = self._role_first_from_center(mask, p1, p2)
         root_pos_is_first = np.int8(1 if (parity_enabled and me_mark == role_first_mark) else 0)
 
+        # ------------------------------------------------------------------
+        # CHANGED: depth-based FN/FF selection for this root search
+        # ------------------------------------------------------------------
+        fn, ff = self._floating_for_depth(depth)
+        # ------------------------------------------------------------------
+
         mv = self._N["root_select_fixed"](
             np.uint64(me), np.uint64(mask), np.int16(depth),
             root_pos_is_first, np.int8(1 if parity_enabled else 0),
@@ -1170,7 +1218,7 @@ class Connect4Lookahead:
             self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_KIND"],
             self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
             WARR,
-            float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+            float(self.DEFENSIVE), float(fn), float(ff),  # CHANGED: pass scheduled FN/FF
             np.uint64(self._N["CENTER_MASK"]), np.uint64(self._N["ODD_MASK"]), np.uint64(self._N["EVEN_MASK"]),
             float(self.PARITY_BONUS),
             float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),
@@ -1375,6 +1423,13 @@ class Connect4Lookahead:
         double_guard_i8 = np.int8(1 if (self.DOUBLE_THREAT_GUARD and DOUBLE_THREAT_GUARD) else 0)
         fork_guard_i8 = np.int8(1 if (self.FORK_REPLY_GUARD and FORK_REPLY_GUARD) else 0)
 
+        # ------------------------------------------------------------------
+        # CHANGED: depth-based FN/FF selection for this scoring search
+        # (Use the requested root depth, even though negamax gets depth-1 here.)
+        # ------------------------------------------------------------------
+        fn, ff = self._floating_for_depth(depth)
+        # ------------------------------------------------------------------
+
         for c in self._CENTER_ORDER:
             if (mask & self.TOP_MASK[c]) != 0:
                 continue
@@ -1409,7 +1464,7 @@ class Connect4Lookahead:
                 self._N["COL_MASK"], self._N["WIN_MASKS"], self._N["WIN_KIND"],
                 self._N["WIN_B"], self._N["WIN_C"], self._N["WIN_R"],
                 WARR,
-                float(self.DEFENSIVE), float(self.FLOATING_NEAR), float(self.FLOATING_FAR),
+                float(self.DEFENSIVE), float(fn), float(ff),  # CHANGED: pass scheduled FN/FF
                 np.uint64(self._N["CENTER_MASK"]), np.uint64(self._N["ODD_MASK"]), np.uint64(self._N["EVEN_MASK"]),
                 float(self.PARITY_BONUS),
                 float(self.immediate_w), float(self.fork_w), float(self.CENTER_BONUS),

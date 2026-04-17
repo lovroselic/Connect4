@@ -1,6 +1,0 @@
-
-
-TRAINING_PHASES = {
- 
- 
-    }

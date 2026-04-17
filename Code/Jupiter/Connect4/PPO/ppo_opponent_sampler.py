@@ -8,6 +8,8 @@ class OpponentSampler:
 
     Keys:
       "R"          -> Random
+      "C"          -> Center baseline (always pick most-centered legal col)
+      "LEFT"       -> Leftmost baseline (always pick smallest legal col)
       "L1".."L13"  -> Lookahead depth
       "SP"         -> Self-play (same policy acting as -1)
       "POP"        -> Population ensemble (HOF), handled by caller
@@ -34,9 +36,11 @@ class OpponentSampler:
     def key_to_mode(k: str):
         """
         Returns a mode suitable for select_opponent_action / helper logic:
-          None      -> random
-          "self"    -> policy acts as opponent
-          int       -> lookahead depth
+          None        -> random
+          "self"      -> policy acts as opponent
+          "center"    -> center baseline
+          "leftmost"  -> leftmost baseline
+          int         -> lookahead depth
 
         NOTE: "POP" is NOT a mode; caller should treat it as a source switch.
         """
@@ -44,8 +48,12 @@ class OpponentSampler:
             return None
         if k == "SP":
             return "self"
+        if k == "C":
+            return "center"
+        if k == "LEFT":
+            return "leftmost"
         if k.startswith("L") and k[1:].isdigit():
             return int(k[1:])
         if k == "POP":
-            return "POP"   
+            return "POP"
         raise ValueError(f"Unknown opponent key: {k}")

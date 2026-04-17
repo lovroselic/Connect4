@@ -297,18 +297,37 @@ def select_opponent_action(state_board: np.ndarray, player: int, depth: Optional
     """
     Choose opponent action:
       - depth is None or <=0 -> random legal
+      - depth == "C" / "LEFT" -> scripted baseline
       - else -> n-step lookahead via Connect4Lookahead
-    Returns None if no legal move exists (caller should guard).
     """
     legal = legal_moves_from_board(state_board)
-    if not legal: raise ValueError(f"[select_opponent_action] No legal moves from state (top row = {state_board[0]})")
+    if not legal:
+        raise ValueError(f"[select_opponent_action] No legal moves from state (top row = {state_board[0]})")
 
-    if depth is None or (isinstance(depth, (int, np.integer)) and depth <= 0): return random.choice(legal)
+    # --- NEW: baseline string support ---
+    if isinstance(depth, str):
+        k = depth.strip().upper()
+        if k == "C":
+            for c in (3, 4, 2, 5, 1, 6, 0):
+                if c in legal:
+                    return int(c)
+            return int(min(legal))
+        if k == "LEFT":
+            return int(min(legal))
+        # allow "L7" style too (optional)
+        if k.startswith("L") and k[1:].isdigit():
+            depth = int(k[1:])
+        else:
+            return random.choice(legal)
+
+    if depth is None or (isinstance(depth, (int, np.integer)) and depth <= 0):
+        return random.choice(legal)
 
     try:
         a = Lookahead.n_step_lookahead(state_board, player=player, depth=int(depth))
         return a if a in legal else random.choice(legal)
-    except Exception: return random.choice(legal)
+    except Exception:
+        return random.choice(legal)
 
 
 def is_draw(board: np.ndarray) -> bool:

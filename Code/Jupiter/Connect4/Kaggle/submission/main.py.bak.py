@@ -2,9 +2,10 @@
 # tar -czf submit.tar.gz -C submission main.py PPO_14.pt
 # tar -czf submit.tar.gz -C submission main.py PPO_408.pt
 # tar -czf submit.tar.gz -C submission main.py PPO_404.pt
+# tar -czf submit.tar.gz -C submission main.py PPO_735.pt
 
 import os
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -14,9 +15,28 @@ import torch.nn.functional as F
 
 _DEVICE = torch.device("cpu")
 _MODEL: Optional[nn.Module] = None
+
 _CENTER_COL = 3
-MODEL_FILE = "PPO_405.pt"
-#MODEL_FILE = "PPO_14.pt"
+_CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
+
+# MODEL_FILE = "PPO_404.pt"
+# submission name PPO_704
+MODEL_FILE = "PPO_735.pt"
+
+# -------------------------------------------------------------------------
+# Inference / tactical wrapper knobs
+# -------------------------------------------------------------------------
+
+# Symmetry-aware inference:
+# Evaluate both the original POV board and its horizontal mirror, then flip the
+# mirrored logits back and average them. This is the policy-agent analogue of
+# "symmetry-aware TT" in search engines.
+_USE_MIRROR_TTA = True
+
+# Threat-aware tie-breaker:
+# We still let the PPO logits drive the final choice, but when several moves are
+# close / legal / tactically safe, we prefer moves that create immediate threats.
+_USE_THREAT_TIEBREAK = True
 
 
 # ---------- CNet192 (mid always ON) ----------
@@ -52,7 +72,6 @@ class CNet192(nn.Module):
 
 
 def _find_model_path():
-
     # submission runtime (tar extracted here)
     p = f"/kaggle_simulations/agent/{MODEL_FILE}"
     if os.path.exists(p):
@@ -74,7 +93,6 @@ def _load_model_once() -> nn.Module:
     ckpt_path = _find_model_path()
     ckpt = torch.load(ckpt_path, map_location=_DEVICE)
 
-
     if not (isinstance(ckpt, dict) and "model_state_dict" in ckpt):
         raise RuntimeError("Unexpected checkpoint format: expected dict with 'model_state_dict'")
 
@@ -86,7 +104,7 @@ def _load_model_once() -> nn.Module:
     return _MODEL
 
 
-# ---------- tiny tactics ----------
+# ---------- low-level board helpers ----------
 def _lowest_empty_row(grid: np.ndarray, col: int) -> int:
     for r in range(5, -1, -1):
         if grid[r, col] == 0:
@@ -119,55 +137,155 @@ def _is_winning_drop(pov: np.ndarray, col: int, token: int) -> bool:
     r = _lowest_empty_row(pov, col)
     if r < 0:
         return False
+
     old = pov[r, col]
     pov[r, col] = token
     win = _has_four_from(pov, r, col, token)
     pov[r, col] = old
     return win
 
-def _argmax_center_tiebreak(vals: np.ndarray, legal: List[int]) -> int:
-    best_c = legal[0]
-    best_v = float(vals[best_c])
-    best_d = abs(best_c - _CENTER_COL)
-    for c in legal[1:]:
-        v = float(vals[c])
-        if v > best_v:
-            best_v = v
-            best_c = c
-            best_d = abs(c - _CENTER_COL)
-        elif v == best_v:
-            d = abs(c - _CENTER_COL)
-            if d < best_d or (d == best_d and c < best_c):
-                best_c = c
-                best_d = d
-    return int(best_c)
 
-def _would_handover_win(pov: np.ndarray, col: int) -> bool:
+def _legal_cols_from_pov(pov: np.ndarray):
+    return [c for c in range(7) if pov[0, c] == 0]
+
+
+def _count_immediate_wins(pov: np.ndarray, token: int) -> int:
     """
-    True if playing 'col' (for +1) gives opponent (-1) any win-in-1 immediately after.
-    Uses in-place move + revert on the POV board.
+    Count how many columns are immediate winning drops for 'token' on the current
+    POV board. We scan in center-first order because that is also our preferred
+    move geometry everywhere else.
+    """
+    cnt = 0
+    for c in _CENTER_ORDER:
+        if pov[0, c] == 0 and _is_winning_drop(pov, c, token):
+            cnt += 1
+    return cnt
+
+
+def _generate_non_losing_moves(pov: np.ndarray):
+    """
+    Return the set of tactically safe moves for the side to move (+1).
+
+    This is the PPO-agent equivalent of the non-losing generator used in the
+    bitboard search agent.
+
+    Logic:
+    1) Detect opponent immediate wins *in the current position*.
+       - If opponent has 2+ immediate wins already, the position is effectively
+         lost; there is no true non-losing move, so return [].
+       - If opponent has exactly 1 immediate win, we are forced to block it, so
+         return only that blocking column.
+    2) Otherwise, keep only moves that do NOT hand the opponent any immediate
+       winning reply after our move.
+
+    This replaces the old "handover" and "double-threat" guard family with one
+    cleaner tactical filter.
+    """
+    legal = _legal_cols_from_pov(pov)
+    if not legal:
+        return []
+
+    opp_wins_now = [c for c in _CENTER_ORDER if pov[0, c] == 0 and _is_winning_drop(pov, c, -1)]
+
+    if len(opp_wins_now) >= 2:
+        # Already busted: opponent has multiple direct wins now.
+        return []
+
+    if len(opp_wins_now) == 1:
+        # Forced block.
+        forced = opp_wins_now[0]
+        return [forced] if forced in legal else []
+
+    good = []
+    for c in _CENTER_ORDER:
+        if pov[0, c] != 0:
+            continue
+
+        r = _lowest_empty_row(pov, c)
+        pov[r, c] = +1
+
+        opp_has_reply_win = False
+        for oc in _CENTER_ORDER:
+            if pov[0, oc] == 0 and _is_winning_drop(pov, oc, -1):
+                opp_has_reply_win = True
+                break
+
+        pov[r, c] = 0
+
+        if not opp_has_reply_win:
+            good.append(c)
+
+    return good
+
+
+def _threat_tiebreak_tuple(pov: np.ndarray, col: int):
+    """
+    Build a tactical tie-break tuple *after* playing move 'col' for us (+1).
+
+    This is not a full board evaluation. It is only a ranking signal used when
+    the PPO logits need tactical help among already-acceptable candidates.
+
+    Returned tuple fields, from most important to least:
+    - fork_flag:      1 if our move creates >=2 immediate wins next turn
+    - my_threats:     how many immediate wins we create for our next move
+    - neg_opp_threats: negative opponent immediate-win count after our move
+                       (larger is better, so 0 beats -1)
+    - neg_center_dist: prefer center as final geometric tie-break
+    - neg_col:        stable deterministic tie-break (smaller column wins)
+
+    In sorted(reverse=True) order, this means:
+    stronger forcing moves > more threats > fewer opponent threats > center > left.
     """
     r = _lowest_empty_row(pov, col)
     if r < 0:
-        return True  # illegal treated as bad
+        return (-1, -1, -99, -99, -99)
 
-    # play our move
     pov[r, col] = +1
-
-    # check if opponent now has a winning drop anywhere
-    for oc in range(7):
-        if pov[0, oc] == 0 and _is_winning_drop(pov, oc, -1):
-            pov[r, col] = 0
-            return True
-
+    my_threats = _count_immediate_wins(pov, +1)
+    opp_threats = _count_immediate_wins(pov, -1)
     pov[r, col] = 0
-    return False
 
+    fork_flag = 1 if my_threats >= 2 else 0
+    neg_opp_threats = -opp_threats
+    neg_center_dist = -abs(col - _CENTER_COL)
+    neg_col = -col
+
+    return (fork_flag, my_threats, neg_opp_threats, neg_center_dist, neg_col)
+
+
+def _infer_logits(model: nn.Module, pov: np.ndarray) -> np.ndarray:
+    x = torch.from_numpy(pov.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(_DEVICE)
+    with torch.no_grad():
+        logits, _ = model(x)
+    logits = logits[0].detach().cpu().numpy().astype(np.float32)
+    logits = np.nan_to_num(logits, nan=-1e9, posinf=1e9, neginf=-1e9)
+    return logits
+
+
+def _infer_logits_symmetry_aware(model: nn.Module, pov: np.ndarray) -> np.ndarray:
+    """
+    Symmetry-aware inference:
+    - run the model on the original POV board
+    - run it on the horizontally mirrored POV board
+    - flip mirrored logits back
+    - average
+
+    This reduces arbitrary left/right asymmetry in a horizontally symmetric game.
+    It is the policy wrapper analogue of symmetry-aware TT reuse in the search agent.
+    """
+    logits = _infer_logits(model, pov)
+
+    if not _USE_MIRROR_TTA:
+        return logits
+
+    pov_m = pov[:, ::-1].copy()
+    logits_m = _infer_logits(model, pov_m)[::-1].copy()
+
+    return 0.5 * (logits + logits_m)
 
 
 # ---------- Kaggle agent ----------
 def agent(obs, config):
-    
     model = _load_model_once()
 
     mark = int(obs["mark"]) if isinstance(obs, dict) else int(obs.mark)
@@ -175,53 +293,76 @@ def agent(obs, config):
     grid = np.asarray(flat, dtype=np.int8).reshape(6, 7)
 
     legal = [c for c in range(7) if grid[0, c] == 0]
-    if not legal: return 0
+    if not legal:
+        return 0
 
     stones = int(np.count_nonzero(grid))
     if stones == 0 and _CENTER_COL in legal:
-        return _CENTER_COL  # opening book
+        return _CENTER_COL  # tiny opening book
 
     # POV scalar board: me=+1, opp=-1
     pov = np.zeros((6, 7), dtype=np.int8)
-    pov[grid == mark] = 1
+    pov[grid == mark] = +1
     pov[(grid != 0) & (grid != mark)] = -1
 
-    # win-now
-    for c in legal:
-        if _is_winning_drop(pov, c, +1):
+    # ------------------------------------------------------------------
+    # 1) Tactical overrides before consulting the model
+    # ------------------------------------------------------------------
+
+    # Win now.
+    for c in _CENTER_ORDER:
+        if c in legal and _is_winning_drop(pov, c, +1):
             return int(c)
 
-    # must-block (any opp win-in-1)
-    blocks = [c for c in legal if _is_winning_drop(pov, c, -1)]
-    if blocks:
-        return int(sorted(blocks, key=lambda c: (abs(c - _CENTER_COL), c))[0])
+    # Generate non-losing moves. This automatically handles:
+    # - forced single blocks
+    # - rejection of moves that hand opponent an immediate win
+    non_losing = _generate_non_losing_moves(pov)
 
-    # policy argmax (masked)
-    x = torch.from_numpy(pov.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(_DEVICE)
-    
-    with torch.no_grad():  # portable replacement for inference_mode
-        logits, _ = model(x)
+    # If exactly one non-losing move exists, it is forced.
+    if len(non_losing) == 1:
+        return int(non_losing[0])
 
-    logits = logits[0].detach().cpu().numpy().astype(np.float32)
-    logits = np.nan_to_num(logits, nan=-1e9, posinf=1e9, neginf=-1e9)
-    
-    # --- handover filter: prefer PPO best move that doesn't give opp a win-in-1 ---
-    # order legal moves by logits desc, then center tiebreak
-    ordered = sorted(
-        legal,
-        key=lambda c: (-float(logits[c]), abs(c - _CENTER_COL), c)
-    )
-    
-    for c in ordered:
-        if not _would_handover_win(pov, c):
-            return int(c)
-    
-    # if everything hands over, just play PPO best
+    # Candidate set:
+    # - prefer non-losing moves if any exist
+    # - otherwise fall back to all legal moves in already-lost positions
+    candidates = non_losing if non_losing else [c for c in _CENTER_ORDER if c in legal]
+
+    # ------------------------------------------------------------------
+    # 2) Policy inference with symmetry-aware averaging
+    # ------------------------------------------------------------------
+    logits = _infer_logits_symmetry_aware(model, pov)
+
+    # ------------------------------------------------------------------
+    # 3) Final move selection
+    #
+    # Primary driver:
+    #   PPO policy logits
+    #
+    # Secondary tie-break:
+    #   tactical threat tuple after the move
+    #
+    # This keeps the neural policy in charge while giving it cleaner tactical
+    # footing among safe moves.
+    # ------------------------------------------------------------------
+    if _USE_THREAT_TIEBREAK:
+        ordered = sorted(
+            candidates,
+            key=lambda c: (
+                float(logits[c]),
+                *_threat_tiebreak_tuple(pov, c),
+            ),
+            reverse=True,
+        )
+    else:
+        ordered = sorted(
+            candidates,
+            key=lambda c: (
+                float(logits[c]),
+                -abs(c - _CENTER_COL),
+                -c,
+            ),
+            reverse=True,
+        )
+
     return int(ordered[0])
-
-
-    #return _argmax_center_tiebreak(logits, legal)
-
-    
-
-
