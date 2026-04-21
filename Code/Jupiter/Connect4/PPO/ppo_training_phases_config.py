@@ -3,22 +3,22 @@
 # PPO 
 
 BASE_PARAMS = {
-    "lr": 3.75e-4,                       # 3.5 -> 4.0 -> 5.0 -> 6.0 #7.0 too big??! 5.0 optimal??
-    "clip": 0.275,
-    "entropy": 0.0250,                  #0.025
-    "epochs": 7,                        # 5 -> 6
+    "lr": 4.25e-4,                      #4.0 -> 4.25
+    "clip": 0.22,
+    "entropy": 0.0250,                  
+    "epochs": 9,                        # 6->8 ->9 (8, 9, 10) same results -> 10
     "batch_size": 256,
-    "steps_per_update": 512,            #256
+    "steps_per_update": 256,            #256->512->256
     "vf_clip": 0.20,
     "max_grad_norm": 1.0,
-    "target_kl": 0.0275,                # stages I - VI: 0.03;
-    "temperature": 1.00,                # 1.075
+    "target_kl": 0.020,                
+    "temperature": 1.00,               
 }
 
 
 # Slow anneal
-MID  = dict(BASE_PARAMS, lr=3.50e-4, entropy=0.0225, temperature=0.99)
-LATE = dict(BASE_PARAMS, lr=3.50e-4, entropy=0.0200, temperature=0.97)
+MID  = dict(BASE_PARAMS, lr=4.00e-4, entropy=0.0225, temperature=0.99)
+LATE = dict(BASE_PARAMS, lr=3.75e-4, entropy=0.0200, temperature=0.97)
 SP   = dict(BASE_PARAMS, lr=3.50e-4, entropy=0.0200, temperature=0.95)
 
 
@@ -98,8 +98,22 @@ TRAINING_PHASES = {
     "SP_FINALE": {
         "duration": 200,
         "opponent_mix": {
-            "POP":  0.15,
-            "SP":   0.85,
+            "POP":  0.12,
+            "SP":   0.13,
+ 
+            "L1":   0.07,
+            "L2":   0.03,
+            "L3":   0.07,
+            "L4":   0.03,
+            "L5":   0.07,
+            "L6":   0.05,
+            "L7":   0.07,
+            "L8":   0.03,
+            "L9":   0.09,
+            "L10":  0.04,
+            "L11":  0.08,
+            "L12":  0.04,
+            "L13":  0.08,
         },
         "params": dict(SP),
     }

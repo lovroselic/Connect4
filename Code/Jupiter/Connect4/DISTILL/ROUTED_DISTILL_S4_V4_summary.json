@@ -1,0 +1,746 @@
+{
+  "student_tag": "ROUTED_DISTILL_S4_V4",
+  "student_init": "PPO_Models/SOUP_4.pt",
+  "anchor_model_path": "PPO_Models/SOUP_4.pt",
+  "generalist_teachers": [
+    "PPO_Models/SOUP_4.pt",
+    "PPO_Models/SOUP_5.pt",
+    "PPO_Models/PPO_S1.pt",
+    "PPO_Models/PPO_817.pt"
+  ],
+  "specialist_teachers": [
+    "PPO_Models/PPO_914.pt",
+    "PPO_Models/PPO_915.pt",
+    "PPO_Models/PPO_909.pt",
+    "PPO_Models/PPO_842.pt"
+  ],
+  "teacher_prior_weights": {
+    "SOUP_4": 2.62548,
+    "SOUP_5": 2.0579199999999997,
+    "PPO_S1": 1.08,
+    "PPO_817": 1.08,
+    "PPO_914": 0.76,
+    "PPO_915": 0.76,
+    "PPO_909": 0.72,
+    "PPO_842": 0.7
+  },
+  "match_plan": [
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "games": 24
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "model",
+        "path": "PPO_Models/PPO_S1.pt"
+      },
+      "games": 18
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "model",
+        "path": "PPO_Models/PPO_817.pt"
+      },
+      "games": 18
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "model",
+        "path": "PPO_Models/PPO_S1.pt"
+      },
+      "games": 12
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "model",
+        "path": "PPO_Models/PPO_817.pt"
+      },
+      "games": 12
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 2
+      },
+      "games": 36
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 4
+      },
+      "games": 30
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 5
+      },
+      "games": 30
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 6
+      },
+      "games": 18
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 2
+      },
+      "games": 24
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 4
+      },
+      "games": 20
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 5
+      },
+      "games": 20
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_S1.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 2
+      },
+      "games": 18
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_S1.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 4
+      },
+      "games": 16
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_817.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 5
+      },
+      "games": 16
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 9
+      },
+      "games": 18
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 11
+      },
+      "games": 16
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 13
+      },
+      "games": 14
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 9
+      },
+      "games": 14
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 11
+      },
+      "games": 12
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 13
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_S1.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 9
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_817.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 11
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_914.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 2
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_915.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 4
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_909.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 5
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/PPO_842.pt"
+      },
+      "B": {
+        "type": "lookahead",
+        "depth": 6
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "model",
+        "path": "PPO_Models/PPO_914.pt"
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "model",
+        "path": "PPO_Models/PPO_915.pt"
+      },
+      "games": 10
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_4.pt"
+      },
+      "B": {
+        "type": "center"
+      },
+      "games": 6
+    },
+    {
+      "A": {
+        "type": "model",
+        "path": "PPO_Models/SOUP_5.pt"
+      },
+      "B": {
+        "type": "leftmost"
+      },
+      "games": 6
+    }
+  ],
+  "routing_config": {
+    "ROUTE_MIN_GENERALIST_AGREE_COUNT": 3,
+    "ROUTE_MIN_GENERALIST_AGREE_SHARE": 0.74,
+    "ROUTE_MIN_GENERALIST_VOTE_GAP": 0.1,
+    "ROUTE_MIN_AGREE_COUNT": 4,
+    "ROUTE_MIN_VOTE_SHARE": 0.66,
+    "ROUTE_MIN_WINNING_VOTE_GAP": 0.14,
+    "SPECIALIST_OVERRIDE_MIN_AGREE_COUNT": 2,
+    "SPECIALIST_OVERRIDE_MIN_SHARE": 0.78,
+    "SPECIALIST_OVERRIDE_MARGIN_RATIO": 1.25,
+    "USE_LOOKAHEAD_ADJUDICATOR": true,
+    "LOOKAHEAD_ADJUDICATOR_DEPTH": 11,
+    "LOOKAHEAD_ON_UNIQUE_TOP_MOVES_AT_LEAST": 3,
+    "LOOKAHEAD_ON_BEST_VOTE_SHARE_BELOW": 0.58,
+    "LOOKAHEAD_ON_HARD_CONTEXT_ALWAYS": false,
+    "HARD_CONTEXT_MIN_PLY": 10,
+    "HARD_CONTEXT_MIN_UNIQUE_TOP_MOVES": 3,
+    "HARD_CONTEXT_LOW_SHARE_BELOW": 0.64,
+    "HARD_CONTEXT_LOW_GAP_BELOW": 0.1,
+    "SOFT_TARGET_POWER": 1.0,
+    "FOCUS_OPPONENT_LABELS": [
+      "LA-2",
+      "LA-4",
+      "LA-5",
+      "LA-6"
+    ],
+    "DEEP_PRESERVE_OPPONENT_LABELS": [
+      "LA-11",
+      "LA-13",
+      "LA-9"
+    ],
+    "FOCUS_CONTEXT_MIN_PLY": 6,
+    "FOCUS_CONTEXT_LOW_SHARE_BELOW": 0.78,
+    "FOCUS_CONTEXT_LOW_GAP_BELOW": 0.18,
+    "LOOKAHEAD_ON_FOCUS_CONTEXT_ALWAYS": true
+  },
+  "training_config": {
+    "LOSS_W_SOFT": 0.7,
+    "LOSS_W_HARD": 0.3,
+    "LOSS_W_VALUE": 0.05,
+    "ANCHOR_LOSS_WEIGHT": 0.34,
+    "ANCHOR_HARD_CONTEXT_MULT": 0.55,
+    "ANCHOR_SPECIAL_ROUTE_MULT": 0.7,
+    "ANCHOR_FOCUS_CONTEXT_MULT": 0.72,
+    "KEEP_BEST_BY": "mini_eval_FOCUS_PRESERVE",
+    "EVAL_EVERY_EPOCHS": 1,
+    "MINI_EVAL_OPPONENTS": {
+      "LA-2": {
+        "type": "lookahead",
+        "depth": 2,
+        "games": 12
+      },
+      "LA-4": {
+        "type": "lookahead",
+        "depth": 4,
+        "games": 10
+      },
+      "LA-5": {
+        "type": "lookahead",
+        "depth": 5,
+        "games": 10
+      },
+      "LA-6": {
+        "type": "lookahead",
+        "depth": 6,
+        "games": 8
+      },
+      "LA-9": {
+        "type": "lookahead",
+        "depth": 9,
+        "games": 6
+      },
+      "LA-11": {
+        "type": "lookahead",
+        "depth": 11,
+        "games": 4
+      },
+      "LA-13": {
+        "type": "lookahead",
+        "depth": 13,
+        "games": 4
+      }
+    }
+  },
+  "dataset": {
+    "n_raw_states": 5114,
+    "n_routed_states": 5114,
+    "route_type_counts": [
+      {
+        "route_type": "agree_group",
+        "count": 3243
+      },
+      {
+        "route_type": "unanimous",
+        "count": 1726
+      },
+      {
+        "route_type": "lookahead_filtered",
+        "count": 76
+      },
+      {
+        "route_type": "lookahead_hard",
+        "count": 53
+      },
+      {
+        "route_type": "specialist_override",
+        "count": 10
+      },
+      {
+        "route_type": "captain",
+        "count": 6
+      }
+    ],
+    "captain_counts": [
+      {
+        "captain_teacher": "<none>",
+        "count": 5022
+      },
+      {
+        "captain_teacher": "PPO_817",
+        "count": 29
+      },
+      {
+        "captain_teacher": "SOUP_4",
+        "count": 21
+      },
+      {
+        "captain_teacher": "PPO_S1",
+        "count": 19
+      },
+      {
+        "captain_teacher": "SOUP_5",
+        "count": 13
+      },
+      {
+        "captain_teacher": "PPO_915",
+        "count": 6
+      },
+      {
+        "captain_teacher": "PPO_909",
+        "count": 2
+      },
+      {
+        "captain_teacher": "PPO_914",
+        "count": 2
+      }
+    ],
+    "unique_top_move_counts": [
+      {
+        "unique_top_moves": 1,
+        "count": 1726
+      },
+      {
+        "unique_top_moves": 2,
+        "count": 2378
+      },
+      {
+        "unique_top_moves": 3,
+        "count": 875
+      },
+      {
+        "unique_top_moves": 4,
+        "count": 128
+      },
+      {
+        "unique_top_moves": 5,
+        "count": 7
+      }
+    ],
+    "hard_context_counts": [
+      {
+        "hard_context": false,
+        "route_type": "agree_group",
+        "count": 2540
+      },
+      {
+        "hard_context": false,
+        "route_type": "captain",
+        "count": 5
+      },
+      {
+        "hard_context": false,
+        "route_type": "lookahead_filtered",
+        "count": 12
+      },
+      {
+        "hard_context": false,
+        "route_type": "lookahead_hard",
+        "count": 16
+      },
+      {
+        "hard_context": false,
+        "route_type": "unanimous",
+        "count": 1726
+      },
+      {
+        "hard_context": true,
+        "route_type": "agree_group",
+        "count": 703
+      },
+      {
+        "hard_context": true,
+        "route_type": "captain",
+        "count": 1
+      },
+      {
+        "hard_context": true,
+        "route_type": "lookahead_filtered",
+        "count": 64
+      },
+      {
+        "hard_context": true,
+        "route_type": "lookahead_hard",
+        "count": 37
+      },
+      {
+        "hard_context": true,
+        "route_type": "specialist_override",
+        "count": 10
+      }
+    ]
+  },
+  "training": {
+    "epochs_configured": 14,
+    "best_epoch": 1,
+    "best_score": 0.5,
+    "keep_best_by": "mini_eval_FOCUS_PRESERVE",
+    "history": [
+      {
+        "epoch": 1,
+        "lr": 0.0003,
+        "train_total": 0.508233379986551,
+        "train_soft": 0.5604047858052783,
+        "train_hard": 0.3606751395596398,
+        "train_value": 0.0,
+        "train_anchor": 0.007747490775216958,
+        "train_hard_acc": 0.9423937035931481,
+        "train_entropy": 0.22114780793587366,
+        "valid_total": 0.3577582056579918,
+        "valid_soft": 0.3795666250512492,
+        "valid_hard": 0.25518996874491034,
+        "valid_value": 0.0,
+        "valid_anchor": 0.015504583334936465,
+        "valid_hard_acc": 0.953125,
+        "valid_entropy": 0.1448956026004756,
+        "mini_eval_GS_CUSTOM": 0.5107331466768695,
+        "mini_eval_LA_HARD": 0.6,
+        "mini_eval_AVG_SCORE": 0.5,
+        "mini_eval_FOCUS_PRESERVE": 0.5
+      },
+      {
+        "epoch": 2,
+        "lr": 0.0003,
+        "train_total": 0.4014115283886592,
+        "train_soft": 0.4483217067188687,
+        "train_hard": 0.16547048340241113,
+        "train_value": 0.0,
+        "train_anchor": 0.03794518723669979,
+        "train_hard_acc": 0.9841335813204447,
+        "train_entropy": 0.17715388205316332,
+        "valid_total": 0.34613448220647075,
+        "valid_soft": 0.368452620245525,
+        "valid_hard": 0.24442007223763085,
+        "valid_value": 0.0,
+        "valid_anchor": 0.014891614939095632,
+        "valid_hard_acc": 0.9622395833333334,
+        "valid_entropy": 0.14781772921196534,
+        "mini_eval_GS_CUSTOM": 0.5107331466768695,
+        "mini_eval_LA_HARD": 0.6,
+        "mini_eval_AVG_SCORE": 0.5,
+        "mini_eval_FOCUS_PRESERVE": 0.5
+      },
+      {
+        "epoch": 3,
+        "lr": 0.0003,
+        "train_total": 0.35342361364099717,
+        "train_soft": 0.39725080794758266,
+        "train_hard": 0.15630899493892988,
+        "train_value": 0.0,
+        "train_anchor": 0.028455345270534355,
+        "train_hard_acc": 0.977387848827574,
+        "train_entropy": 0.19142460078001022,
+        "valid_total": 0.34373752738614866,
+        "valid_soft": 0.3666652002991479,
+        "valid_hard": 0.24304131189971181,
+        "valid_value": 0.0,
+        "valid_anchor": 0.014159493110123359,
+        "valid_hard_acc": 0.9635416666666666,
+        "valid_entropy": 0.14846819807765618,
+        "mini_eval_GS_CUSTOM": 0.5107331466768695,
+        "mini_eval_LA_HARD": 0.6,
+        "mini_eval_AVG_SCORE": 0.5,
+        "mini_eval_FOCUS_PRESERVE": 0.5
+      },
+      {
+        "epoch": 4,
+        "lr": 0.0003,
+        "train_total": 0.33577368822362685,
+        "train_soft": 0.38447662194569904,
+        "train_hard": 0.1257304863797294,
+        "train_value": 0.0,
+        "train_anchor": 0.028920907630688615,
+        "train_hard_acc": 0.9860684043831296,
+        "train_entropy": 0.18732752568191952,
+        "valid_total": 0.3495499927992114,
+        "valid_soft": 0.372485423950972,
+        "valid_hard": 0.2511059590174227,
+        "valid_value": 0.0,
+        "valid_anchor": 0.01347841639977787,
+        "valid_hard_acc": 0.9609375,
+        "valid_entropy": 0.1542695879610013,
+        "mini_eval_GS_CUSTOM": 0.5107331466768695,
+        "mini_eval_LA_HARD": 0.6,
+        "mini_eval_AVG_SCORE": 0.5,
+        "mini_eval_FOCUS_PRESERVE": 0.5
+      },
+      {
+        "epoch": 5,
+        "lr": 0.0003,
+        "train_total": 0.31933362616433036,
+        "train_soft": 0.36892342898580766,
+        "train_hard": 0.11121233759654893,
+        "train_value": 0.0,
+        "train_anchor": 0.0277235239951147,
+        "train_hard_acc": 0.989800343910853,
+        "train_entropy": 0.1914149895310402,
+        "valid_total": 0.33893764250380326,
+        "valid_soft": 0.36320691638760155,
+        "valid_hard": 0.24328092098100265,
+        "valid_value": 0.0,
+        "valid_anchor": 0.011708533306299765,
+        "valid_hard_acc": 0.9596354166666666,
+        "valid_entropy": 0.1561285527095606,
+        "mini_eval_GS_CUSTOM": 0.5107331466768695,
+        "mini_eval_LA_HARD": 0.6,
+        "mini_eval_AVG_SCORE": 0.5,
+        "mini_eval_FOCUS_PRESERVE": 0.5
+      }
+    ]
+  },
+  "pre_eval": {
+    "MODEL": "SOUP_4",
+    "Random": 1.0,
+    "Leftmost": 1.0,
+    "Center": 1.0,
+    "LA-1": 1.0,
+    "LA-2": 0.0,
+    "LA-3": 1.0,
+    "LA-4": 0.5,
+    "LA-5": 1.0,
+    "LA-6": 0.5,
+    "LA-7": 1.0,
+    "LA-9": 0.5,
+    "LA-11": 1.0,
+    "LA-13": 0.5,
+    "AVG_SCORE": 0.7692307692307693,
+    "LA_HARD": 0.7857142857142857,
+    "GS_CUSTOM": 0.6740849865352594
+  },
+  "post_eval": {
+    "MODEL": "ROUTED_DISTILL_S4_V4",
+    "Random": 1.0,
+    "Leftmost": 1.0,
+    "Center": 1.0,
+    "LA-1": 1.0,
+    "LA-2": 0.0,
+    "LA-3": 1.0,
+    "LA-4": 0.5,
+    "LA-5": 1.0,
+    "LA-6": 0.5,
+    "LA-7": 1.0,
+    "LA-9": 0.5,
+    "LA-11": 0.5,
+    "LA-13": 0.5,
+    "AVG_SCORE": 0.7307692307692307,
+    "LA_HARD": 0.7142857142857143,
+    "GS_CUSTOM": 0.5596406404621985
+  }
+}

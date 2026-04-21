@@ -1,0 +1,195 @@
+{
+  "tag": "PPO_SOUP_TRACK1__PPO_817",
+  "start_model": "PPO_Models/PPO_817.pt",
+  "candidate_pool": [
+    "PPO_Models/PPO_847.pt",
+    "PPO_Models/PPO_848.pt",
+    "PPO_Models/PPO_834.pt",
+    "PPO_Models/PPO_820.pt",
+    "PPO_Models/PPO_842.pt",
+    "PPO_Models/PPO_812.pt",
+    "PPO_Models/PPO_846.pt",
+    "PPO_Models/PPO_838.pt",
+    "PPO_Models/PPO_832.pt",
+    "PPO_Models/PPO_845.pt",
+    "PPO_Models/PPO_827.pt",
+    "PPO_Models/PPO_836.pt"
+  ],
+  "accepted_paths": [
+    "PPO_Models/PPO_817.pt"
+  ],
+  "metric_to_maximize": "GS_CUSTOM",
+  "min_improvement": 0.0,
+  "fast_metric_final": 0.6904808288136184,
+  "final_metric": 0.6904808288136184,
+  "fast_eval_row": {
+    "MODEL": "SOUP_START",
+    "Random": 1.0,
+    "Leftmost": 1.0,
+    "Center": 1.0,
+    "LA-1": 1.0,
+    "LA-2": 0.5,
+    "LA-3": 1.0,
+    "LA-4": 1.0,
+    "LA-5": 1.0,
+    "LA-6": 0.5,
+    "LA-7": 1.0,
+    "LA-9": 0.5,
+    "LA-11": 1.0,
+    "LA-13": 0.5,
+    "AVG_SCORE": 0.8461538461538461,
+    "LA_HARD": 0.7857142857142857,
+    "GS_CUSTOM": 0.6904808288136184
+  },
+  "final_eval_row": {
+    "MODEL": "PPO_SOUP_TRACK1__PPO_817",
+    "Random": 1.0,
+    "Leftmost": 1.0,
+    "Center": 1.0,
+    "LA-1": 1.0,
+    "LA-2": 0.5,
+    "LA-3": 1.0,
+    "LA-4": 1.0,
+    "LA-5": 1.0,
+    "LA-6": 0.5,
+    "LA-7": 1.0,
+    "LA-9": 0.5,
+    "LA-11": 1.0,
+    "LA-13": 0.5,
+    "AVG_SCORE": 0.8461538461538461,
+    "LA_HARD": 0.7857142857142857,
+    "GS_CUSTOM": 0.6904808288136184
+  },
+  "history": [
+    {
+      "step": 0,
+      "candidate": "PPO_817",
+      "accepted": true,
+      "reason": "initial soup",
+      "members": "PPO_817",
+      "metric_before": NaN,
+      "metric_trial": 0.6904808288136184,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 1,
+      "candidate": "PPO_847",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.016396",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.6740849865352594,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 2,
+      "candidate": "PPO_848",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.016396",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.6740849865352594,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 3,
+      "candidate": "PPO_834",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.010857",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.6796241224401104,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 4,
+      "candidate": "PPO_820",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.119983",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.5704973468357065,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 5,
+      "candidate": "PPO_842",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.164974",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.5255071556238894,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 6,
+      "candidate": "PPO_812",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.108999",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.5814814156538295,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 7,
+      "candidate": "PPO_846",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.120078",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.5704031438441275,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 8,
+      "candidate": "PPO_838",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.120078",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.5704031438441275,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 9,
+      "candidate": "PPO_832",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.122199",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.5682816924737661,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 10,
+      "candidate": "PPO_845",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.016396",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.6740849865352594,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 11,
+      "candidate": "PPO_827",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.360034",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.33044641994528257,
+      "metric_after": 0.6904808288136184
+    },
+    {
+      "step": 12,
+      "candidate": "PPO_836",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.026056",
+      "members": "PPO_817",
+      "metric_before": 0.6904808288136184,
+      "metric_trial": 0.6644247335171993,
+      "metric_after": 0.6904808288136184
+    }
+  ]
+}

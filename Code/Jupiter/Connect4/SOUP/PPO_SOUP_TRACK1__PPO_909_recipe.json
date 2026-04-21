@@ -1,0 +1,118 @@
+{
+  "tag": "PPO_SOUP_TRACK1__PPO_909",
+  "start_model": "PPO_Models/PPO_909.pt",
+  "candidate_pool": [
+    "PPO_Models/PPO_817.pt",
+    "PPO_Models/PPO_820.pt",
+    "PPO_Models/PPO_832.pt",
+    "PPO_Models/PPO_914.pt",
+    "PPO_Models/PPO_827.pt"
+  ],
+  "accepted_paths": [
+    "PPO_Models/PPO_909.pt"
+  ],
+  "metric_to_maximize": "GS_CUSTOM",
+  "min_improvement": 0.0,
+  "fast_metric_final": 0.9359766886173144,
+  "final_metric": 0.9360426307114197,
+  "fast_eval_row": {
+    "MODEL": "SOUP_START",
+    "Random": 0.9833333333333333,
+    "Leftmost": 1.0,
+    "Center": 1.0,
+    "LA-1": 1.0,
+    "LA-2": 0.5,
+    "LA-3": 1.0,
+    "LA-4": 1.0,
+    "LA-5": 1.0,
+    "LA-6": 1.0,
+    "LA-7": 1.0,
+    "LA-9": 0.5,
+    "LA-11": 1.0,
+    "LA-13": 1.0,
+    "AVG_SCORE": 0.9217948717948719,
+    "LA_HARD": 0.9285714285714286,
+    "GS_CUSTOM": 0.9359766886173144
+  },
+  "final_eval_row": {
+    "MODEL": "PPO_SOUP_TRACK1__PPO_909",
+    "Random": 0.995,
+    "Leftmost": 1.0,
+    "Center": 1.0,
+    "LA-1": 1.0,
+    "LA-2": 0.5,
+    "LA-3": 1.0,
+    "LA-4": 1.0,
+    "LA-5": 1.0,
+    "LA-6": 1.0,
+    "LA-7": 1.0,
+    "LA-9": 0.5,
+    "LA-11": 1.0,
+    "LA-13": 1.0,
+    "AVG_SCORE": 0.9226923076923078,
+    "LA_HARD": 0.9285714285714286,
+    "GS_CUSTOM": 0.9360426307114197
+  },
+  "history": [
+    {
+      "step": 0,
+      "candidate": "PPO_909",
+      "accepted": true,
+      "reason": "initial soup",
+      "members": "PPO_909",
+      "metric_before": NaN,
+      "metric_trial": 0.9359766886173144,
+      "metric_after": 0.9359766886173144
+    },
+    {
+      "step": 1,
+      "candidate": "PPO_817",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.925520",
+      "members": "PPO_909",
+      "metric_before": 0.9359766886173144,
+      "metric_trial": 0.010456532065279977,
+      "metric_after": 0.9359766886173144
+    },
+    {
+      "step": 2,
+      "candidate": "PPO_820",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.925426",
+      "members": "PPO_909",
+      "metric_before": 0.9359766886173144,
+      "metric_trial": 0.010550735056859075,
+      "metric_after": 0.9359766886173144
+    },
+    {
+      "step": 3,
+      "candidate": "PPO_832",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.928440",
+      "members": "PPO_909",
+      "metric_before": 0.9359766886173144,
+      "metric_trial": 0.007536239326327911,
+      "metric_after": 0.9359766886173144
+    },
+    {
+      "step": 4,
+      "candidate": "PPO_914",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.460860",
+      "members": "PPO_909",
+      "metric_before": 0.9359766886173144,
+      "metric_trial": 0.4751164908927809,
+      "metric_after": 0.9359766886173144
+    },
+    {
+      "step": 5,
+      "candidate": "PPO_827",
+      "accepted": false,
+      "reason": "rejected, \u0394=-0.925803",
+      "members": "PPO_909",
+      "metric_before": 0.9359766886173144,
+      "metric_trial": 0.010173923090542679,
+      "metric_after": 0.9359766886173144
+    }
+  ]
+}

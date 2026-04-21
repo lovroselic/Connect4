@@ -193,10 +193,10 @@ class Connect4Env:
     # ---------------- knobs aligned to LA grid ----------------
     FLOATING_NEAR = 0.25
     FLOATING_FAR = 0.125
-    VERT_MUL = 0.875
+    VERT_MUL = 0.8   #0.875
 
-    PARITY_MOVE_BONUS = 0.99       # 0.50~ LA: PARITY_MOVE_W
-    PARITY_UNLOCK_PENALTY = 0.49   # 0.25~ LA: PARITY_UNLOCK_W
+    PARITY_MOVE_BONUS = 0.5       # 0.50~ LA: PARITY_MOVE_W 0.99
+    PARITY_UNLOCK_PENALTY = 0.25   # 0.25~ LA: PARITY_UNLOCK_W 0.49
     TEMPO_SQUEEZE_W = 4          # 75 ~ LA: TEMPO_W (ENV proxy differs, but knob intent matches)
     THREATSPACE_W =  8.75            # ~ LA: THREATSPACE_W
 

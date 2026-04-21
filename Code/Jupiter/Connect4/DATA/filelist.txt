@@ -33,6 +33,7 @@ BitBully_12ply_rows_part000032.xlsx
 BitBully_12ply_rows_part000033.xlsx
 BitBully_12ply_rows_part000034.xlsx
 C4.evil_evens_10.xlsx
+C4.evil_evens_12.xlsx
 C4.playing_second.xlsx
 C4.train_data_base_nornd.xlsx
 C4.train_data_basic.xlsx
@@ -199,6 +200,13 @@ C4.train_data_ppo_PPO_840.xlsx
 C4.train_data_ppo_PPO_841.xlsx
 C4.train_data_ppo_PPO_842.xlsx
 C4.train_data_ppo_PPO_843.xlsx
+C4.train_data_ppo_PPO_844.xlsx
+C4.train_data_ppo_PPO_845.xlsx
+C4.train_data_ppo_PPO_846.xlsx
+C4.train_data_ppo_PPO_847.xlsx
+C4.train_data_ppo_PPO_848.xlsx
+C4.train_data_ppo_PPO_849.xlsx
+C4.train_data_ppo_PPO_850.xlsx
 C4.train_data_ppo_PPO_901.xlsx
 C4.train_data_ppo_PPO_902.xlsx
 C4.train_data_ppo_PPO_903.xlsx
@@ -213,6 +221,9 @@ C4.train_data_ppo_PPO_911.xlsx
 C4.train_data_ppo_PPO_912.xlsx
 C4.train_data_ppo_PPO_913.xlsx
 C4.train_data_ppo_PPO_914.xlsx
+C4.train_data_ppo_PPO_916.xlsx
+C4.train_data_ppo_PPO_917.xlsx
+C4.train_data_ppo_PPO_918.xlsx
 C4.train_data_random.xlsx
 C4.train_data_shallow_teacher.xlsx
 C4.train_data_sweep.xlsx
@@ -222,6 +233,9 @@ C4.train_data_ultra_15-17.xlsx
 C4.train_data_ultra_15.xlsx
 filelist.bat
 filelist.txt
+UCI_connect4_L10.xlsx
 UCI_connect4_L11.xlsx
+UCI_connect4_L12.xlsx
 UCI_connect4_L7.xlsx
+UCI_connect4_L8.xlsx
 UCI_connect4_L9.xlsx

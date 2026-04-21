@@ -1,0 +1,2624 @@
+{
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_820.pt\", \"seed\": 12345, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_820",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 1.0,
+      "LA-4": 1.0,
+      "LA-5": 1.0,
+      "LA-6": 0.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.7692307692307693,
+      "LA_HARD": 0.6428571428571429,
+      "GS_CUSTOM": 0.554757338248482
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_832.pt\", \"seed\": 12347, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_832",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 0.5,
+      "LA-2": 0.0,
+      "LA-3": 0.5,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 0.5,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.5384615384615384,
+      "LA_HARD": 0.42857142857142855,
+      "GS_CUSTOM": 0.4816599888451923
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 4,
+        "losses": 4,
+        "draws": 0,
+        "games": 8,
+        "score": 0.5
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_827.pt\", \"seed\": 12348, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_827",
+      "Random": 0.9833333333333333,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 1.0,
+      "LA-4": 1.0,
+      "LA-5": 1.0,
+      "LA-6": 0.0,
+      "LA-7": 0.5,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.0,
+      "AVG_SCORE": 0.6910256410256411,
+      "LA_HARD": 0.5,
+      "GS_CUSTOM": 0.3005614146647976
+    },
+    "details": {
+      "Random": {
+        "wins": 59,
+        "losses": 1,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9833333333333333
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 4,
+        "losses": 4,
+        "draws": 0,
+        "games": 8,
+        "score": 0.5
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 0,
+        "losses": 4,
+        "draws": 0,
+        "games": 4,
+        "score": 0.0
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_846.pt\", \"seed\": 12349, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_846",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 0.5,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.6153846153846154,
+      "LA_HARD": 0.5,
+      "GS_CUSTOM": 0.49337130475830576
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 4,
+        "losses": 4,
+        "draws": 0,
+        "games": 8,
+        "score": 0.5
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_817.pt\", \"seed\": 12350, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_817",
+      "Random": 0.9833333333333333,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 1.0,
+      "LA-4": 1.0,
+      "LA-5": 1.0,
+      "LA-6": 0.5,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.844871794871795,
+      "LA_HARD": 0.7857142857142857,
+      "GS_CUSTOM": 0.6903866258220394
+    },
+    "details": {
+      "Random": {
+        "wins": 59,
+        "losses": 1,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9833333333333333
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_836.pt\", \"seed\": 12351, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_836",
+      "Random": 0.9666666666666667,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.0,
+      "AVG_SCORE": 0.6128205128205129,
+      "LA_HARD": 0.5,
+      "GS_CUSTOM": 0.2986627827608542
+    },
+    "details": {
+      "Random": {
+        "wins": 58,
+        "losses": 2,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9666666666666667
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 0,
+        "losses": 4,
+        "draws": 0,
+        "games": 4,
+        "score": 0.0
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_838.pt\", \"seed\": 12352, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_838",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 0.5,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.6153846153846154,
+      "LA_HARD": 0.5,
+      "GS_CUSTOM": 0.49337130475830576
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 4,
+        "losses": 4,
+        "draws": 0,
+        "games": 8,
+        "score": 0.5
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_845.pt\", \"seed\": 12353, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_845",
+      "Random": 0.9833333333333333,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.0,
+      "AVG_SCORE": 0.6525641025641027,
+      "LA_HARD": 0.5,
+      "GS_CUSTOM": 0.3042961216572843
+    },
+    "details": {
+      "Random": {
+        "wins": 59,
+        "losses": 1,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9833333333333333
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 0,
+        "losses": 4,
+        "draws": 0,
+        "games": 4,
+        "score": 0.0
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_834.pt\", \"seed\": 12354, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_834",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 1.0,
+      "LA-6": 0.5,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.7692307692307693,
+      "LA_HARD": 0.7142857142857143,
+      "GS_CUSTOM": 0.5651797763670495
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_812.pt\", \"seed\": 12355, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_812",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 0.5,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.6538461538461539,
+      "LA_HARD": 0.5,
+      "GS_CUSTOM": 0.4989104406631568
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 4,
+        "losses": 4,
+        "draws": 0,
+        "games": 8,
+        "score": 0.5
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_842.pt\", \"seed\": 12356, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_842",
+      "Random": 0.9833333333333333,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 0.5,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 1.0,
+      "LA-5": 0.5,
+      "LA-6": 0.5,
+      "LA-7": 0.5,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.6525641025641027,
+      "LA_HARD": 0.5714285714285714,
+      "GS_CUSTOM": 0.5214564269859882
+    },
+    "details": {
+      "Random": {
+        "wins": 59,
+        "losses": 1,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9833333333333333
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-7": {
+        "wins": 4,
+        "losses": 4,
+        "draws": 0,
+        "games": 8,
+        "score": 0.5
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_847.pt\", \"seed\": 12357, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_847",
+      "Random": 0.9666666666666667,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 0.5,
+      "LA-4": 0.5,
+      "LA-5": 1.0,
+      "LA-6": 0.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.6897435897435897,
+      "LA_HARD": 0.6428571428571429,
+      "GS_CUSTOM": 0.6448626457932342
+    },
+    "details": {
+      "Random": {
+        "wins": 58,
+        "losses": 2,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9666666666666667
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_848.pt\", \"seed\": 12358, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_848",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.6923076923076923,
+      "LA_HARD": 0.6428571428571429,
+      "GS_CUSTOM": 0.6376064531202726
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_848.pt\", \"seed\": 12345, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_848",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.6923076923076923,
+      "LA_HARD": 0.6428571428571429,
+      "GS_CUSTOM": 0.6376064531202726
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_820.pt\", \"seed\": 12357, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_820",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 1.0,
+      "LA-4": 1.0,
+      "LA-5": 1.0,
+      "LA-6": 0.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.7692307692307693,
+      "LA_HARD": 0.6428571428571429,
+      "GS_CUSTOM": 0.554757338248482
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_915.pt\", \"seed\": 12358, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_915",
+      "Random": 0.9833333333333333,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 0.5,
+      "LA-4": 1.0,
+      "LA-5": 1.0,
+      "LA-6": 1.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 1.0,
+      "AVG_SCORE": 0.8833333333333334,
+      "LA_HARD": 0.8571428571428571,
+      "GS_CUSTOM": 0.9282218983505229
+    },
+    "details": {
+      "Random": {
+        "wins": 59,
+        "losses": 1,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9833333333333333
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-4": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_832.pt\", \"seed\": 12345, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_832",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 0.5,
+      "LA-2": 0.0,
+      "LA-3": 0.5,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 0.5,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.5384615384615384,
+      "LA_HARD": 0.42857142857142855,
+      "GS_CUSTOM": 0.4816599888451923
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 4,
+        "losses": 4,
+        "draws": 0,
+        "games": 8,
+        "score": 0.5
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_848.pt\", \"seed\": 12347, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_848",
+      "Random": 0.9666666666666667,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.6897435897435897,
+      "LA_HARD": 0.6428571428571429,
+      "GS_CUSTOM": 0.6374180471371145
+    },
+    "details": {
+      "Random": {
+        "wins": 58,
+        "losses": 2,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9666666666666667
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/SOUP_4.pt\", \"seed\": 12358, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "SOUP_4",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 1.0,
+      "LA-6": 0.5,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.7692307692307693,
+      "LA_HARD": 0.7857142857142857,
+      "GS_CUSTOM": 0.6740849865352594
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/SOUP_5.pt\", \"seed\": 12359, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "SOUP_5",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.0,
+      "LA-3": 1.0,
+      "LA-4": 0.5,
+      "LA-5": 1.0,
+      "LA-6": 0.5,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.7692307692307693,
+      "LA_HARD": 0.7857142857142857,
+      "GS_CUSTOM": 0.6740849865352594
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_915.pt\", \"seed\": 12360, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_915",
+      "Random": 0.9666666666666667,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 0.5,
+      "LA-4": 1.0,
+      "LA-5": 1.0,
+      "LA-6": 1.0,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 1.0,
+      "AVG_SCORE": 0.882051282051282,
+      "LA_HARD": 0.8571428571428571,
+      "GS_CUSTOM": 0.9281276953589439
+    },
+    "details": {
+      "Random": {
+        "wins": 58,
+        "losses": 2,
+        "draws": 0,
+        "games": 60,
+        "score": 0.9666666666666667
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-4": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_817.pt\", \"seed\": 12345, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_817",
+      "Random": 1.0,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 1.0,
+      "LA-2": 0.5,
+      "LA-3": 1.0,
+      "LA-4": 1.0,
+      "LA-5": 1.0,
+      "LA-6": 0.5,
+      "LA-7": 1.0,
+      "LA-9": 0.5,
+      "LA-11": 1.0,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.8461538461538461,
+      "LA_HARD": 0.7857142857142857,
+      "GS_CUSTOM": 0.6904808288136184
+    },
+    "details": {
+      "Random": {
+        "wins": 60,
+        "losses": 0,
+        "draws": 0,
+        "games": 60,
+        "score": 1.0
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-2": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-3": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "LA-4": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-5": {
+        "wins": 10,
+        "losses": 0,
+        "draws": 0,
+        "games": 10,
+        "score": 1.0
+      },
+      "LA-6": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-7": {
+        "wins": 8,
+        "losses": 0,
+        "draws": 0,
+        "games": 8,
+        "score": 1.0
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 4,
+        "losses": 0,
+        "draws": 0,
+        "games": 4,
+        "score": 1.0
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  },
+  "{\"deterministic\": true, \"model_path\": \"PPO_Models/PPO_832.pt\", \"seed\": 12350, \"suite\": \"[[\\\"Random\\\", {\\\"games\\\": 60, \\\"type\\\": \\\"random\\\"}], [\\\"Leftmost\\\", {\\\"games\\\": 20, \\\"type\\\": \\\"leftmost\\\"}], [\\\"Center\\\", {\\\"games\\\": 40, \\\"type\\\": \\\"center\\\"}], [\\\"LA-1\\\", {\\\"depth\\\": 1, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-2\\\", {\\\"depth\\\": 2, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-3\\\", {\\\"depth\\\": 3, \\\"games\\\": 20, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-4\\\", {\\\"depth\\\": 4, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-5\\\", {\\\"depth\\\": 5, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-6\\\", {\\\"depth\\\": 6, \\\"games\\\": 10, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-7\\\", {\\\"depth\\\": 7, \\\"games\\\": 8, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-9\\\", {\\\"depth\\\": 9, \\\"games\\\": 6, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-11\\\", {\\\"depth\\\": 11, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}], [\\\"LA-13\\\", {\\\"depth\\\": 13, \\\"games\\\": 4, \\\"type\\\": \\\"lookahead\\\"}]]\"}": {
+    "row": {
+      "MODEL": "PPO_832",
+      "Random": 0.95,
+      "Leftmost": 1.0,
+      "Center": 1.0,
+      "LA-1": 0.5,
+      "LA-2": 0.0,
+      "LA-3": 0.5,
+      "LA-4": 0.5,
+      "LA-5": 0.5,
+      "LA-6": 0.0,
+      "LA-7": 0.5,
+      "LA-9": 0.5,
+      "LA-11": 0.5,
+      "LA-13": 0.5,
+      "AVG_SCORE": 0.5346153846153846,
+      "LA_HARD": 0.42857142857142855,
+      "GS_CUSTOM": 0.4813773798704549
+    },
+    "details": {
+      "Random": {
+        "wins": 57,
+        "losses": 3,
+        "draws": 0,
+        "games": 60,
+        "score": 0.95
+      },
+      "Leftmost": {
+        "wins": 20,
+        "losses": 0,
+        "draws": 0,
+        "games": 20,
+        "score": 1.0
+      },
+      "Center": {
+        "wins": 40,
+        "losses": 0,
+        "draws": 0,
+        "games": 40,
+        "score": 1.0
+      },
+      "LA-1": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-2": {
+        "wins": 0,
+        "losses": 20,
+        "draws": 0,
+        "games": 20,
+        "score": 0.0
+      },
+      "LA-3": {
+        "wins": 10,
+        "losses": 10,
+        "draws": 0,
+        "games": 20,
+        "score": 0.5
+      },
+      "LA-4": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-5": {
+        "wins": 5,
+        "losses": 5,
+        "draws": 0,
+        "games": 10,
+        "score": 0.5
+      },
+      "LA-6": {
+        "wins": 0,
+        "losses": 10,
+        "draws": 0,
+        "games": 10,
+        "score": 0.0
+      },
+      "LA-7": {
+        "wins": 4,
+        "losses": 4,
+        "draws": 0,
+        "games": 8,
+        "score": 0.5
+      },
+      "LA-9": {
+        "wins": 3,
+        "losses": 3,
+        "draws": 0,
+        "games": 6,
+        "score": 0.5
+      },
+      "LA-11": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      },
+      "LA-13": {
+        "wins": 2,
+        "losses": 2,
+        "draws": 0,
+        "games": 4,
+        "score": 0.5
+      }
+    }
+  }
+}

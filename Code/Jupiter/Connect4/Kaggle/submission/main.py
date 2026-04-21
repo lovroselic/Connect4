@@ -1,5 +1,6 @@
 # kaggle: main.py
-# tar -czf submit.tar.gz -C submission main.py PPO_914.pt
+# tar -czf submit.tar.gz -C submission main.py PPO_851.pt
+# tar -czf submit.tar.gz -C submission main.py SOUP_1.pt
 
 import os
 from typing import Optional, Tuple
@@ -16,10 +17,11 @@ _MODEL: Optional[nn.Module] = None
 _CENTER_COL = 3
 _CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
-MODEL_FILE = "PPO_914.pt"
+MODEL_FILE = "PPO_851.pt"
+#MODEL_FILE = "SOUP_1.pt"
 
 
-# ---------- CNet192 (mid always ON) ----------
+# ---------- CNet192 ----------
 class CNet192(nn.Module):
     def __init__(self, in_channels: int = 1):
         super().__init__()
@@ -128,7 +130,7 @@ def _generate_non_losing_moves(pov: np.ndarray):
 
     Logic:
     1) Check whether opponent (-1) already has immediate wins now.
-       - If there are 2+, there is no true non-losing move.
+       - If there are 2+, there is no true non-losing move, you are just fucked
        - If there is exactly 1, we are forced to block it.
     2) Otherwise, keep only moves that do not give opponent an immediate
        winning reply after our move.
@@ -193,7 +195,7 @@ def agent(obs, config):
     if stones == 0 and _CENTER_COL in legal:
         return _CENTER_COL  # tiny opening book
 
-    # POV scalar board: me = +1, opp = -1
+    # POV scalar board: me (POV) = +1, opp = -1
     pov = np.zeros((6, 7), dtype=np.int8)
     pov[grid == mark] = +1
     pov[(grid != 0) & (grid != mark)] = -1

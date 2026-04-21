@@ -54,17 +54,17 @@ from openpyxl import Workbook, load_workbook
 # One-click Spyder config
 # -----------------------------------------------------------------------------
 DATA_PATH = Path("connect-4.data")
-OUTPUT_PATH = Path("UCI_connect4_L10.xlsx")
+OUTPUT_PATH = Path("UCI_connect4_L13.xlsx")
 SHEET_NAME = "Sheet1"
 
-LOOKAHEAD_DEPTH = 10
+LOOKAHEAD_DEPTH = 13
 LABEL = f"UCI_LA{LOOKAHEAD_DEPTH}"
 ACTION_MODE = "center"   # "center", "left", "sample"
 SEED = 666
 STORE_POLICY_PROBS = True
 STORE_UCI_VALUE = True
 
-CHUNK_SIZE = 10000
+CHUNK_SIZE = 2000
 PROGRESS_EVERY = 100
 
 PROGRESS_SHEET = "_progress"
