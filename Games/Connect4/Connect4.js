@@ -67,7 +67,7 @@ const LOOKAHEAD = new Connect4LookaheadJS(
 );
 
 const PRG = {
-    VERSION: "1.5.3",
+    VERSION: "1.5.4",
     NAME: "Connect-4",
     YEAR: "2025, 2026",
     SG: null,
