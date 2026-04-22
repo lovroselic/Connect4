@@ -12,28 +12,28 @@ from numba import njit
 
 # ============================ Defaults ============================
 
-WIN2_CHECK = False
+WIN2_CHECK = True
 
 # Hard tactical guards (global + per-instance toggles)
-DOUBLE_THREAT_GUARD = False
-FORK_REPLY_GUARD = False
+DOUBLE_THREAT_GUARD = True
+FORK_REPLY_GUARD = True
 
 C4_WIN = 100000.0
 C4_IMMEDIATE_W = C4_WIN
 C4_FORK_W = C4_WIN
 
-
 C4_DEFENSIVE = 1.55             # 1.55
-C4_FLOATING_NEAR = 0.50         # 0.25
-C4_FLOATING_FAR = 0.25        # 0.125
-C4_CENTER_BONUS = 6.0           # 3
-C4_PARITY_BONUS = 0.5          # 0.75
-C4_VERT_MUL = 0.25              # 0.80
+C4_FLOATING_NEAR = 0.25         # 0.250
+C4_FLOATING_FAR = 0.125         # 0.125
+C4_CENTER_BONUS = 4.0           # 4.0 safe betweem 3 and 5 
+C4_PARITY_BONUS = 0.75          # 0.5 - 0.75 - 0.95
+C4_VERT_MUL = 0.8               # 0.8 keep
 C4_VERT_3_READY_BONUS = 0.0     # keep 0!
-C4_TEMPO_W =75                # 75
-C4_PARITY_MOVE_W = 0.50          # 0.5
-C4_PARITY_UNLOCK_W = 0.10       # 0.25
-C4_THREATSPACE_W = 10            # 9
+C4_TEMPO_W =72.5                # 72.5 safe, optimized
+C4_PARITY_MOVE_W = 1.75         # 1.75
+C4_PARITY_UNLOCK_W = 0.25       # 0.25
+C4_THREATSPACE_W = 9            # 9 keep safe middle ground
+
 
 C4_DEFAULT_WEIGHTS_ITEMS = (
     (2, 10.0),
@@ -956,7 +956,7 @@ class Connect4Lookahead:
 
     OPENING_BOOK = True
     OPENING_RANDOM = False  # set False for deterministic sweeps
-    DEPTH_BASED_FLOATING = False
+    DEPTH_BASED_FLOATING = True
 
     immediate_w = C4_IMMEDIATE_W
     fork_w = C4_FORK_W
@@ -973,8 +973,8 @@ class Connect4Lookahead:
     PARITY_UNLOCK_W = C4_PARITY_UNLOCK_W
     THREATSPACE_W = C4_THREATSPACE_W
 
-    DOUBLE_THREAT_GUARD = False
-    FORK_REPLY_GUARD = False
+    DOUBLE_THREAT_GUARD = True
+    FORK_REPLY_GUARD = True
 
     _CENTER_ORDER = [3, 4, 2, 5, 1, 6, 0]
 
