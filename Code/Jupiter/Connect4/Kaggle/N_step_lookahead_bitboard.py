@@ -47,17 +47,17 @@ def N_step_lookahead_bitboard(obs, config):
         MATE_SCORE    = W4 * 1000.0
         IMMEDIATE_W   = W4
         FORK_W        = W4
-        DEFENSIVE     = 1.55        # 1.55 by optimizer
-        FLOATING_NEAR = 0.25        # 0.25
-        FLOATING_FAR  = 0.125       # 0.125
-        CENTER_BONUS  = 3.0         # 3
-        PARITY_BONUS  = 0.75        # 0.75; only enabled if center-bottom is occupied
-        VERT_MUL = 0.8              # 0.875
-        VERT_3_READY_BONUS = 0.0    # 0.0, keep 0
-        TEMPO_W = 75                # 75
-        PARITY_MOVE_W = 0.5         # 0.5
-        PARITY_UNLOCK_W = 0.25      # 0.25
-        THREATSPACE_W = 9           # 8.75
+        DEFENSIVE     = 1.55
+        FLOATING_NEAR = 0.50
+        FLOATING_FAR  = 0.25
+        CENTER_BONUS  = 6.0
+        PARITY_BONUS  = 0.75
+        VERT_MUL = 0.25
+        VERT_3_READY_BONUS = 0.0
+        TEMPO_W = 75
+        PARITY_MOVE_W = 0.5
+        PARITY_UNLOCK_W = 0.10
+        THREATSPACE_W = 10
 
         # Column masks
         COL_MASK = [0] * COLS

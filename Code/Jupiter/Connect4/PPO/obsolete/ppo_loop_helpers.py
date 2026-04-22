@@ -1,3 +1,4 @@
+# PPO/ppo_loop_helpers.py
 from __future__ import annotations
 from typing import Optional, List, Callable, Dict, Any, Tuple
 import numpy as np
@@ -10,14 +11,12 @@ from DQN.dqn_utilities import record_first_move, evaluate_final_result, map_fina
 
 _CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
-
 def _pick_center_from_legal(legal: List[int]) -> int:
     s = set(int(x) for x in legal)
     for c in _CENTER_ORDER:
         if c in s:
             return int(c)
     return int(min(s)) if s else 0
-
 
 def _pick_leftmost_from_legal(legal: List[int]) -> int:
     return int(min(int(x) for x in legal)) if legal else 0
@@ -37,7 +36,6 @@ def encode_single_channel_agent_centric(board: np.ndarray, player: int) -> np.nd
     return enc[None, :, :]   # (1, H, W)
 
 
-
 def _to_float(x) -> float:
     if x is None:
         return 0.0
@@ -49,7 +47,6 @@ def _to_float(x) -> float:
         return float(x)
     except Exception:
         return 0.0
-
 
 
 def make_recompute_lp_val(
@@ -83,26 +80,19 @@ def make_recompute_lp_val(
     return _recompute
 
 
-
 def ppo_agent_step(
     env: Connect4Env,
     policy,
     buffer,
     temperature: float,
     recompute_fn,
-    last_agent_reward_entries_ref: List[Optional[Any]],
+    last_agent_reward_entries_ref,
     ply_idx: int,
     opening_kpis,
     openings,
 ):
     """
     Agent (+1) turn.
-
-    Important for the delta-only setup:
-    - we store ONLY the raw env reward returned for the agent move
-    - any opponent-response penalty is added later to this same transition
-      inside `ppo_opponent_step()`
-
     Returns: (done, reward, new_ply_idx)
     """
     ply_used = int(ply_idx)
@@ -153,7 +143,6 @@ def ppo_agent_step(
     return bool(done), float(reward), int(ply_idx)
 
 
-
 def ppo_opponent_step(
     env: Connect4Env,
     policy,
@@ -165,22 +154,10 @@ def ppo_opponent_step(
     ply_idx: int,
     opening_kpis: Optional[Dict[str, Any]] = None,
     openings: Optional[Any] = None,
-    attr_dense_opp_to_last: bool = True,
     attr_loss_to_last: bool = True,
 ) -> tuple[bool, int, float]:
     """
     Opponent (-1) turn.
-
-    Delta-only semantics:
-    - env.step() returns reward from the OPPONENT mover POV
-    - for PPO, we collapse one full turn into the last stored agent transition
-    - so we optionally convert the opponent reward into an agent-centric penalty
-      and add it to the last stored agent entries
-
-    Recommended defaults:
-    - attr_dense_opp_to_last=True  -> agent transition gets (r_agent - r_opponent)
-    - attr_loss_to_last=True       -> terminal opponent win is forced to LOSS_PENALTY
-
     Returns: (done, new_ply_idx, penalty_to_agent)
     """
     legal = env.available_actions()
@@ -189,6 +166,7 @@ def ppo_opponent_step(
 
     legal = [int(a) for a in legal]
     mode = lookahead_mode
+
 
     # Choose opponent action
     if mode in (None, "R", "rand", "Random", 0):
@@ -214,6 +192,8 @@ def ppo_opponent_step(
     else:
         depth = int(mode)
         opp_action = int(select_opponent_action(env.board.copy(), player=-1, depth=depth))
+    ##
+    
 
     env.current_player = -1
     _, oppo_reward, done = env.step(int(opp_action))  # mover-centric (opponent POV)
@@ -226,18 +206,14 @@ def ppo_opponent_step(
             openings.on_first_move(int(opp_action), is_agent=False)
 
     penalty_to_agent = 0.0
+    OPPO_PENALTY_FACTOR = 1.0
 
-    # Convert opponent reward into agent-centric penalty on the LAST agent action.
-    # This is NOT episode-wide cumulative reward, it is just collapsing one full
-    # agent-turn + opponent-response into a single PPO transition target.
-    if last_agent_reward_entries_ref[0] is not None:
-        agent_penalty = 0.0
+    # Convert opponent reward into agent-centric penalty
+    if attr_loss_to_last and last_agent_reward_entries_ref[0] is not None:
+        agent_penalty = -float(oppo_reward) * OPPO_PENALTY_FACTOR
 
-        if attr_dense_opp_to_last:
-            agent_penalty += -float(oppo_reward)
-
-        # On an actual opponent win, replace dense shaping with a hard terminal loss.
-        if done and getattr(env, "winner", None) == -1 and attr_loss_to_last:
+        # Only force LOSS_PENALTY if opponent actually won (not draw)
+        if done and getattr(env, "winner", None) == -1:
             agent_penalty = float(loss_penalty)
 
         if agent_penalty != 0.0:
@@ -251,7 +227,6 @@ def ppo_opponent_step(
     return bool(done), int(ply_idx + 1), float(penalty_to_agent)
 
 
-
 def ppo_maybe_opponent_opening(
     env: Connect4Env,
     policy,
@@ -263,7 +238,6 @@ def ppo_maybe_opponent_opening(
     loss_penalty: float,
     opening_kpis: Optional[Dict[str, Any]] = None,
     openings: Optional[Any] = None,
-    attr_dense_opp_to_last: bool = True,
     attr_loss_to_last: bool = True,
 ) -> tuple[bool, int, float]:
     """
@@ -284,13 +258,11 @@ def ppo_maybe_opponent_opening(
             ply_idx=ply_idx,
             opening_kpis=opening_kpis,
             openings=openings,
-            attr_dense_opp_to_last=attr_dense_opp_to_last,
             attr_loss_to_last=attr_loss_to_last,
         )
         return done, ply_idx, penalty
 
     return False, ply_idx, penalty
-
 
 
 def ppo_finalize_if_done(env: Connect4Env) -> tuple[bool, Optional[float], float]:

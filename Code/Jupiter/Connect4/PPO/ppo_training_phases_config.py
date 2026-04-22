@@ -3,23 +3,27 @@
 # PPO 
 
 BASE_PARAMS = {
-    "lr": 4.25e-4,                      #4.0 -> 4.25
-    "clip": 0.22,
-    "entropy": 0.0250,                  
-    "epochs": 9,                        # 6->8 ->9 (8, 9, 10) same results -> 10
-    "batch_size": 256,
-    "steps_per_update": 256,            #256->512->256
-    "vf_clip": 0.20,
-    "max_grad_norm": 1.0,
-    "target_kl": 0.020,                
-    "temperature": 1.00,               
+    "lr": 4.0e-4,                       #4.0
+    "clip": 0.20,                       #0.22 -> 0.20
+    "entropy": 0.0225,                  #0.025 -> 0.0225
+    "epochs": 8,                        #8
+    "batch_size": 256,                  #256
+    "steps_per_update": 256,            #256
+    "vf_clip": 0.20,                    #0.20
+    "max_grad_norm": 1.0,               #1.0
+    "target_kl": 0.020,                 #0.020
+    "temperature": 1.00,                #1.00
 }
 
 
 # Slow anneal
-MID  = dict(BASE_PARAMS, lr=4.00e-4, entropy=0.0225, temperature=0.99)
-LATE = dict(BASE_PARAMS, lr=3.75e-4, entropy=0.0200, temperature=0.97)
-SP   = dict(BASE_PARAMS, lr=3.50e-4, entropy=0.0200, temperature=0.95)
+# MID  = dict(BASE_PARAMS, lr=3.8e-4, entropy=0.023, temperature=0.99)
+# LATE = dict(BASE_PARAMS, lr=3.7e-4, entropy=0.022, temperature=0.97)
+# SP   = dict(BASE_PARAMS, lr=3.5e-4, entropy=0.021, temperature=0.95)
+
+# MID  = dict(BASE_PARAMS, lr=3.75e-4, entropy=0.0225, temperature=0.99)
+# LATE = dict(BASE_PARAMS, lr=3.75e-4, entropy=0.0200, temperature=0.97)
+# SP   = dict(BASE_PARAMS, lr=3.50e-4, entropy=0.0200, temperature=0.95)
 
 
 TRAINING_PHASES = {
@@ -71,7 +75,7 @@ TRAINING_PHASES = {
             "L12":  0.04,
             "L13":  0.08,
         },
-        "params": dict(MID),
+        "params": dict(BASE_PARAMS),
     },
     "FINAL": {
         "duration": 500,
@@ -93,7 +97,7 @@ TRAINING_PHASES = {
             "L12":  0.04,
             "L13":  0.08,
         },
-        "params": dict(LATE),
+        "params": dict(BASE_PARAMS),
     },
     "SP_FINALE": {
         "duration": 200,
@@ -115,7 +119,7 @@ TRAINING_PHASES = {
             "L12":  0.04,
             "L13":  0.08,
         },
-        "params": dict(SP),
+        "params": dict(BASE_PARAMS),
     }
 }
 

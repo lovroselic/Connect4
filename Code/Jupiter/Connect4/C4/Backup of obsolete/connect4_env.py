@@ -1,16 +1,17 @@
 # C4/connect4_env.py
 # Bitboard + Numba-accelerated Connect4 environment.
 #
-# DELTA-ONLY shaping variant:
+# ENV is mover-centric:
 # - state returned is from the *current_player* POV (current_player in {+1, -1})
 # - reward is attributed to the mover (the one who just played), from mover POV
-# - all NON-TERMINAL shaping terms are before/after deltas
-#   (or one-step local deltas on the changed column only)
 #
-# Rationale:
-# - avoid rewarding "nice-looking" absolute post-move boards repeatedly
-# - keep PPO/GAE responsible for long-horizon credit assignment
-# - preserve strong terminal win/loss signal
+# Mirrors (where applicable) the "Allis-ish" heuristic concepts used in your lookahead:
+# - Floating-aware shaping: discount "pure threats" that need support drops (gravity reality check)
+#   IMPORTANT FIX: floating distance uses max(dh) across empty cells in a window (NOT sum(dh)).
+# - Parity shaping: prefer mover parity, avoid unlocking opponent parity (enabled only if D1 is occupied)
+# - Tempo squeeze: reduce opponent safe moves
+# - Threat-space: reward moves that increase immediate-win count (fork-ish pressure)
+#
 
 import numpy as np
 from numba import njit, uint64, int32, int16
@@ -77,7 +78,6 @@ _WIN_C = []
 _WIN_R = []
 _WIN_KIND = []
 
-
 def _add_window(cells, kind: int):
     m = 0
     bs = [0, 0, 0, 0]
@@ -94,7 +94,6 @@ def _add_window(cells, kind: int):
     _WIN_C.append(cs)
     _WIN_R.append(rs)
     _WIN_KIND.append(kind)
-
 
 # horiz
 for r in range(ROWS):
@@ -136,6 +135,20 @@ def _sum_pure_weighted(
     FLOATING_FAR: float,
     VERT_MUL: float,
 ) -> float:
+    """
+    Floating-aware pure-window "count".
+
+    Floating FIX (the one you wanted):
+    - Compute support distance per empty cell: dh = rr - heights[col]
+    - Use need_max = max(dh) across empty cells in the window
+      (NOT sum(dh), which over-penalizes diagonals with multiple independently-supported empties)
+
+    Contribution per qualifying window:
+      mul = 1.0 if need_max==0
+          = FLOATING_NEAR if need_max==1
+          = FLOATING_FAR if need_max>=2
+      if vertical: mul *= VERT_MUL
+    """
     total = 0.0
     W = WIN_MASKS_.shape[0]
     for i in range(W):
@@ -180,14 +193,14 @@ class Connect4Env:
     # ---------------- knobs aligned to LA grid ----------------
     FLOATING_NEAR = 0.25
     FLOATING_FAR = 0.125
-    VERT_MUL = 0.8
+    VERT_MUL = 0.8   #0.875
 
-    PARITY_MOVE_BONUS = 0.5
-    PARITY_UNLOCK_PENALTY = 0.25
-    TEMPO_SQUEEZE_W = 4.0
-    THREATSPACE_W = 9
+    PARITY_MOVE_BONUS = 0.5       # 0.50~ LA: PARITY_MOVE_W 0.99
+    PARITY_UNLOCK_PENALTY = 0.25   # 0.25~ LA: PARITY_UNLOCK_W 0.49
+    TEMPO_SQUEEZE_W = 4          # 75 ~ LA: TEMPO_W (ENV proxy differs, but knob intent matches)
+    THREATSPACE_W =  8.75            # ~ LA: THREATSPACE_W
 
-    # ---------------- shaping magnitudes ----------------
+    # ---------------- shaping magnitudes  ----------------
     THREAT2_VALUE = 10.0
     THREAT3_VALUE = 50.0
     BLOCK2_VALUE = 15.0
@@ -198,21 +211,21 @@ class Connect4Env:
     DRAW_REWARD = 100.0
     LOSS_PENALTY = -WIN_REWARD
 
-    CENTER_REWARD = 1.0
-    CENTER_REWARD_BOTTOM = 1000.0
-    CENTER_WEIGHTS = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+    CENTER_REWARD = 1 #0.1
+    CENTER_REWARD_BOTTOM = 1000     
+    CENTER_WEIGHTS = [0, 0, 0, 1.0, 0, 0, 0]
+    OPENING_DECAY_STEPS = 7         # KEEP
 
     _CENTER_WEIGHTS_ARR = np.asarray(CENTER_WEIGHTS, dtype=np.float32)
 
-    FORK_BONUS = 150.0
-    BLOCK_FORK_BONUS = 200.0
+    FORK_BONUS = 150
+    BLOCK_FORK_BONUS = 200
     OPP_IMMEDIATE_PENALTY = 1000.0
     STEP_PENALTY = 0.1
 
     def __init__(self):
         self.lookahead = Connect4Lookahead()
         self._N = self.lookahead._N
-        self.last_reward_breakdown = {}
         self.reset()
 
     def reset(self):
@@ -227,7 +240,6 @@ class Connect4Env:
         self._mask = UINT(0)
         self._heights = np.zeros(self.COLS, dtype=np.int8)  # bottom-based heights
 
-        self.last_reward_breakdown = {}
         return self.get_state(perspective=self.current_player)
 
     def get_state(self, perspective=None) -> np.ndarray:
@@ -246,7 +258,7 @@ class Connect4Env:
     def _role_first_from_center(mask: UINT, pos1: UINT, pos2: UINT) -> tuple[int, bool]:
         """
         Parity shaping is enabled only if D1 (center-bottom) is occupied.
-        "First role" = owner of D1.
+        "First role" = the owner of D1 (player +1 if pos1 owns it, else player -1).
         """
         b_d1 = UINT(1) << UINT(CENTER_COL * STRIDE + 0)
         if (mask & b_d1) == UINT(0):
@@ -256,6 +268,7 @@ class Connect4Env:
         return -1, True
 
     def _count_immediate_wins_bits(self, pos_bb: int, mask_bb: int) -> int:
+        # Provided by your Connect4Lookahead numba helpers
         return int(
             self._N["count_immediate_wins_bits"](
                 np.uint64(pos_bb),
@@ -268,69 +281,6 @@ class Connect4Env:
             )
         )
 
-    def _count_safe_moves_bits(self, pos_bb: int, mask_bb: int) -> int:
-        return int(
-            self._N["count_safe_moves"](
-                np.uint64(pos_bb),
-                np.uint64(mask_bb),
-                self._N["CENTER_ORDER"],
-                self._N["TOP_MASK"],
-                self._N["BOTTOM_MASK"],
-                self._N["COL_MASK"],
-                np.int32(STRIDE),
-            )
-        )
-
-    def _center_potential(self, mover_bb: UINT, opp_bb: UINT) -> float:
-        total = 0.0
-        for c in range(self.COLS):
-            w = float(self._CENTER_WEIGHTS_ARR[c])
-            if w == 0.0:
-                continue
-            total += w * float(_popcount64(np.uint64(mover_bb & COL_MASK[c])))
-            total -= w * float(_popcount64(np.uint64(opp_bb & COL_MASK[c])))
-
-        b_d1 = UINT(1) << UINT(CENTER_COL * STRIDE + 0)
-        if (mover_bb & b_d1) != UINT(0):
-            total += float(self.CENTER_REWARD_BOTTOM)
-        elif (opp_bb & b_d1) != UINT(0):
-            total -= float(self.CENTER_REWARD_BOTTOM)
-
-        return float(self.CENTER_REWARD) * total
-
-    def _parity_local_delta(
-        self,
-        mover: int,
-        r_bot: int,
-        mask_after: UINT,
-        pos1_after: UINT,
-        pos2_after: UINT,
-    ) -> float:
-        """
-        One-step local delta on the changed column.
-        This preserves your old intuition:
-        - good if we play on preferred parity
-        - bad if we unlock opponent-preferred parity above us
-        """
-        role_first_mark, parity_enabled = self._role_first_from_center(mask_after, pos1_after, pos2_after)
-        if not parity_enabled:
-            return 0.0
-
-        mover_is_first_role = (mover == int(role_first_mark))
-        prefer_par = 0 if mover_is_first_role else 1
-        opp_prefer_par = 1 if mover_is_first_role else 0
-
-        out = 0.0
-        if (r_bot & 1) == prefer_par:
-            out += float(self.PARITY_MOVE_BONUS)
-        else:
-            out -= float(self.PARITY_MOVE_BONUS)
-
-        if r_bot + 1 < self.ROWS and ((r_bot + 1) & 1) == opp_prefer_par:
-            out -= float(self.PARITY_UNLOCK_PENALTY)
-
-        return out
-
     def step(self, action):
         if self.done:
             return self.get_state(perspective=self.current_player), 0.0, True
@@ -341,7 +291,7 @@ class Connect4Env:
 
         mover = int(self.current_player)
 
-        # snapshot before move
+        # snapshot before move (for block deltas + floating)
         mask_before = np.uint64(self._mask)
         pos1_before = np.uint64(self._pos1)
         pos2_before = np.uint64(self._pos2)
@@ -350,54 +300,7 @@ class Connect4Env:
         mover_bb_before = pos1_before if mover == 1 else pos2_before
         opp_bb_before = pos2_before if mover == 1 else pos1_before
 
-        threat2_before = _sum_pure_weighted(
-            np.uint64(mover_bb_before),
-            np.uint64(opp_bb_before),
-            np.uint64(mask_before),
-            heights_before,
-            np.int32(2),
-            WIN_MASKS, WIN_B, WIN_C, WIN_R, WIN_KIND,
-            float(self.FLOATING_NEAR),
-            float(self.FLOATING_FAR),
-            float(self.VERT_MUL),
-        )
-        threat3_before = _sum_pure_weighted(
-            np.uint64(mover_bb_before),
-            np.uint64(opp_bb_before),
-            np.uint64(mask_before),
-            heights_before,
-            np.int32(3),
-            WIN_MASKS, WIN_B, WIN_C, WIN_R, WIN_KIND,
-            float(self.FLOATING_NEAR),
-            float(self.FLOATING_FAR),
-            float(self.VERT_MUL),
-        )
-        opp2_before = _sum_pure_weighted(
-            np.uint64(opp_bb_before),
-            np.uint64(mover_bb_before),
-            np.uint64(mask_before),
-            heights_before,
-            np.int32(2),
-            WIN_MASKS, WIN_B, WIN_C, WIN_R, WIN_KIND,
-            float(self.FLOATING_NEAR),
-            float(self.FLOATING_FAR),
-            float(self.VERT_MUL),
-        )
-        opp3_before = _sum_pure_weighted(
-            np.uint64(opp_bb_before),
-            np.uint64(mover_bb_before),
-            np.uint64(mask_before),
-            heights_before,
-            np.int32(3),
-            WIN_MASKS, WIN_B, WIN_C, WIN_R, WIN_KIND,
-            float(self.FLOATING_NEAR),
-            float(self.FLOATING_FAR),
-            float(self.VERT_MUL),
-        )
-        my_immediate_before = self._count_immediate_wins_bits(int(mover_bb_before), int(mask_before))
         opp_immediate_before = self._count_immediate_wins_bits(int(opp_bb_before), int(mask_before))
-        opp_safe_before = self._count_safe_moves_bits(int(opp_bb_before), int(mask_before))
-        center_before = self._center_potential(mover_bb_before, opp_bb_before)
 
         # apply move
         r_bot = int(self._heights[c])
@@ -434,7 +337,8 @@ class Connect4Env:
             mover_bb_after = pos1_after if mover == 1 else pos2_after
             opp_bb_after = pos2_after if mover == 1 else pos1_after
 
-            threat2_after = _sum_pure_weighted(
+            # ---------- Floating-aware threat shaping ----------
+            threat2 = _sum_pure_weighted(
                 np.uint64(mover_bb_after),
                 np.uint64(opp_bb_after),
                 np.uint64(mask_after),
@@ -445,11 +349,35 @@ class Connect4Env:
                 float(self.FLOATING_FAR),
                 float(self.VERT_MUL),
             )
-            threat3_after = _sum_pure_weighted(
+            threat3 = _sum_pure_weighted(
                 np.uint64(mover_bb_after),
                 np.uint64(opp_bb_after),
                 np.uint64(mask_after),
                 heights_after,
+                np.int32(3),
+                WIN_MASKS, WIN_B, WIN_C, WIN_R, WIN_KIND,
+                float(self.FLOATING_NEAR),
+                float(self.FLOATING_FAR),
+                float(self.VERT_MUL),
+            )
+
+            # Opponent threats (before/after) -> "block" deltas (floating-aware)
+            opp2_before = _sum_pure_weighted(
+                np.uint64(opp_bb_before),
+                np.uint64(mover_bb_before),
+                np.uint64(mask_before),
+                heights_before,
+                np.int32(2),
+                WIN_MASKS, WIN_B, WIN_C, WIN_R, WIN_KIND,
+                float(self.FLOATING_NEAR),
+                float(self.FLOATING_FAR),
+                float(self.VERT_MUL),
+            )
+            opp3_before = _sum_pure_weighted(
+                np.uint64(opp_bb_before),
+                np.uint64(mover_bb_before),
+                np.uint64(mask_before),
+                heights_before,
                 np.int32(3),
                 WIN_MASKS, WIN_B, WIN_C, WIN_R, WIN_KIND,
                 float(self.FLOATING_NEAR),
@@ -479,75 +407,93 @@ class Connect4Env:
                 float(self.VERT_MUL),
             )
 
+            block2 = float(max(0.0, float(opp2_before - opp2_after)))
+            block3 = float(max(0.0, float(opp3_before - opp3_after)))
+
+            threat_reward = (self.THREAT2_VALUE * float(threat2)) + (self.THREAT3_VALUE * float(threat3))
+            block_reward = (self.BLOCK2_VALUE * float(block2)) + (self.BLOCK3_VALUE * float(block3))
+
+            # ---------- Center shaping (KEEP: center-bottom anchor + decay) ----------
+            center_reward = float(self.CENTER_REWARD) * float(self._CENTER_WEIGHTS_ARR[c])
+            
+            if c == CENTER_COL and r_bot == 0:
+                if self.ply == 0:
+                    center_reward += self.CENTER_REWARD_BOTTOM * 2.0
+                elif self.ply <= 2:
+                    opening_decay = float(np.exp(-self.ply / self.OPENING_DECAY_STEPS))
+                    center_reward += self.CENTER_REWARD_BOTTOM * opening_decay
+                # else: no special CENTER_REWARD_BOTTOM bonus
+
+
+            # ---------- Immediate wins / fork-ish ----------
             my_immediate_after = self._count_immediate_wins_bits(int(mover_bb_after), int(mask_after))
             opp_immediate_after = self._count_immediate_wins_bits(int(opp_bb_after), int(mask_after))
-            opp_safe_after = self._count_safe_moves_bits(int(opp_bb_after), int(mask_after))
-            center_after = self._center_potential(mover_bb_after, opp_bb_after)
 
-            threat_reward = (
-                float(self.THREAT2_VALUE) * float(threat2_after - threat2_before)
-                + float(self.THREAT3_VALUE) * float(threat3_after - threat3_before)
+            fork_bonus = self.FORK_BONUS if my_immediate_after >= 2 else 0.0
+            blocked_fork = (opp_immediate_before >= 2) and (opp_immediate_after < opp_immediate_before)
+            block_fork_bonus = self.BLOCK_FORK_BONUS if blocked_fork else 0.0
+
+            # Big negative if you allow opponent wins-in-1
+            new_opp_immediates = max(0, opp_immediate_after - opp_immediate_before)
+            immediate_loss_penalty = self.OPP_IMMEDIATE_PENALTY * new_opp_immediates
+
+            # ---------- Parity shaping (only if D1 is occupied) ----------
+            parity_reward = 0.0
+            role_first_mark, parity_enabled = self._role_first_from_center(self._mask, self._pos1, self._pos2)
+            if parity_enabled:
+                mover_is_first_role = (mover == int(role_first_mark))
+                prefer_par     = 0 if mover_is_first_role else 1
+                opp_prefer_par = 1 if mover_is_first_role else 0
+
+
+                if (r_bot & 1) == prefer_par:
+                    parity_reward += float(self.PARITY_MOVE_BONUS)
+                else:
+                    parity_reward -= float(self.PARITY_MOVE_BONUS)
+
+                # Avoid unlocking opponent preferred parity at r+1
+                if r_bot + 1 < self.ROWS:
+                    if ((r_bot + 1) & 1) == opp_prefer_par:
+                        parity_reward -= float(self.PARITY_UNLOCK_PENALTY)
+
+            # ---------- Tempo squeeze (proxy: reduce opponent safe moves) ----------
+            tempo_reward = 0.0
+            if self.TEMPO_SQUEEZE_W != 0.0:
+                opp_safe = int(
+                    self._N["count_safe_moves"](
+                        np.uint64(opp_bb_after),
+                        np.uint64(mask_after),
+                        self._N["CENTER_ORDER"],
+                        self._N["TOP_MASK"],
+                        self._N["BOTTOM_MASK"],
+                        self._N["COL_MASK"],
+                        np.int32(STRIDE),
+                    )
+                )
+                tempo_reward += float(self.TEMPO_SQUEEZE_W) * float(max(0, 7 - opp_safe))
+
+            # ---------- Threat-space ----------
+            threatspace_reward = (
+                float(self.THREATSPACE_W) * float(my_immediate_after)
+                if self.THREATSPACE_W != 0.0
+                else 0.0
             )
-
-            # signed deltas: good when opp threats shrink, bad when they grow
-            block_reward = (
-                float(self.BLOCK2_VALUE) * float(opp2_before - opp2_after)
-                + float(self.BLOCK3_VALUE) * float(opp3_before - opp3_after)
-            )
-
-            center_reward = float(center_after - center_before)
-
-            fork_reward = float(self.FORK_BONUS) * float(
-                (1 if my_immediate_after >= 2 else 0) - (1 if my_immediate_before >= 2 else 0)
-            )
-            block_fork_reward = float(self.BLOCK_FORK_BONUS) * float(
-                (1 if opp_immediate_before >= 2 else 0) - (1 if opp_immediate_after >= 2 else 0)
-            )
-
-            # only penalize newly-allowed opp wins-in-1
-            immediate_loss_penalty = float(self.OPP_IMMEDIATE_PENALTY) * float(
-                max(0, opp_immediate_after - opp_immediate_before)
-            )
-
-            parity_reward = self._parity_local_delta(
-                mover=mover,
-                r_bot=r_bot,
-                mask_after=np.uint64(mask_after),
-                pos1_after=np.uint64(pos1_after),
-                pos2_after=np.uint64(pos2_after),
-            )
-
-            tempo_reward = float(self.TEMPO_SQUEEZE_W) * float(opp_safe_before - opp_safe_after)
-            threatspace_reward = float(self.THREATSPACE_W) * float(my_immediate_after - my_immediate_before)
 
             reward = (
                 float(threat_reward)
                 + float(block_reward)
+                + float(fork_bonus)
+                + float(block_fork_bonus)
                 + float(center_reward)
-                + float(fork_reward)
-                + float(block_fork_reward)
                 + float(parity_reward)
                 + float(tempo_reward)
                 + float(threatspace_reward)
                 - float(immediate_loss_penalty)
-                - float(self.STEP_PENALTY)
             )
 
+            
+            reward -= float(self.STEP_PENALTY)
             reward = float(np.clip(reward, -self.MAX_REWARD, self.MAX_REWARD))
-
-            self.last_reward_breakdown = {
-                "threat_reward": float(threat_reward),
-                "block_reward": float(block_reward),
-                "center_reward": float(center_reward),
-                "fork_reward": float(fork_reward),
-                "block_fork_reward": float(block_fork_reward),
-                "parity_reward": float(parity_reward),
-                "tempo_reward": float(tempo_reward),
-                "threatspace_reward": float(threatspace_reward),
-                "immediate_loss_penalty": float(immediate_loss_penalty),
-                "step_penalty": float(self.STEP_PENALTY),
-                "reward_total": float(reward),
-            }
 
             # switch player
             self.current_player *= -1
@@ -561,12 +507,6 @@ class Connect4Env:
                 reward = float(self.DRAW_REWARD)
             else:
                 reward = float(self.LOSS_PENALTY)
-
-            self.last_reward_breakdown = {
-                "terminal": True,
-                "winner": int(self.winner),
-                "reward_total": float(reward),
-            }
 
         return self.get_state(perspective=self.current_player), float(reward), bool(self.done)
 
