@@ -51,12 +51,12 @@ def N_step_lookahead_bitboard(obs, config):
         DEFENSIVE     = 1.55
         FLOATING_NEAR = 0.25
         FLOATING_FAR  = 0.125
-        CENTER_BONUS  = 3.0
+        CENTER_BONUS  = 4.0
         PARITY_BONUS  = 0.75
         VERT_MUL = 0.8
         VERT_3_READY_BONUS = 0.0
-        TEMPO_W = 75
-        PARITY_MOVE_W = 0.5
+        TEMPO_W = 72.5
+        PARITY_MOVE_W = 1.75
         PARITY_UNLOCK_W = 0.25
         THREATSPACE_W = 9
 
