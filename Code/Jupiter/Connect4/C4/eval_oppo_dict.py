@@ -4,7 +4,9 @@ import numpy as np
 
 #final evaluation
 EVALUATION_OPPONENTS = {
-    "Random": 200,
+    "Random": 100,
+    "Leftmost": 100,
+    "Center": 100,
     "Lookahead-1": 100,
     "Lookahead-2": 100,
     "Lookahead-3": 100,
@@ -15,13 +17,14 @@ EVALUATION_OPPONENTS = {
     "Lookahead-9": 6,
     "Lookahead-11": 4,
     "Lookahead-13": 4,
-    "Leftmost": 100,
-    "Center": 200,
+   
 }
 
 #online training evals
 EVAL_CFG = {
-    "Random": 200, 
+    "Random": 100, 
+    "Leftmost": 100,
+    "Center": 100,
     "Lookahead-1": 100,
     "Lookahead-2": 10,
     "Lookahead-3": 30,
@@ -32,8 +35,6 @@ EVAL_CFG = {
     "Lookahead-9": 4,
     "Lookahead-11": 2,
     "Lookahead-13": 2,
-    "Leftmost": 100,
-    "Center": 200,
     } 
 
 #OPENING_NOISE_K = {0:0.85, 1:0.10, 2:0.05}

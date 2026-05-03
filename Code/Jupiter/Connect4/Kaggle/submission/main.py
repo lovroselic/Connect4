@@ -1,6 +1,6 @@
 # kaggle: main.py
-# tar -czf submit.tar.gz -C submission main.py PPO_820.pt
-# tar -czf submit.tar.gz -C submission main.py SOUP_1.pt
+# tar -czf submit.tar.gz -C submission main.py PPO_1004.pt
+
 
 import os
 from typing import Optional, Tuple
@@ -17,8 +17,7 @@ _MODEL: Optional[nn.Module] = None
 _CENTER_COL = 3
 _CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
-MODEL_FILE = "PPO_820.pt"
-#MODEL_FILE = "SOUP_1.pt"
+MODEL_FILE = "PPO_1004.pt"
 
 
 # ---------- CNet192 ----------
