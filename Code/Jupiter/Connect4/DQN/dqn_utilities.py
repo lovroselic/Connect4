@@ -1,14 +1,13 @@
 # dqn_utilities.py
-
+import os
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.gridspec import GridSpec
 from copy import deepcopy
 from PPO.ppo_training_phases_config import TRAINING_PHASES
 from C4.connect4_env import Connect4Env
 from DQN.eval_utilities import evaluate_agent_model
-import os
 from IPython.display import display, HTML
 import torch
 from C4.eval_oppo_dict import EVAL_CFG
@@ -1413,20 +1412,47 @@ def plot_live_training(
     openings=None,
     height_scale: float = 1.20,
     hspace: float = 0.48,
-    dpi: int = 120,
+    dpi: int = 140,
     openings_ylim: tuple[float, float] | None = (-0.05, 1.05),
     h2h_history=None,
     pop_h2h_history=None,
     opponent_timeline=None,
     overlay_last: int = 100,
-    return_figs=False
+    return_figs=False,
+    fig_width: float = 26,
+    step_fig_width: float | None = None,
+    full_width_css: bool = True,
 ):
-    import os
-    import numpy as np
+    
+
+
+    if step_fig_width is None:
+        step_fig_width = fig_width
+
+    # Optional notebook/JupyterLab display widening.
+    # This does not change saved PNG size, only inline display behavior.
+    if full_width_css:
+        try:
+            from IPython.display import display, HTML
+            display(HTML("""
+            <style>
+                .jp-OutputArea-output img,
+                .output_png img {
+                    max-width: 100% !important;
+                    height: auto !important;
+                }
+                .jp-OutputArea-output,
+                .output_area {
+                    width: 100% !important;
+                }
+            </style>
+            """))
+        except Exception:
+            pass
 
     use_openings = openings is not None
 
-    # --- layout (KEEP your sizes) ---
+    # --- layout ---
     if use_openings:
         nrows = 18
         base_heights = [
@@ -1455,7 +1481,7 @@ def plot_live_training(
 
     heights = [h * height_scale for h in base_heights]
 
-    fig_ep = plt.figure(figsize=(12.5, sum(heights) + 1.5), dpi=dpi)
+    fig_ep = plt.figure(figsize=(fig_width, sum(heights) + 1.5), dpi=dpi)
     gs = GridSpec(nrows, 1, height_ratios=heights, hspace=hspace)
 
     # --- axes ---
@@ -1479,10 +1505,10 @@ def plot_live_training(
     ax_mix_eps     = fig_ep.add_subplot(gs[13, 0])
     ax_opp_eps     = fig_ep.add_subplot(gs[14, 0])
 
-    # Opponent usage (bar)
-    ax_opp_usage   = fig_ep.add_subplot(gs[15, 0])
+    # Opponent usage
+    ax_opp_usage = fig_ep.add_subplot(gs[15, 0])
 
-    # Openings (ONLY if enabled) - create ONCE and DO NOT overwrite later
+    # Openings
     ax_hist = None
     ax_rate = None
     if use_openings:
@@ -1491,14 +1517,34 @@ def plot_live_training(
 
     # ---------------- helpers ----------------
     def _opp_color(lab: str) -> str:
-        if lab == "R":   return "#1f77b4"
-        if lab == "POP": return "#000000"
-        if lab == "SP":  return "#9467bd"
+        lab = str(lab).upper()
+
+        if lab in ("R", "RANDOM"):
+            return "#1f77b4"
+        if lab == "POP":
+            return "#000000"
+        if lab == "SP":
+            return "#9467bd"
+        if lab in ("LEFT", "LEFTMOST"):
+            return "#8c564b"
+        if lab in ("C", "CENTER"):
+            return "#2ca02c"
+
+        if lab.startswith("LOOKAHEAD-"):
+            lab = "L" + lab.split("-", 1)[1]
+        elif lab.startswith("LA-"):
+            lab = "L" + lab.split("-", 1)[1]
+        elif lab.startswith("LA") and lab[2:].isdigit():
+            lab = "L" + lab[2:]
+
         if lab.startswith("L") and lab[1:].isdigit():
             depth = int(lab[1:])
-            palette = ["#ff7f0e", "#2ca02c", "#d62728", "#8c564b", "#e377c2",
-                       "#7f7f7f", "#bcbd22", "#17becf"]
+            palette = [
+                "#ff7f0e", "#2ca02c", "#d62728", "#8c564b",
+                "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
+            ]
             return palette[depth % len(palette)]
+
         return "#888888"
 
     def _moving_avg(arr, k):
@@ -1537,16 +1583,16 @@ def plot_live_training(
     # ---------------- Reward ----------------
     plot_moving_averages(
         ax_reward, reward_history, [10, 25, 100, 500],
-        colors=['red', 'blue', '#666', '#000'],
-        styles=['-', '-', '--', '--'],
-        labels=['10-ep', '25-ep', '100-ep', '500-ep']
+        colors=["red", "blue", "#666", "#000"],
+        styles=["-", "-", "--", "--"],
+        labels=["10-ep", "25-ep", "100-ep", "500-ep"]
     )
     ax_reward.plot(reward_history, label="Reward", alpha=0.45)
     ax_reward.set_ylabel("Reward")
     ax_reward.legend(loc="lower left", fontsize=8)
     ax_reward.grid(True, alpha=0.35)
 
-    # opponent tick overlay on reward (last N episodes)
+    # opponent tick overlay on reward
     if opponent_timeline:
         n = len(opponent_timeline)
         a = max(0, n - int(overlay_last))
@@ -1556,16 +1602,21 @@ def plot_live_training(
             y_tick = y0 + 0.03 * (y1 - y0)
             cols = [_opp_color(opponent_timeline[i]) for i in xs]
             ax_reward.scatter(
-                xs, np.full(xs.shape, y_tick, dtype=float),
-                marker="|", s=250, c=cols, alpha=0.9, zorder=4
+                xs,
+                np.full(xs.shape, y_tick, dtype=float),
+                marker="|",
+                s=250,
+                c=cols,
+                alpha=0.9,
+                zorder=4
             )
 
-    # ---------------- Win rate (+ epsilon overlay) ----------------
+    # ---------------- Win rate + epsilon overlay ----------------
     plot_moving_averages(
         ax_win, win_history, [25, 100, 250, 500],
-        colors=['green', 'red', '#11F', '#000'],
-        styles=['-', '-', '--', '--'],
-        labels=['25-ep', '100-ep', '250-ep', '500-ep']
+        colors=["green", "red", "#11F", "#000"],
+        styles=["-", "-", "--", "--"],
+        labels=["25-ep", "100-ep", "250-ep", "500-ep"]
     )
     ax_win.plot(epsilon_history, label="Epsilon", color="orange", linestyle="--", alpha=0.8)
     ax_win.set_ylabel("Win Rate")
@@ -1575,10 +1626,13 @@ def plot_live_training(
     # ---------------- Epsilon / guards ----------------
     ax_eps.plot(epsilon_history, label="Epsilon", color="orange")
     ax_eps.plot(epsilon_min_history, label="Epsilon_min", color="black", linestyle="--")
+
     if guard_prob_history:
         ax_eps.plot(guard_prob_history, label="Guard Prob", color="green", linestyle=":")
+
     if center_prob_history:
         ax_eps.plot(center_prob_history, label="Center Prob", color="red", linestyle=":")
+
     ax_eps.set_ylabel("Epsilon / Guard")
     ax_eps.legend(loc="lower left", fontsize=8)
     ax_eps.grid(True, alpha=0.35)
@@ -1596,7 +1650,9 @@ def plot_live_training(
 
     # ---------------- Benchmarks ----------------
     _plot_bench_on_axis(
-        ax_bench, bench_history, smooth_k=0,
+        ax_bench,
+        bench_history,
+        smooth_k=0,
         training_phases=None,
         epsilon_history=epsilon_history,
         epsilon_min_history=epsilon_min_history
@@ -1605,7 +1661,9 @@ def plot_live_training(
     ax_bench.set_title("Benchmarks (raw)", fontsize=10)
 
     _plot_bench_on_axis(
-        ax_bench_s35, bench_history, smooth_k=3,
+        ax_bench_s35,
+        bench_history,
+        smooth_k=3,
         training_phases=None,
         epsilon_history=epsilon_history,
         epsilon_min_history=epsilon_min_history
@@ -1614,7 +1672,9 @@ def plot_live_training(
     ax_bench_s35.set_title("Benchmarks (MA 3)", fontsize=10)
 
     _plot_bench_on_axis(
-        ax_bench_s57, bench_history, smooth_k=7,
+        ax_bench_s57,
+        bench_history,
+        smooth_k=7,
         training_phases=None,
         epsilon_history=epsilon_history,
         epsilon_min_history=epsilon_min_history
@@ -1623,7 +1683,9 @@ def plot_live_training(
     ax_bench_s57.set_title("Benchmarks (MA 7)", fontsize=10)
 
     _plot_bench_on_axis(
-        ax_bench_s15, bench_history, smooth_k=15,
+        ax_bench_s15,
+        bench_history,
+        smooth_k=15,
         training_phases=None,
         epsilon_history=epsilon_history,
         epsilon_min_history=epsilon_min_history
@@ -1632,9 +1694,13 @@ def plot_live_training(
     ax_bench_s15.set_title("Benchmarks (MA 15)", fontsize=10)
 
     # ---------------- Global score ----------------
-    _plot_global_score_axis(ax_global, bench_history, training_phases=TRAINING_PHASES)
+    _plot_global_score_axis(
+        ax_global,
+        bench_history,
+        training_phases=TRAINING_PHASES
+    )
 
-    # ---------------- H2H (baseline + POP overlay) ----------------
+    # ---------------- H2H ----------------
     _plot_h2h_dual_axis(
         ax_h2h,
         h2h_history or {},
@@ -1642,7 +1708,7 @@ def plot_live_training(
         training_phases=TRAINING_PHASES,
     )
 
-    # ---------------- Action mix triplet + opponent eps breakdown ----------------
+    # ---------------- Action mix + opponent eps breakdown ----------------
     _plot_action_mix_triplet(ax_mix_explore, ax_mix_guard, ax_mix_eps, agent)
     _plot_opp_epsdetail(ax_opp_eps, agent)
 
@@ -1654,21 +1720,23 @@ def plot_live_training(
         normalize=True
     )
 
-    # ---------------- Openings (hist + center over time) ----------------
+    # ---------------- Openings ----------------
     if use_openings and ax_hist is not None and ax_rate is not None:
-        # try the "classic" openings drawer first (if it has data, great)
         _draw_openings_on_axes(
-            ax_hist, ax_rate, openings,
+            ax_hist,
+            ax_rate,
+            openings,
             training_phases=TRAINING_PHASES,
             rate_ylim=openings_ylim
         )
 
-        # If the rate panel ended up empty, fall back to benchmark center_rate.
         has_any_data = False
+
         for ln in list(ax_rate.lines):
             if len(ln.get_xdata()) > 0 and len(ln.get_ydata()) > 0:
                 has_any_data = True
                 break
+
         if not has_any_data and getattr(ax_rate, "collections", None):
             for col in ax_rate.collections:
                 try:
@@ -1682,12 +1750,21 @@ def plot_live_training(
             ax_rate.cla()
             _plot_center_from_bench(ax_rate, bench_history)
 
-    # ---------------- Phase vlines (time-series only) ----------------
+    # ---------------- Phase vlines ----------------
     axes = [
-        ax_reward, ax_win, ax_eps, ax_mem, ax_tu,
-        ax_bench, ax_bench_s35, ax_bench_s57, ax_bench_s15,
-        ax_global, ax_h2h
+        ax_reward,
+        ax_win,
+        ax_eps,
+        ax_mem,
+        ax_tu,
+        ax_bench,
+        ax_bench_s35,
+        ax_bench_s57,
+        ax_bench_s15,
+        ax_global,
+        ax_h2h,
     ]
+
     if use_openings and ax_rate is not None and ax_rate.get_visible():
         axes.append(ax_rate)
 
@@ -1695,16 +1772,26 @@ def plot_live_training(
         draw_phase_vlines(ax, TRAINING_PHASES, up_to=episode, label=True)
 
     eps_last = float(epsilon_history[-1]) if epsilon_history else float("nan")
+
     fig_ep.suptitle(
-        f"{title} - Ep {episode} — Phase: {phase} | Wins: {win_count}, "
-        f"Losses: {loss_count}, Draws: {draw_count} | ε={eps_last:.3f}",
+        f"{title} - Ep {episode} | Phase: {phase} | Wins: {win_count}, "
+        f"Losses: {loss_count}, Draws: {draw_count} | eps={eps_last:.3f}",
         y=0.995
+    )
+
+    fig_ep.subplots_adjust(
+        left=0.045,
+        right=0.985,
+        top=0.985,
+        bottom=0.015
     )
 
     # ---------- step-based metrics ----------
     fig_step = None
+
     if agent:
         plots = []
+
         if getattr(agent, "loss_hist", None):
             plots.append(("Loss",          agent.loss_hist,        "purple"))
         if getattr(agent, "td_hist", None):
@@ -1721,23 +1808,55 @@ def plot_live_training(
             plots.append(("Target Lag",    agent.target_lag_hist,  "orange"))
 
         if plots:
-            fig_step, ax_step = plt.subplots(len(plots), 1, figsize=(12, 3 * len(plots)))
+            fig_step, ax_step = plt.subplots(
+                len(plots),
+                1,
+                figsize=(step_fig_width, 3.0 * len(plots)),
+                dpi=dpi
+            )
+
             if len(plots) == 1:
                 ax_step = [ax_step]
+
             for i, (label, data, color) in enumerate(plots):
                 ax = ax_step[i]
                 ax.plot(data, label=label, color=color, alpha=0.6)
+
                 if label == "Loss" and len(data) >= 100:
-                    ma = np.convolve(np.asarray(data, dtype=float), np.ones(100) / 100, mode="valid")
-                    ax.plot(range(99, len(data)), ma, label="100-ep MA", color="black", linestyle="--")
+                    ma = np.convolve(
+                        np.asarray(data, dtype=float),
+                        np.ones(100) / 100,
+                        mode="valid"
+                    )
+                    ax.plot(
+                        range(99, len(data)),
+                        ma,
+                        label="100-ep MA",
+                        color="black",
+                        linestyle="--"
+                    )
+
                 ax.set_ylabel(label)
-                ax.legend()
-                ax.grid(True)
+                ax.legend(loc="lower left", fontsize=8)
+                ax.grid(True, alpha=0.35)
+
             fig_step.suptitle("Step-based Metrics", y=0.98)
+            fig_step.subplots_adjust(
+                left=0.045,
+                right=0.985,
+                top=0.955,
+                bottom=0.04,
+                hspace=0.38
+            )
 
     if save:
         out_png = os.path.join(path, f"{title}_training_report.png")
         fig_ep.savefig(out_png, dpi=dpi, bbox_inches="tight")
+
+        if fig_step is not None:
+            out_step_png = os.path.join(path, f"{title}_step_metrics.png")
+            fig_step.savefig(out_step_png, dpi=dpi, bbox_inches="tight")
+
         if not return_figs and fig_step is not None:
             plt.close(fig_step)
 

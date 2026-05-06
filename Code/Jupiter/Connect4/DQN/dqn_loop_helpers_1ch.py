@@ -139,24 +139,53 @@ def biased_random_choice(legal: Sequence[int], rng: np.random.Generator, bias: s
 
 @dataclass
 class OpponentSpec:
-    key: str                # e.g. "R", "L3", "SP", "POP"
-    mode: Union[str, int]   # "random", "self", depth
+    key: str                # canonical key: "R", "LEFT", "CENTER", "SP", "POP", "L3"
+    mode: Union[str, int]   # "random", "leftmost", "center", "self", depth
+
+
+def _clean_opponent_key(key: str) -> str:
+    return str(key).strip().upper().replace("_", "-").replace(" ", "")
+
+
+def _parse_lookahead_depth(k: str) -> Optional[int]:
+    """
+    Accepts:
+      L1, L3, L13
+      LA1, LA-1
+      LOOKAHEAD1, LOOKAHEAD-1
+    """
+    prefixes = ("LOOKAHEAD-", "LOOKAHEAD", "LA-", "LA", "L")
+
+    for prefix in prefixes:
+        if k.startswith(prefix):
+            tail = k[len(prefix):]
+            if tail.isdigit():
+                return int(tail)
+
+    return None
 
 
 def key_to_opponent_mode(key: str) -> OpponentSpec:
-    k = str(key).upper()
-    if k == "R":
-        return OpponentSpec(key=k, mode="random")
-    if k in ("SP", "POP"):
-        return OpponentSpec(key=k, mode="self")
+    k = _clean_opponent_key(key)
 
-    # L1/L3/L5/L7/... style
-    if k.startswith("L") and len(k) > 1:
-        try:
-            d = int(k[1:])
-            return OpponentSpec(key=k, mode=d)
-        except Exception:
-            pass
+    if k in ("R", "RAND", "RANDOM"):
+        return OpponentSpec(key="R", mode="random")
+
+    if k in ("LEFT", "LEFTMOST"):
+        return OpponentSpec(key="LEFT", mode="leftmost")
+
+    if k in ("C", "CENTER", "CENTRE"):
+        return OpponentSpec(key="CENTER", mode="center")
+
+    if k in ("SP", "SELF", "SELFPLAY", "SELF-PLAY"):
+        return OpponentSpec(key="SP", mode="self")
+
+    if k in ("POP", "ENSEMBLE", "POPENSEMBLE", "POP-ENSEMBLE"):
+        return OpponentSpec(key="POP", mode="self")
+
+    depth = _parse_lookahead_depth(k)
+    if depth is not None:
+        return OpponentSpec(key=f"L{depth}", mode=depth)
 
     raise ValueError(f"Unknown opponent key: {key}")
 
@@ -174,10 +203,13 @@ def select_opponent_actor(
 
     act_fn signature: (state_1ch, legal_actions, ply_idx) -> action
 
-    - R: random
-    - SP: greedy from sp_q_net
-    - POP: greedy from pop_ensemble
-    - Lk: lookahead depth k (requires lookahead)
+    Supported keys:
+    - R / Random
+    - LEFT / Leftmost
+    - C / Center
+    - SP
+    - POP
+    - Lk / LA-k / Lookahead-k
     """
 
     spec = key_to_opponent_mode(sampled_key)
@@ -187,65 +219,115 @@ def select_opponent_actor(
             return biased_random_choice(legal, rng=rng, bias="center")
         return _act, "R"
 
-    if sampled_key.upper() == "SP":
+    if spec.mode == "leftmost":
+        def _act(s, legal, ply_idx=None):
+            legal = [int(a) for a in legal]
+            if not legal:
+                raise ValueError("No legal actions")
+            return int(min(legal))
+        return _act, "LEFT"
+
+    if spec.mode == "center":
+        def _act(s, legal, ply_idx=None):
+            legal = [int(a) for a in legal]
+            if not legal:
+                raise ValueError("No legal actions")
+
+            for c in (3, 4, 2, 5, 1, 6, 0):
+                if c in legal:
+                    return int(c)
+
+            return int(legal[0])
+        return _act, "CENTER"
+
+    if spec.key == "SP":
         if sp_q_net is None:
             raise ValueError("SP requested but sp_q_net is None")
+
         def _act(s, legal, ply_idx=None):
             return greedy_model_action(sp_q_net, s, legal, device=device)
+
         return _act, "SP"
 
-    if sampled_key.upper() == "POP":
+    if spec.key == "POP":
         if pop_ensemble is None:
             raise ValueError("POP requested but pop_ensemble is None")
+
         def _act(s, legal, ply_idx=None):
             return greedy_model_action(pop_ensemble, s, legal, device=device)
+
         return _act, "POP"
 
     # Lookahead
     depth = int(spec.mode)
+
     if lookahead is None:
         raise ValueError(f"{sampled_key} requested but lookahead is None")
 
     def _act(s, legal, ply_idx=None):
-        # s is 1ch POV: shape (1,6,7) or (6,7), with "to-move" stones positive, opp negative.
-        # Your Connect4Lookahead expects board with values {0,1,2} and player in {1,2}.
+        legal = [int(a) for a in legal]
+
+        if not legal:
+            raise ValueError("No legal actions")
+
+        # s is 1ch POV: shape (1,6,7) or (6,7),
+        # with "to-move" stones positive, opponent stones negative.
+        # Connect4Lookahead expects board {0,1,2} and player in {1,2}.
         if hasattr(lookahead, "n_step_lookahead"):
             arr = np.asarray(s)
+
             if arr.ndim == 3 and arr.shape[0] == 1:
                 arr = arr[0]
-            # POV -> {0,1,2}
+
             board012 = np.zeros((6, 7), dtype=np.int8)
             board012[arr > 0] = 1
             board012[arr < 0] = 2
 
             mv = int(lookahead.n_step_lookahead(board012, player=1, depth=depth))
 
-            # Safety: if encoding/orientation mismatch ever returns an illegal move, fall back gracefully.
             if mv in legal:
                 return mv
 
-            # fallback: prefer center-ish among legal
+            # Safety fallback if encoding/orientation mismatch ever appears.
             for c in (3, 4, 2, 5, 1, 6, 0):
                 if c in legal:
                     return int(c)
-            return int(list(legal)[0])
 
-        # Other common APIs (kept as-is)
+            return int(legal[0])
+
         if hasattr(lookahead, "act"):
-            return int(lookahead.act(state=s, legal_actions=list(legal), depth=depth, ply_idx=ply_idx))
+            mv = int(lookahead.act(
+                state=s,
+                legal_actions=list(legal),
+                depth=depth,
+                ply_idx=ply_idx,
+            ))
+            return mv if mv in legal else int(legal[0])
+
         if hasattr(lookahead, "best_action"):
-            return int(lookahead.best_action(state=s, legal_actions=list(legal), depth=depth))
+            mv = int(lookahead.best_action(
+                state=s,
+                legal_actions=list(legal),
+                depth=depth,
+            ))
+            return mv if mv in legal else int(legal[0])
+
         if hasattr(lookahead, "best_move"):
-            return int(lookahead.best_move(state=s, legal_actions=list(legal), depth=depth))
+            mv = int(lookahead.best_move(
+                state=s,
+                legal_actions=list(legal),
+                depth=depth,
+            ))
+            return mv if mv in legal else int(legal[0])
 
         raise AttributeError(
-            "Lookahead object needs one of: n_step_lookahead(board, player, depth), "
-            "act(state, legal_actions, depth, ply_idx), best_action(...), best_move(...)"
+            "Lookahead object needs one of: "
+            "n_step_lookahead(board, player, depth), "
+            "act(state, legal_actions, depth, ply_idx), "
+            "best_action(...), best_move(...)"
         )
 
-
     return _act, f"L{depth}"
-
 
 # ----------------------------- episode play -----------------------------
 

@@ -1,4 +1,5 @@
 .ipynb_checkpoints
 __pycache__
+.numba_benchmark_cache
 # *.pt
 # *.pkl

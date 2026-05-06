@@ -1,5 +1,5 @@
 # kaggle: main.py
-# tar -czf submit.tar.gz -C submission main.py PPO_1004.pt
+# tar -czf submit.tar.gz -C submission main.py PPO_2002.pt
 
 
 import os
@@ -17,7 +17,8 @@ _MODEL: Optional[nn.Module] = None
 _CENTER_COL = 3
 _CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
-MODEL_FILE = "PPO_1004.pt"
+MODEL_FILE = "PPO_2002.pt"
+#MODEL_FILE = "AZ_003.pt"
 
 
 # ---------- CNet192 ----------

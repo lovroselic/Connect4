@@ -16,16 +16,37 @@ EVALUATION_OPPONENTS = {
     "Lookahead-7": 10,
     "Lookahead-9": 6,
     "Lookahead-11": 4,
-    "Lookahead-13": 4,
-   
+    "Lookahead-13": 4,  
 }
 
-#online training evals
-EVAL_CFG = {
-    "Random": 100, 
+EVALUATION_OPPONENTS_EXTD = {
+    "Random": 100,
     "Leftmost": 100,
     "Center": 100,
     "Lookahead-1": 100,
+    "Lookahead-2": 100,
+    "Lookahead-3": 100,
+    "Lookahead-4": 100,
+    "Lookahead-5": 50,
+    "Lookahead-6": 24,
+    "Lookahead-7": 10,
+    "Lookahead-8": 6,
+    "Lookahead-9": 6,
+    "Lookahead-10": 6,
+    "Lookahead-11": 4,
+    "Lookahead-12": 4,
+    "Lookahead-13": 4,
+    "Lookahead-14": 2,
+    "Lookahead-15": 2,
+}
+
+#online training evals
+
+EVAL_CFG = {
+    "Random": 100, 
+    "Leftmost": 50,
+    "Center": 50,
+    "Lookahead-1": 50,
     "Lookahead-2": 10,
     "Lookahead-3": 30,
     "Lookahead-4": 10,
@@ -36,6 +57,7 @@ EVAL_CFG = {
     "Lookahead-11": 2,
     "Lookahead-13": 2,
     } 
+
 
 #OPENING_NOISE_K = {0:0.85, 1:0.10, 2:0.05}
 OPENING_NOISE_K = {0:0.97, 1:0.02, 2:0.01}
