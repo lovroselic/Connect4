@@ -1,0 +1,2 @@
+games,wins,losses,draws,score_rate,win_rate,loss_rate,draw_rate,errors,avg_plies,max_move_sec,avg_submission_sec,avg_reference_sec,as_first_games,as_first_wins,as_first_losses,as_first_draws,as_first_score_rate,as_second_games,as_second_wins,as_second_losses,as_second_draws,as_second_score_rate
+10,0,10,0,0.0,0.0,1.0,0.0,0,39.5,10.7567839000003,0.336761808394773,0.7760287720000268,5,0,5,0,0.0,5,0,5,0,0.0

@@ -51,13 +51,13 @@ RANDOMIZE_SECOND_PLAYER_BOOK_REPLY = True
 # PPO inference upgrades.
 # Mirror TTA averages normal-board logits with mirrored-board logits, then unmirrors them.
 # It costs one extra forward pass, but this CNet is small enough that it is usually worth it.
-PPO_MIRROR_TTA = False
+PPO_MIRROR_TTA = True
 
 # Hybrid upgrades for late lookahead.
 # PPO guides root move ordering and adds a small normalized root score bias.
 # The bias is deliberately tiny compared with tactical mate/fork scores.
-PPO_GUIDED_LA_ROOT = False
-PPO_LA_ROOT_BIAS = 0.0      # tune 0 / 40 / 80 / 120 if you want an ablation sweep
+PPO_GUIDED_LA_ROOT = True
+PPO_LA_ROOT_BIAS = 80.0      # tune 0 / 40 / 80 / 120 if you want an ablation sweep
 
 
 # N_step_lookahead_bitboard.py

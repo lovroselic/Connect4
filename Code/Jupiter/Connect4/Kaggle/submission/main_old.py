@@ -48,17 +48,6 @@ LATE_LOOKAHEAD_STEPS = 13
 # reply either C or E. Set False for deterministic C/E mirroring.
 RANDOMIZE_SECOND_PLAYER_BOOK_REPLY = True
 
-# PPO inference upgrades.
-# Mirror TTA averages normal-board logits with mirrored-board logits, then unmirrors them.
-# It costs one extra forward pass, but this CNet is small enough that it is usually worth it.
-PPO_MIRROR_TTA = False
-
-# Hybrid upgrades for late lookahead.
-# PPO guides root move ordering and adds a small normalized root score bias.
-# The bias is deliberately tiny compared with tactical mate/fork scores.
-PPO_GUIDED_LA_ROOT = False
-PPO_LA_ROOT_BIAS = 0.0      # tune 0 / 40 / 80 / 120 if you want an ablation sweep
-
 
 # N_step_lookahead_bitboard.py
 # Pure Python bitboard alpha-beta (negamax) + iterative deepening
@@ -88,11 +77,6 @@ def N_step_lookahead_bitboard(obs, config):
     WIN2_CHECK = True
     DOUBLE_THREAT_GUARD = True   # after my move, opponent has >=2 win-in-1 moves
     FORK_REPLY_GUARD    = True   # after my move, opponent has a reply that creates >=2 win-in-1 threats
-
-    # PPO-root hybridization. These globals are defined below the model section;
-    # Python resolves them at call time, so this works despite function order.
-    PPO_GUIDED_ROOT = bool(globals().get("PPO_GUIDED_LA_ROOT", True))
-    PPO_ROOT_BIAS = float(globals().get("PPO_LA_ROOT_BIAS", 80.0))
 
     # ----------------------------------------------------------------------
 
@@ -323,9 +307,6 @@ def N_step_lookahead_bitboard(obs, config):
         if stones == 1 and MARK == 2:
             if mask & b_d1:
                 return random.choice([2, 4])
-            # If first player did not take center, take it. Simple, strong, and compact.
-            if (mask & TOP_MASK[CENTER_COL]) == 0:
-                return CENTER_COL
 
         if stones == 2 and MARK == 1:
             if mask & b_d1:
@@ -352,11 +333,6 @@ def N_step_lookahead_bitboard(obs, config):
                     return CENTER_COL
 
         if stones == 3 and MARK == 2:
-            # Contest an early center stack. This covers the old D1-D2-D3 case
-            # and the more common D1-D2 + side-reply case.
-            if (mask & b_d1) and (mask & b_d2):
-                if (mask & TOP_MASK[CENTER_COL]) == 0:
-                    return CENTER_COL
             if (mask & b_d1) and (mask & b_d2) and (mask & b_d3):
                 if (mask & TOP_MASK[CENTER_COL]) == 0:
                     return CENTER_COL
@@ -650,20 +626,6 @@ def N_step_lookahead_bitboard(obs, config):
             if is_forced_win_in_2(pos, mask, c):
                 return c
 
-    # ----------------- PPO root guidance for late lookahead ----------------
-    # Normalized policy scores are used for root move ordering and a small root
-    # score bias. Forced wins/blocks and tactical guards above still dominate.
-    ppo_root_scores = None
-    if PPO_GUIDED_ROOT:
-        helper = globals().get("_ppo_root_scores_from_obs")
-        if helper is not None:
-            try:
-                ppo_root_scores = helper(obs)
-            except Exception:
-                # In Kaggle this should not happen because agent() preloads the model.
-                # Keep standalone local lookahead tests usable even without the checkpoint.
-                ppo_root_scores = None
-
     # ----------------- TT, killers, history & ordering ---------------------
     TT = {}
     EXACT, LOWER, UPPER = 0, 1, 2
@@ -715,18 +677,7 @@ def N_step_lookahead_bitboard(obs, config):
         if k2 != -1 and k2 in cand:
             out.append(k2); cand.remove(k2)
 
-        if ply == 0 and ppo_root_scores is not None:
-            cand.sort(
-                key=lambda c: (
-                    float(ppo_root_scores[c]),
-                    history_tbl[c],
-                    -abs(c - CENTER_COL),
-                    -c,
-                ),
-                reverse=True,
-            )
-        else:
-            cand.sort(key=lambda c: history_tbl[c], reverse=True)
+        cand.sort(key=lambda c: history_tbl[c], reverse=True)
         out.extend(cand)
         return out
 
@@ -816,9 +767,6 @@ def N_step_lookahead_bitboard(obs, config):
 
                     opp_threats = count_immediate_wins(opp_after, nm)
                     bias -= DEFENSIVE * THREATSPACE_W * 0.25 * float(opp_threats)
-
-                if ppo_root_scores is not None and PPO_ROOT_BIAS != 0.0:
-                    bias += PPO_ROOT_BIAS * float(ppo_root_scores[c])
 
             child_val, _ = negamax(next_pos, nm, depth - 1, -beta, -alpha, ply + 1)
             val = -child_val + bias
@@ -1009,25 +957,6 @@ def _legal_cols_from_pov(pov: np.ndarray):
     return [c for c in range(_COLS) if pov[0, c] == 0]
 
 
-def _count_immediate_winning_drops(pov: np.ndarray, token: int):
-    return [
-        c for c in _CENTER_ORDER
-        if pov[0, c] == 0 and _is_winning_drop(pov, c, token)
-    ]
-
-
-def _apply_drop_inplace(pov: np.ndarray, col: int, token: int) -> int:
-    r = _lowest_empty_row(pov, col)
-    if r >= 0:
-        pov[r, col] = token
-    return r
-
-
-def _undo_drop_inplace(pov: np.ndarray, row: int, col: int) -> None:
-    if row >= 0:
-        pov[row, col] = 0
-
-
 def _generate_non_losing_moves(pov: np.ndarray):
     """
     Return tactically safe moves for the side to move (+1).
@@ -1043,7 +972,10 @@ def _generate_non_losing_moves(pov: np.ndarray):
     if not legal:
         return []
 
-    opp_wins_now = _count_immediate_winning_drops(pov, -1)
+    opp_wins_now = [
+        c for c in _CENTER_ORDER
+        if pov[0, c] == 0 and _is_winning_drop(pov, c, -1)
+    ]
 
     if len(opp_wins_now) >= 2:
         return []
@@ -1057,9 +989,16 @@ def _generate_non_losing_moves(pov: np.ndarray):
         if pov[0, c] != 0:
             continue
 
-        r = _apply_drop_inplace(pov, c, +1)
-        opp_has_reply_win = bool(_count_immediate_winning_drops(pov, -1))
-        _undo_drop_inplace(pov, r, c)
+        r = _lowest_empty_row(pov, c)
+        pov[r, c] = +1
+
+        opp_has_reply_win = False
+        for oc in _CENTER_ORDER:
+            if pov[0, oc] == 0 and _is_winning_drop(pov, oc, -1):
+                opp_has_reply_win = True
+                break
+
+        pov[r, c] = 0
 
         if not opp_has_reply_win:
             good.append(c)
@@ -1067,270 +1006,27 @@ def _generate_non_losing_moves(pov: np.ndarray):
     return good
 
 
-def _opp_immediate_wins_after_my_move_pov(pov: np.ndarray, col: int) -> int:
-    r = _apply_drop_inplace(pov, col, +1)
-    if r < 0:
-        return 99
-
-    if _has_four_from(pov, r, col, +1):
-        _undo_drop_inplace(pov, r, col)
-        return 0
-
-    cnt = len(_count_immediate_winning_drops(pov, -1))
-    _undo_drop_inplace(pov, r, col)
-    return cnt
-
-
-def _has_any_immediate_win_pov(pov: np.ndarray, token: int) -> bool:
-    return bool(_count_immediate_winning_drops(pov, token))
-
-
-def _has_two_immediate_wins_pov(pov: np.ndarray, token: int) -> bool:
-    return len(_count_immediate_winning_drops(pov, token)) >= 2
-
-
-def _opp_can_reply_create_double_threat_pov(pov: np.ndarray, col: int) -> bool:
-    """
-    After +1 plays col, detect whether -1 has a reply that either wins now
-    or creates >=2 immediate winning threats while +1 has no immediate answer.
-    """
-    r = _apply_drop_inplace(pov, col, +1)
-    if r < 0:
-        return True
-
-    if _has_four_from(pov, r, col, +1):
-        _undo_drop_inplace(pov, r, col)
-        return False
-
-    for oc in _CENTER_ORDER:
-        if pov[0, oc] != 0:
-            continue
-
-        rr = _apply_drop_inplace(pov, oc, -1)
-        if rr < 0:
-            continue
-
-        bad = False
-        if _has_four_from(pov, rr, oc, -1):
-            bad = True
-        elif not _has_any_immediate_win_pov(pov, +1):
-            bad = _has_two_immediate_wins_pov(pov, -1)
-
-        _undo_drop_inplace(pov, rr, oc)
-
-        if bad:
-            _undo_drop_inplace(pov, r, col)
-            return True
-
-    _undo_drop_inplace(pov, r, col)
-    return False
-
-
-def _find_fork_move_pov(pov: np.ndarray, candidates):
-    """Return a move that creates >=2 immediate +1 wins without handing -1 a win."""
-    best_col = None
-    best_threats = 1
-    for c in candidates:
-        if pov[0, c] != 0:
-            continue
-
-        r = _apply_drop_inplace(pov, c, +1)
-        if r < 0:
-            continue
-
-        # Immediate wins are handled before this helper, but they are harmless.
-        opp_wins = len(_count_immediate_winning_drops(pov, -1))
-        my_threats = len(_count_immediate_winning_drops(pov, +1))
-        _undo_drop_inplace(pov, r, c)
-
-        if opp_wins == 0 and my_threats >= 2 and my_threats > best_threats:
-            best_threats = my_threats
-            best_col = c
-
-    return best_col
-
-
-def _is_forced_win_in_2_pov(pov: np.ndarray, col: int) -> bool:
-    """
-    True root win-in-2 check:
-    after +1 plays col, every legal -1 reply allows +1 an immediate win.
-    """
-    r = _apply_drop_inplace(pov, col, +1)
-    if r < 0:
-        return False
-
-    if _has_four_from(pov, r, col, +1):
-        _undo_drop_inplace(pov, r, col)
-        return True
-
-    if _has_any_immediate_win_pov(pov, -1):
-        _undo_drop_inplace(pov, r, col)
-        return False
-
-    any_reply = False
-    for oc in _CENTER_ORDER:
-        if pov[0, oc] != 0:
-            continue
-
-        any_reply = True
-        rr = _apply_drop_inplace(pov, oc, -1)
-        if rr < 0:
-            continue
-
-        can_win_after_reply = _has_any_immediate_win_pov(pov, +1)
-        _undo_drop_inplace(pov, rr, oc)
-
-        if not can_win_after_reply:
-            _undo_drop_inplace(pov, r, col)
-            return False
-
-    _undo_drop_inplace(pov, r, col)
-    return any_reply
-
-
-def _find_forced_win_in_2_move_pov(pov: np.ndarray, candidates):
-    for c in candidates:
-        if _is_forced_win_in_2_pov(pov, c):
-            return c
-    return None
-
-
-def _strong_tactical_candidates_pov(pov: np.ndarray):
-    """
-    LA-style root tactical filter for PPO phase.
-    Returns (forced_move, candidates). If forced_move is not None, play it.
-    """
-    legal = [c for c in _CENTER_ORDER if pov[0, c] == 0]
-    if not legal:
-        return None, []
-
-    # Win now.
-    for c in legal:
-        if _is_winning_drop(pov, c, +1):
-            return c, [c]
-
-    # Single must-block.
-    opp_wins_now = _count_immediate_winning_drops(pov, -1)
-    if len(opp_wins_now) == 1:
-        forced = opp_wins_now[0]
-        return forced, [forced]
-
-    candidates = legal[:]
-
-    # Avoid obvious handovers if possible.
-    safe = [c for c in candidates if _opp_immediate_wins_after_my_move_pov(pov, c) == 0]
-    if safe:
-        candidates = safe
-
-    # Double-threat guard: after our move, opponent should not have >=2 wins.
-    guarded = [c for c in candidates if _opp_immediate_wins_after_my_move_pov(pov, c) < 2]
-    if guarded:
-        candidates = guarded
-
-    # Fork-reply guard: after our move, opponent should not be able to reply
-    # with a winning move or a double-threat fork.
-    guarded = [c for c in candidates if not _opp_can_reply_create_double_threat_pov(pov, c)]
-    if guarded:
-        candidates = guarded
-
-    fork = _find_fork_move_pov(pov, candidates)
-    if fork is not None:
-        return fork, [fork]
-
-    win2 = _find_forced_win_in_2_move_pov(pov, candidates)
-    if win2 is not None:
-        return win2, [win2]
-
-    return None, candidates
-
-
 def _infer_logits(model: nn.Module, pov: np.ndarray) -> np.ndarray:
-    """
-    Policy logits with optional horizontal mirror test-time augmentation.
-    Mirror TTA reduces accidental left/right policy bias in symmetric positions.
-    """
-    arr = pov.astype(np.float32)
+    x = torch.from_numpy(pov.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(_DEVICE)
+    with torch.no_grad():
+        logits, _ = model(x)
 
-    if bool(globals().get("PPO_MIRROR_TTA", True)):
-        batch = np.stack([arr, np.fliplr(arr).copy()], axis=0)
-        x = torch.from_numpy(batch).unsqueeze(1).to(_DEVICE)
-        with torch.no_grad():
-            logits, _ = model(x)
-
-        logits_np = logits.detach().cpu().numpy().astype(np.float32)
-        normal = logits_np[0]
-        mirrored = logits_np[1][::-1]  # unmirror columns: 0<->6, 1<->5, 2<->4
-        out = 0.5 * (normal + mirrored)
-    else:
-        x = torch.from_numpy(arr).unsqueeze(0).unsqueeze(0).to(_DEVICE)
-        with torch.no_grad():
-            logits, _ = model(x)
-        out = logits[0].detach().cpu().numpy().astype(np.float32)
-
-    out = np.nan_to_num(out, nan=-1e9, posinf=1e9, neginf=-1e9)
-    return out
-
-
-def _pov_from_grid(grid: np.ndarray, mark: int) -> np.ndarray:
-    pov = np.zeros((_ROWS, _COLS), dtype=np.int8)
-    pov[grid == mark] = +1
-    pov[(grid != 0) & (grid != mark)] = -1
-    return pov
-
-
-def _normalized_policy_scores(logits: np.ndarray, legal) -> np.ndarray:
-    """
-    Convert raw logits to small centered scores for search ordering/bias.
-    Values are clipped to roughly [-1, +1], so PPO cannot overwhelm tactics.
-    """
-    scores = np.zeros(_COLS, dtype=np.float32)
-    legal = list(legal)
-    if not legal:
-        return scores
-
-    vals = np.asarray([float(logits[c]) for c in legal], dtype=np.float32)
-    mean = float(vals.mean())
-    std = float(vals.std())
-    if std < 1e-6:
-        return scores
-
-    z = (logits.astype(np.float32) - mean) / std
-    z = np.clip(z, -2.5, 2.5) / 2.5
-    for c in legal:
-        scores[c] = float(z[c])
-    return scores
-
-
-def _ppo_root_scores_from_obs(obs) -> np.ndarray:
-    """Used by late lookahead: PPO policy becomes root ordering + small bias."""
-    model = _load_model_once()
-    mark, grid = _get_obs_mark_and_grid(obs)
-    legal = _legal_cols_from_grid(grid)
-    if not legal:
-        return np.zeros(_COLS, dtype=np.float32)
-
-    pov = _pov_from_grid(grid, mark)
-    logits = _infer_logits(model, pov)
-    return _normalized_policy_scores(logits, legal)
+    logits = logits[0].detach().cpu().numpy().astype(np.float32)
+    logits = np.nan_to_num(logits, nan=-1e9, posinf=1e9, neginf=-1e9)
+    return logits
 
 
 # ---------- shared opening book ----------
 def _opening_book_move(grid: np.ndarray, mark: int) -> Optional[int]:
     """
-    Compact shared early book in top-row-first grid space.
-
-    It intentionally stays small:
-    - take center as first player;
-    - as second player, punish non-center openings by taking center;
-    - preserve the old C/E side reply after opponent opens center;
-    - handle common center-stack contests and the old mirrored replies.
+    Shared early book, ported from the bitboard agent to top-row-first grid space.
+    This runs before the hybrid dispatch, so the book is kept for both sides.
     """
     legal = _legal_cols_from_grid(grid)
     if not legal:
         return None
 
     stones = int(np.count_nonzero(grid))
-    opp = 3 - int(mark)
 
     # Board coordinates here: row 5 is bottom, row 4 is second from bottom, etc.
     a1 = grid[5, 0] != 0
@@ -1343,14 +1039,9 @@ def _opening_book_move(grid: np.ndarray, mark: int) -> Optional[int]:
     d2 = grid[4, 3] != 0
     d3 = grid[3, 3] != 0
 
-    center_legal = _CENTER_COL in legal
-
-    # First player: center.
-    if stones == 0 and mark == 1 and center_legal:
+    if stones == 0 and mark == 1 and _CENTER_COL in legal:
         return _CENTER_COL
 
-    # Second player: if opponent opened center, use the old side reply.
-    # If opponent did not open center, take center. That is the useful missing case.
     if stones == 1 and mark == 2:
         if d1:
             choices = [c for c in (2, 4) if c in legal]
@@ -1358,13 +1049,10 @@ def _opening_book_move(grid: np.ndarray, mark: int) -> Optional[int]:
                 if RANDOMIZE_SECOND_PLAYER_BOOK_REPLY:
                     return int(random.choice(choices))
                 return int(choices[0])
-        if center_legal:
-            return _CENTER_COL
 
-    # First player's second move after D1. These are the old mirrored replies.
     if stones == 2 and mark == 1:
         if d1:
-            if d2 and center_legal:
+            if d2 and _CENTER_COL in legal:
                 return _CENTER_COL
 
             if c1 and 5 in legal:
@@ -1382,21 +1070,11 @@ def _opening_book_move(grid: np.ndarray, mark: int) -> Optional[int]:
             if f1 and 1 in legal:
                 return 1
 
-            if center_legal:
+            if _CENTER_COL in legal:
                 return _CENTER_COL
 
-    # Second player: contest early center stacking.
-    # Covers both old D1-D2-D3 logic and the common D1 + side reply + D2 case.
     if stones == 3 and mark == 2:
-        if d1 and d2 and center_legal:
-            return _CENTER_COL
-        if d1 and d2 and d3 and center_legal:
-            return _CENTER_COL
-
-    # Tiny generic vertical-center safety rule for the first few plies:
-    # if opponent owns bottom two in center, do not let them freely build D3.
-    if stones <= 7 and center_legal:
-        if grid[5, _CENTER_COL] == opp and grid[4, _CENTER_COL] == opp:
+        if d1 and d2 and d3 and _CENTER_COL in legal:
             return _CENTER_COL
 
     return None
@@ -1414,19 +1092,28 @@ def _rl_agent(obs, config, mark: Optional[int] = None, grid: Optional[np.ndarray
         return 0
 
     # POV scalar board: me (POV) = +1, opp = -1
-    pov = _pov_from_grid(grid, mark)
+    pov = np.zeros((_ROWS, _COLS), dtype=np.int8)
+    pov[grid == mark] = +1
+    pov[(grid != 0) & (grid != mark)] = -1
 
-    # Stronger LA-style root tactical pass before PPO policy selection.
-    forced, candidates = _strong_tactical_candidates_pov(pov)
-    if forced is not None:
-        return int(forced)
+    # Win now.
+    for c in _CENTER_ORDER:
+        if c in legal and _is_winning_drop(pov, c, +1):
+            return int(c)
 
-    # In already-lost / double-threat positions the tactical filter may return
-    # no candidates. Fall back to all legal moves and let PPO choose the least ugly square.
-    if not candidates:
-        candidates = [c for c in _CENTER_ORDER if c in legal]
+    # Prefer tactically safe moves if any exist.
+    non_losing = _generate_non_losing_moves(pov)
 
-    # Policy inference with mirror TTA.
+    # Forced move.
+    if len(non_losing) == 1:
+        return int(non_losing[0])
+
+    # Candidate set:
+    # - prefer non-losing moves if any exist
+    # - otherwise fall back to all legal moves in already-lost positions
+    candidates = non_losing if non_losing else [c for c in _CENTER_ORDER if c in legal]
+
+    # Policy inference.
     logits = _infer_logits(model, pov)
 
     # Final selection: logits first, center-distance and column index as deterministic tie-breaks.
@@ -1453,25 +1140,16 @@ def agent(obs, config):
 
     stones = int(np.count_nonzero(grid))
 
-    # Preload on the first call, even if the opening book returns immediately.
-    # This uses Kaggle's generous first-action/setup window instead of risking
-    # a model-load spike on a later timed move.
-    _load_model_once()
-
-    # Tactical overrides come before book. The book is compact and safe, but
-    # forced wins/blocks/forks are allowed to slap the book out of its chair.
-    pov = _pov_from_grid(grid, mark)
-    forced, _ = _strong_tactical_candidates_pov(pov)
-    if forced is not None:
-        return int(forced)
-
-    # 1) Shared compact opening book before dispatch.
+    # 1) Shared opening book exactly before dispatch.
+    # This keeps the old LA early book while allowing PPO/AZ to own the
+    # opening/middlegame after book exhaustion.
     book_move = _opening_book_move(grid, mark)
     if book_move is not None and book_move in legal:
         return int(book_move)
 
-    # 2) PPO owns early and middlegame, guarded by LA-style root tactics.
-    # 3) LA takes over late, with PPO-guided root ordering and small score bias.
+    # 2) PPO/AZ owns early and middlegame.
+    # 3) LA takes over late, where reduced branching makes deeper search more
+    # reliable and less likely to overfit a shallow tactical horizon.
     if stones >= int(LA_TAKES_OVER_AT_STONES):
         return int(N_step_lookahead_bitboard(obs, config))
 
