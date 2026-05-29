@@ -1,11 +1,10 @@
 # kaggle: main.py
-# Hybrid2 ConnectX submission:
+# Hybrid ConnectX submission:
 #   - shared opening book first
-#   - CNet192 policy model handles opening / middlegame
-#   - bitboard lookahead takes over late, when branching is lower
+#   - if this agent is player 1: pure bitboard lookahead
+#   - if this agent is player 2: CNet192 policy model with tactical guards
 #
-# Package:
-#   copy main_hybrid2.py submission\main.py
+# Package, for example:
 #   tar -czf submit.tar.gz -C submission main.py PPO_2004.pt
 
 import os
@@ -26,23 +25,13 @@ _COLS = 7
 _CENTER_COL = 3
 _CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
-# Main model for opening / middlegame mode.
-
+# Main model for second-player mode.
 MODEL_FILE = "PPO_2004.pt"
-#MODEL_FILE = "PPO_2003.pt"
 
-# Hybrid2 switch.
-# This is total stones already on the board BEFORE our move, not agent-turn count.
-# Examples:
-#   20 = earlier LA takeover
-#   24 = conservative late takeover
-#   28 = very late endgame-only takeover
-LA_TAKES_OVER_AT_STONES = 20
 
-# Late LA target depth. Iterative deepening still respects the time deadline, so
-# values >7 are safe to test late; unfinished depths simply do not overwrite the
-# last completed best move. Try 7, 8, 9, 10 as ablations.
-LATE_LOOKAHEAD_STEPS = 13
+# Hybrid switch. In Kaggle ConnectX, mark==1 means this agent started first.
+USE_LOOKAHEAD_WHEN_MARK_1 = True
+USE_RL_WHEN_MARK_2 = True
 
 # Preserve the old LA opening-book random side reply: after opponent opens center,
 # reply either C or E. Set False for deterministic C/E mirroring.
@@ -71,7 +60,7 @@ def N_step_lookahead_bitboard(obs, config):
 
     # ------------------------------ config ---------------------------------
 
-    N_STEPS = int(globals().get("LATE_LOOKAHEAD_STEPS", 7))
+    N_STEPS = 9 #7
     DEBUG = False
     OPENING_BOOK = True
     WIN2_CHECK = True
@@ -1138,19 +1127,23 @@ def agent(obs, config):
     if not legal:
         return 0
 
-    stones = int(np.count_nonzero(grid))
-
-    # 1) Shared opening book exactly before dispatch.
-    # This keeps the old LA early book while allowing PPO/AZ to own the
-    # opening/middlegame after book exhaustion.
+    # Shared opening book before dispatch. This preserves the early LA book even
+    # when the hybrid will later use the RL model as player 2.
     book_move = _opening_book_move(grid, mark)
     if book_move is not None and book_move in legal:
         return int(book_move)
 
-    # 2) PPO/AZ owns early and middlegame.
-    # 3) LA takes over late, where reduced branching makes deeper search more
-    # reliable and less likely to overfit a shallow tactical horizon.
-    if stones >= int(LA_TAKES_OVER_AT_STONES):
+    # Hybrid dispatch:
+    # - player 1 gets deeper deterministic tactical lookahead
+    # - player 2 gets the trained policy, still protected by immediate tactical guards
+    if mark == 1 and USE_LOOKAHEAD_WHEN_MARK_1:
+        return int(N_step_lookahead_bitboard(obs, config))
+
+    if mark == 2 and USE_RL_WHEN_MARK_2:
+        return int(_rl_agent(obs, config, mark=mark, grid=grid))
+
+    # Fallbacks, mainly for quick ablation toggles.
+    if mark == 1:
         return int(N_step_lookahead_bitboard(obs, config))
 
     return int(_rl_agent(obs, config, mark=mark, grid=grid))

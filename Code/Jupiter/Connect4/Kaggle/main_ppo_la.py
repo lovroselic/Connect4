@@ -27,9 +27,8 @@ _CENTER_COL = 3
 _CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
 # Main model for opening / middlegame mode.
-
+# MODEL_FILE = "PPO_926.pt"
 MODEL_FILE = "PPO_2004.pt"
-#MODEL_FILE = "PPO_2003.pt"
 
 # Hybrid2 switch.
 # This is total stones already on the board BEFORE our move, not agent-turn count.
@@ -37,12 +36,12 @@ MODEL_FILE = "PPO_2004.pt"
 #   20 = earlier LA takeover
 #   24 = conservative late takeover
 #   28 = very late endgame-only takeover
-LA_TAKES_OVER_AT_STONES = 20
+LA_TAKES_OVER_AT_STONES = 18
 
 # Late LA target depth. Iterative deepening still respects the time deadline, so
 # values >7 are safe to test late; unfinished depths simply do not overwrite the
 # last completed best move. Try 7, 8, 9, 10 as ablations.
-LATE_LOOKAHEAD_STEPS = 13
+LATE_LOOKAHEAD_STEPS = 7
 
 # Preserve the old LA opening-book random side reply: after opponent opens center,
 # reply either C or E. Set False for deterministic C/E mirroring.

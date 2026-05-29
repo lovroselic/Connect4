@@ -1,11 +1,13 @@
 # kaggle: main.py
-# Hybrid ConnectX submission:
+# Hybrid3 ConnectX submission:
 #   - shared opening book first
-#   - if this agent is player 1: pure bitboard lookahead
-#   - if this agent is player 2: CNet192 policy model with tactical guards
+#   - CNet192 policy model handles opening / middlegame
+#   - bitboard lookahead takes over by starting-side-specific thresholds
+#   - separate LA takeover move and depth for first-player and second-player games
 #
 # Package, for example:
-#   tar -czf submit.tar.gz -C submission main.py AZ_003.pt
+#   copy main_hybrid3_side.py submission\main.py
+#   tar -czf submit.tar.gz -C submission main.py PPO_2004.pt
 
 import os
 import random
@@ -25,13 +27,42 @@ _COLS = 7
 _CENTER_COL = 3
 _CENTER_ORDER = (3, 4, 2, 5, 1, 6, 0)
 
-# Main model for second-player mode.
+# Main model for opening / middlegame mode.
 # MODEL_FILE = "PPO_926.pt"
-MODEL_FILE = "AZ_003.pt"
+MODEL_FILE = "PPO_2004.pt"
 
-# Hybrid switch. In Kaggle ConnectX, mark==1 means this agent started first.
-USE_LOOKAHEAD_WHEN_MARK_1 = True
-USE_RL_WHEN_MARK_2 = True
+# Hybrid3 side-specific switch.
+# These are total stones already on the board BEFORE our move, not agent-turn count.
+#
+# mark == 1 means this submitted agent started first.
+# mark == 2 means this submitted agent started second.
+#
+# Examples:
+#   18 = earlier LA takeover
+#   20 = currently strong in your tests with deeper LA
+#   22 = lets PPO handle two more plies before search
+#   24 = conservative late takeover
+#   28 = very late endgame-only takeover
+#
+# Set a threshold to 99 to effectively disable LA for that starting side.
+LA_TAKES_OVER_AT_STONES_FIRST  = 20
+LA_TAKES_OVER_AT_STONES_SECOND = 20
+
+# Side-specific LA target depths.
+# Iterative deepening respects the time deadline; unfinished depths do not overwrite
+# the last completed best move.
+#
+# Useful ablations:
+#   FIRST  move 20 / LA13, SECOND move 20 / LA13  -> current symmetric champion form
+#   FIRST  move 20 / LA13, SECOND move 20 / LA12  -> test even depth as second
+#   FIRST  move 20 / LA13, SECOND move 22 / LA12  -> delayed second-player takeover
+#   FIRST  move 18 / LA13, SECOND move 20 / LA13  -> earlier first-player takeover
+LOOKAHEAD_STEPS_FIRST  = 13
+LOOKAHEAD_STEPS_SECOND = 13
+
+# Backward-compatible fallback used only if N_step_lookahead_bitboard is called
+# without an explicit n_steps argument.
+LATE_LOOKAHEAD_STEPS = LOOKAHEAD_STEPS_FIRST
 
 # Preserve the old LA opening-book random side reply: after opponent opens center,
 # reply either C or E. Set False for deterministic C/E mirroring.
@@ -50,7 +81,7 @@ RANDOMIZE_SECOND_PLAYER_BOOK_REPLY = True
 # https://www.kaggleusercontent.com/episodes/#.json
 # No Numba.
 
-def N_step_lookahead_bitboard(obs, config):
+def N_step_lookahead_bitboard(obs, config, n_steps: Optional[int] = None):
 
     import time
     import random
@@ -60,7 +91,7 @@ def N_step_lookahead_bitboard(obs, config):
 
     # ------------------------------ config ---------------------------------
 
-    N_STEPS = 7
+    N_STEPS = int(n_steps if n_steps is not None else globals().get("LATE_LOOKAHEAD_STEPS", 7))
     DEBUG = False
     OPENING_BOOK = True
     WIN2_CHECK = True
@@ -1119,6 +1150,19 @@ def _rl_agent(obs, config, mark: Optional[int] = None, grid: Optional[np.ndarray
     return int(ordered[0])
 
 
+# ---------- hybrid side-specific dispatch ----------
+def _hybrid_la_settings(mark: int) -> Tuple[int, int]:
+    """
+    Return (takeover_stones, lookahead_depth) for this agent's starting side.
+
+    mark == 1 -> our submitted agent is player 1 / started first.
+    mark == 2 -> our submitted agent is player 2 / started second.
+    """
+    if int(mark) == 1:
+        return int(LA_TAKES_OVER_AT_STONES_FIRST), int(LOOKAHEAD_STEPS_FIRST)
+    return int(LA_TAKES_OVER_AT_STONES_SECOND), int(LOOKAHEAD_STEPS_SECOND)
+
+
 # ---------- Kaggle agent ----------
 def agent(obs, config):
     mark, grid = _get_obs_mark_and_grid(obs)
@@ -1127,23 +1171,28 @@ def agent(obs, config):
     if not legal:
         return 0
 
-    # Shared opening book before dispatch. This preserves the early LA book even
-    # when the hybrid will later use the RL model as player 2.
+    stones = int(np.count_nonzero(grid))
+
+    # 1) Shared opening book exactly before dispatch.
+    # This keeps the old LA early book while allowing PPO/AZ to own the
+    # opening/middlegame after book exhaustion.
     book_move = _opening_book_move(grid, mark)
     if book_move is not None and book_move in legal:
         return int(book_move)
 
-    # Hybrid dispatch:
-    # - player 1 gets deeper deterministic tactical lookahead
-    # - player 2 gets the trained policy, still protected by immediate tactical guards
-    if mark == 1 and USE_LOOKAHEAD_WHEN_MARK_1:
-        return int(N_step_lookahead_bitboard(obs, config))
+    # 2) PPO/AZ owns early and middlegame.
+    # 3) LA takes over according to starting-side-specific settings.
+    #
+    # This is the important experimental knob:
+    #   mark == 1 can use one move/depth pair
+    #   mark == 2 can use another move/depth pair
+    #
+    # That matters because the same absolute stone threshold changes who gets
+    # the first LA-controlled move, and even/odd LA depths can behave differently
+    # depending on whether we started first or second.
+    takeover_stones, la_depth = _hybrid_la_settings(mark)
 
-    if mark == 2 and USE_RL_WHEN_MARK_2:
-        return int(_rl_agent(obs, config, mark=mark, grid=grid))
-
-    # Fallbacks, mainly for quick ablation toggles.
-    if mark == 1:
-        return int(N_step_lookahead_bitboard(obs, config))
+    if stones >= takeover_stones:
+        return int(N_step_lookahead_bitboard(obs, config, n_steps=la_depth))
 
     return int(_rl_agent(obs, config, mark=mark, grid=grid))
